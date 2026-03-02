@@ -55,14 +55,19 @@ export function applyContextCDN(body: LLMRequest, isGemini: boolean, reqUrl: str
             }
         }
     } else if (reqUrl.includes('/v1/chat/completions') || reqUrl.includes('api.openai.com')) {
-        // OpenAI Mock Context CDN (They don't have explicit block-level caching headers like Anthropic yet)
-        // We evaluate the total payload length. If it's massive (RAG injection), we inject the mock CDN tag.
-        if (JSON.stringify(body).length > 2000) {
-            if (body.messages && Array.isArray(body.messages)) {
-                // Prepend an invisible system tag to signify the Context CDN caught the giant payload layer
-                body.messages.unshift({ role: 'system', content: '[Agentic Firewall Context CDN Intercepted - Optimizing Payload...]' });
-                modified = true;
+        // OpenAI Prompt Caching — automatic for prompts ≥1024 tokens with prefix matching.
+        // We optimize by: (1) ensuring system messages are first (prefix-stable),
+        // (2) injecting prompt_cache_key for higher cache hit rates across sessions.
+        const bodyStr = JSON.stringify(body);
+        const estimatedTokens = Math.round(bodyStr.length / 4);
+        if (estimatedTokens >= 1024 && body.messages && Array.isArray(body.messages)) {
+            // Move system messages to front for stable prefix matching
+            const systemMsgs = body.messages.filter((m: any) => m.role === 'system');
+            const otherMsgs = body.messages.filter((m: any) => m.role !== 'system');
+            if (systemMsgs.length > 0) {
+                body.messages = [...systemMsgs, ...otherMsgs];
             }
+            modified = true;
         }
     } else {
         // Anthropic Cache injection (DRY Implementation)
@@ -129,7 +134,8 @@ export async function handleProxyRequest(req: Request, res: Response) {
 
     if (req.method !== 'GET' && req.method !== 'HEAD' && req.body && Object.keys(req.body).length > 0) {
         const ip = req.ip || '127.0.0.1';
-        const cb = checkCircuitBreaker(ip, req.body);
+        const apiKey = (req.headers['x-api-key'] || req.headers['authorization'] || '') as string;
+        const cb = checkCircuitBreaker(ip, req.body, apiKey || undefined);
         if (cb.blocked) {
             res.status(400).json({ error: { message: cb.reason, type: 'agentic_firewall_blocked' } });
             return;

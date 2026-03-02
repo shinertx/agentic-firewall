@@ -1,40 +1,75 @@
 import crypto from 'crypto';
 
+interface SessionEntry {
+    hash: string;
+    timestamp: number;
+}
+
 interface Session {
-    lastRequests: string[];
+    entries: SessionEntry[];
 }
 
 const memoryStore: Record<string, Session> = {};
 
-export function checkCircuitBreaker(ip: string, body: any): { blocked: boolean; reason?: string } {
+// Entries older than 5 minutes are expired (prevents false positives across sessions)
+const TTL_MS = 5 * 60 * 1000;
+// Sliding window size
+const WINDOW_SIZE = 5;
+// Number of identical requests before triggering
+const THRESHOLD = 3;
+
+/**
+ * Smarter circuit breaker:
+ * - Hashes the FULL payload (model + system + messages), not just the last user message
+ * - Keys on API-key when available (fixes shared-IP problem), falls back to IP
+ * - Entries expire after 5 minutes TTL
+ */
+export function checkCircuitBreaker(ip: string, body: any, apiKey?: string): { blocked: boolean; reason?: string } {
     if (!body || !body.messages || !Array.isArray(body.messages)) {
         return { blocked: false };
     }
 
-    // A simple heuristic: if the last user message text is EXACTLY the same as previous ones.
-    const lastUserMsg = [...body.messages].reverse().find((m: any) => m.role === 'user');
-    if (!lastUserMsg) return { blocked: false };
+    // Key on API-key if available, otherwise fall back to IP
+    const sessionKey = apiKey ? crypto.createHash('sha256').update(apiKey).digest('hex').slice(0, 16) : ip;
 
-    const content = typeof lastUserMsg.content === 'string' ? lastUserMsg.content : JSON.stringify(lastUserMsg.content);
-    const hash = crypto.createHash('sha256').update(content).digest('hex');
+    // Hash the full payload (model + system + all messages) for more accurate detection
+    const payloadToHash = JSON.stringify({
+        model: body.model || '',
+        system: body.system || '',
+        messages: body.messages
+    });
+    const hash = crypto.createHash('sha256').update(payloadToHash).digest('hex');
+    const now = Date.now();
 
-    if (!memoryStore[ip]) {
-        memoryStore[ip] = { lastRequests: [] };
+    if (!memoryStore[sessionKey]) {
+        memoryStore[sessionKey] = { entries: [] };
     }
 
-    memoryStore[ip].lastRequests.push(hash);
+    const session = memoryStore[sessionKey];
 
-    // Keep only last 5
-    if (memoryStore[ip].lastRequests.length > 5) {
-        memoryStore[ip].lastRequests.shift();
+    // Expire old entries
+    session.entries = session.entries.filter(e => now - e.timestamp < TTL_MS);
+
+    // Add current request
+    session.entries.push({ hash, timestamp: now });
+
+    // Keep window bounded
+    if (session.entries.length > WINDOW_SIZE) {
+        session.entries.shift();
     }
 
-    // Loop detection: if the last 3 requests are identical
-    const history = memoryStore[ip].lastRequests;
-    if (history.length >= 3) {
-        const last3 = history.slice(-3);
-        if (last3[0] === last3[1] && last3[1] === last3[2]) {
-            console.log(`[FIREWALL] 🚨 Circuit Breaker triggered for IP ${ip}! Agent stuck in loop.`);
+    // Loop detection: if the last THRESHOLD requests are identical
+    if (session.entries.length >= THRESHOLD) {
+        const lastN = session.entries.slice(-THRESHOLD);
+        const allSame = lastN.every(e => e.hash === lastN[0].hash);
+        if (allSame) {
+            console.log(`[FIREWALL] 🚨 Circuit Breaker triggered for session ${sessionKey}! Agent stuck in loop.`);
+
+            // Increment blocked loops counter
+            import('./stats').then(({ globalStats }) => {
+                globalStats.blockedLoops++;
+            });
+
             return { blocked: true, reason: 'Agentic Firewall: Loop detected. Terminating connection to prevent wasted tokens.' };
         }
     }

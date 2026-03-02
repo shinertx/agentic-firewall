@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { handleProxyRequest } from './proxyHandler';
+import { authMiddleware } from './authMiddleware';
 
 dotenv.config();
 
@@ -51,6 +52,8 @@ app.use((err: any, req: Request, res: Response, next: express.NextFunction) => {
 app.get('/api/stats', (req: Request, res: Response) => {
     res.json(globalStats);
 });
+
+app.use(authMiddleware);
 
 app.use(async (req: Request, res: Response) => {
     try {

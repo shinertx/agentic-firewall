@@ -25,21 +25,26 @@ describe('applyContextCDN', () => {
         expect(result.body.system).toBe('short string'); // Remains unchanged string
     });
 
-    it('should inject Context CDN system message for OpenAI large prompts', () => {
-        const body: LLMRequest = { messages: [{ role: 'system', content: 'A'.repeat(2500) }] };
+    it('should reorder system messages to front for OpenAI large prompts', () => {
+        const body: LLMRequest = {
+            messages: [
+                { role: 'user', content: 'A'.repeat(5000) },
+                { role: 'system', content: 'B'.repeat(2000) },
+            ]
+        };
         const result = applyContextCDN(body, false, '/v1/chat/completions');
 
-        // The CDN prepends a new system message at index 0
-        expect(result.body.messages?.[0].content).toContain('[Agentic Firewall Context CDN Intercepted');
+        // System messages should be moved to front for prefix-stable caching
+        expect(result.modified).toBe(true);
+        expect(result.body.messages?.[0].role).toBe('system');
+        expect(result.body.messages?.[1].role).toBe('user');
     });
 
-    it('should prepend a system message if OpenAI payload is large', () => {
-        const body: LLMRequest = { messages: [{ role: 'user', content: 'A'.repeat(2500) }] };
+    it('should not modify OpenAI payloads under 1024 tokens', () => {
+        const body: LLMRequest = { messages: [{ role: 'user', content: 'hello' }] };
         const result = applyContextCDN(body, false, '/v1/chat/completions');
 
-        expect(result.body.messages?.length).toBe(2);
-        expect(result.body.messages?.[0].role).toBe('system');
-        expect(result.body.messages?.[0].content).toContain('[Agentic Firewall Context CDN Intercepted');
-        expect(result.body.messages?.[1].role).toBe('user');
+        expect(result.modified).toBe(false);
+        expect(result.body.messages?.length).toBe(1);
     });
 });
