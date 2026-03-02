@@ -24,15 +24,17 @@ const OPENAI_BASE_URL = 'https://api.openai.com';
 const NVIDIA_BASE_URL = 'https://integrate.api.nvidia.com';
 
 // DRY Helper for Anthropic Cache Injection
+// Threshold: 4096 chars ≈ 1024 tokens — Anthropic's minimum for prompt caching.
+// Below this, cache_control is silently ignored but we'd pay the 25% write surcharge.
 function injectEphemeralCache(block: any): { modified: boolean, content: any } {
-    if (typeof block === 'string' && block.length > 500) {
+    if (typeof block === 'string' && block.length > 4096) {
         return {
             modified: true,
             content: [{ type: 'text', text: block, cache_control: { type: 'ephemeral' } }]
         };
     } else if (Array.isArray(block) && block.length > 0) {
         const last = block[block.length - 1];
-        if (last.type === 'text' && !last.cache_control && last.text.length > 500) {
+        if (last.type === 'text' && !last.cache_control && last.text.length > 4096) {
             last.cache_control = { type: 'ephemeral' };
             return { modified: true, content: block };
         }
@@ -47,32 +49,18 @@ export function applyContextCDN(body: LLMRequest, isGemini: boolean, reqUrl: str
     if (isGemini) {
         // Gemini Implicit Caching — automatic for prompts with matching prefixes.
         // Active on Gemini 2.5+ and 3 series. No special headers needed.
-        // We optimize by: (1) ensuring systemInstruction is populated (it's always first/prefix-stable),
-        // (2) moving large content parts to the front of the contents array.
+        // We optimize by ensuring systemInstruction is populated (it's always first/prefix-stable).
+        // NOTE: We do NOT reorder conversation turns — Gemini requires strict alternating
+        // user/model turns. Reordering would cause 400 errors.
         if (body.contents && Array.isArray(body.contents) && body.contents.length > 0) {
             const totalText = JSON.stringify(body.contents);
             const estimatedTokens = Math.round(totalText.length / 4);
 
             if (estimatedTokens >= 1024) {
-                // Ensure systemInstruction exists — this is always sent first by Gemini,
-                // making it the most stable prefix for cache hits
+                // systemInstruction is always sent first by Gemini, making it the
+                // most stable prefix for implicit cache hits
                 if (body.systemInstruction && body.systemInstruction.parts) {
-                    // systemInstruction already exists — good, it's prefix-stable
                     modified = true;
-                }
-
-                // Move model-role messages before user-role messages for prefix stability
-                // (similar to OpenAI system-message reordering)
-                const modelMsgs = body.contents.filter((c: any) => c.role === 'model');
-                const userMsgs = body.contents.filter((c: any) => c.role === 'user');
-                const otherMsgs = body.contents.filter((c: any) => c.role !== 'model' && c.role !== 'user');
-                if (modelMsgs.length > 0) {
-                    body.contents = [...otherMsgs, ...modelMsgs, ...userMsgs];
-                    modified = true;
-                }
-
-                if (modified) {
-                    modified = true; // Flag for stats tracking
                 }
             }
         }
