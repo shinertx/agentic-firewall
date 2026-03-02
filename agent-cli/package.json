@@ -1,0 +1,35 @@
+{
+    "name": "agent-firewall",
+    "version": "0.2.0",
+    "description": "Agent Runtime Control — Loop detection, prompt caching, budget enforcement, and waste scanning for autonomous AI agents.",
+    "bin": {
+        "agent-firewall": "./bin/cli.js"
+    },
+    "keywords": [
+        "ai",
+        "agent",
+        "firewall",
+        "llm",
+        "proxy",
+        "openai",
+        "anthropic",
+        "claude",
+        "openclaw",
+        "cost-control",
+        "prompt-caching",
+        "vibe-billing"
+    ],
+    "author": "Jockey VC",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/benjijmac/vibebilling"
+    },
+    "files": [
+        "bin/",
+        "README.md"
+    ],
+    "engines": {
+        "node": ">=18"
+    }
+}
