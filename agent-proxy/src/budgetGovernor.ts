@@ -12,7 +12,7 @@ import { getInputCost } from './pricing';
  * so we never store the key itself.
  */
 
-interface UserBudget {
+export interface UserBudget {
     userId: string;
     totalSpend: number;
     totalTokens: number;
