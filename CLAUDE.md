@@ -134,11 +134,29 @@ cd ~/agentic-firewall/agent-proxy && pm2 restart agentic-firewall-proxy
 - If the last 3 are identical → returns 400 with `agentic_firewall_blocked` type
 - Increments `blockedLoops` counter in globalStats
 
+## Engineering Ownership
+
+This project is engineered as a production system, not a prototype. All development follows GitHub best practices:
+
+- **Branch strategy:** `main` (protected, CI required) with `feature/*` branches merged via PR
+- **Commit convention:** `feat:`, `fix:`, `test:`, `docs:` prefixes
+- **CI:** GitHub Actions runs Vitest on Node 20 + 22 for every push/PR
+- **Deployment:** `deploy.sh` → rsync to GCP VM → PM2 restart
+
 ---
 
-## Known Limitations
+## Known Limitations (Current)
 
-1. **Stats are in-memory** — they reset on PM2 restart. No persistence layer yet.
-2. **OpenAI/Gemini CDN is placeholder** — only Anthropic gets real server-side caching.
-3. **Shadow Router only supports Anthropic** — Sonnet → Haiku failover. No OpenAI/Gemini failover.
-4. **Single-instance only** — no horizontal scaling, clustering, or Redis shared state.
+1. **Single-instance only** — no horizontal scaling, clustering, or Redis shared state
+2. **No budget enforcement** — agents can burn unlimited tokens (planned: Milestone 2)
+3. **No per-session tracking** — cost is global, not per-agent/session (planned: Milestone 4)
+4. **No `/v1/messages/count_tokens`** — Claude Code needs this for preflight estimation (planned: Milestone 1)
+5. **No OpenAI `prompt_cache_key`** — missing explicit cache key injection (planned: Milestone 1)
+6. **Shadow Router only supports Anthropic** — Sonnet → Haiku failover. No OpenAI/Gemini failover
+
+## Roadmap
+
+- **Milestone 1:** OpenAI `prompt_cache_key` injection + `/v1/messages/count_tokens` endpoint
+- **Milestone 2:** Budget enforcement (max tokens, max dollars, max time per session)
+- **Milestone 3:** Smart loop detection with tool-failure fingerprinting
+- **Milestone 4:** Per-session cost tracking + dashboard enhancements

@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { checkCircuitBreaker } from './circuitBreaker';
 import { attemptShadowRouterFailover } from './shadowRouter';
 import { getInputCost, CACHE_SAVINGS_RATE } from './pricing';
+import { generateCacheKey } from './tokenCounter';
 
 // Explicit Interfaces for Edge Case Handling
 export interface LLMRequest {
@@ -11,6 +12,8 @@ export interface LLMRequest {
     systemInstruction?: any;
     model?: string;
     max_tokens?: number;
+    prompt_cache_key?: string;
+    prompt_cache_retention?: string;
 }
 
 const ANTHROPIC_BASE_URL = 'https://api.anthropic.com';
@@ -71,10 +74,11 @@ export function applyContextCDN(body: LLMRequest, isGemini: boolean, reqUrl: str
                 }
             }
         }
-    } else if (reqUrl.includes('/v1/chat/completions') || reqUrl.includes('api.openai.com')) {
+    } else if (reqUrl.includes('/v1/chat/completions') || reqUrl.includes('/v1/responses') || reqUrl.includes('api.openai.com')) {
         // OpenAI Prompt Caching — automatic for prompts ≥1024 tokens with prefix matching.
         // We optimize by: (1) ensuring system messages are first (prefix-stable),
-        // (2) injecting prompt_cache_key for higher cache hit rates across sessions.
+        // (2) injecting prompt_cache_key for deterministic cache hits across sessions,
+        // (3) setting prompt_cache_retention to 24h for extended TTL.
         const bodyStr = JSON.stringify(body);
         const estimatedTokens = Math.round(bodyStr.length / 4);
         if (estimatedTokens >= 1024 && body.messages && Array.isArray(body.messages)) {
@@ -84,6 +88,14 @@ export function applyContextCDN(body: LLMRequest, isGemini: boolean, reqUrl: str
             if (systemMsgs.length > 0) {
                 body.messages = [...systemMsgs, ...otherMsgs];
             }
+
+            // Inject prompt_cache_key — a stable hash of system content for cross-session cache hits
+            const cacheKey = generateCacheKey(body);
+            if (cacheKey && !body.prompt_cache_key) {
+                body.prompt_cache_key = cacheKey;
+                body.prompt_cache_retention = '24h';
+            }
+
             modified = true;
         }
     } else {
@@ -124,7 +136,8 @@ export async function handleProxyRequest(req: Request, res: Response) {
     const hasGoogKey = req.query.key || req.headers['x-goog-api-key'];
     const isGemini = !!(req.originalUrl.includes('/v1beta/models') || (req.originalUrl.includes('/v1/models') && hasGoogKey));
     const isNvidia = req.originalUrl.includes('integrate.api.nvidia.com') || (req.body?.model && (typeof req.body.model === 'string') && (req.body.model.startsWith('meta/') || req.body.model.startsWith('nvidia/')));
-    const isOpenAI = !isNvidia && (req.originalUrl.includes('/v1/chat/completions') || req.originalUrl.includes('/v1/models') || (req.headers.host && req.headers.host.includes('openai.com')));
+    const isOpenAI = !isNvidia && (req.originalUrl.includes('/v1/chat/completions') || req.originalUrl.includes('/v1/responses') || req.originalUrl.includes('/v1/models') || (req.headers.host && req.headers.host.includes('openai.com')));
+    const isCountTokens = req.originalUrl.includes('/v1/messages/count_tokens');
 
     let baseUrl = ANTHROPIC_BASE_URL;
     if (isGemini) baseUrl = GEMINI_BASE_URL;

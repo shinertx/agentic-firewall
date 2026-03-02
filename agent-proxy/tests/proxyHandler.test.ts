@@ -70,4 +70,62 @@ describe('applyContextCDN', () => {
 
         expect(result.modified).toBe(false);
     });
+
+    // === Milestone 1: OpenAI prompt_cache_key injection ===
+
+    it('should inject prompt_cache_key on large OpenAI payloads with system messages', () => {
+        const body: LLMRequest = {
+            messages: [
+                { role: 'system', content: 'A'.repeat(2000) },
+                { role: 'user', content: 'B'.repeat(3000) },
+            ]
+        };
+        const result = applyContextCDN(body, false, '/v1/chat/completions');
+
+        expect(result.modified).toBe(true);
+        expect(result.body.prompt_cache_key).toBeDefined();
+        expect(typeof result.body.prompt_cache_key).toBe('string');
+        expect(result.body.prompt_cache_key!.length).toBe(32); // SHA-256 truncated to 32 hex chars
+        expect(result.body.prompt_cache_retention).toBe('24h');
+    });
+
+    it('should NOT inject prompt_cache_key if system content is too small', () => {
+        const body: LLMRequest = {
+            messages: [
+                { role: 'system', content: 'short' },
+                { role: 'user', content: 'A'.repeat(5000) },
+            ]
+        };
+        const result = applyContextCDN(body, false, '/v1/chat/completions');
+
+        // Still modified (reordering) but no cache key because system content < 100 chars
+        expect(result.modified).toBe(true);
+        expect(result.body.prompt_cache_key).toBeUndefined();
+    });
+
+    it('should handle /v1/responses endpoint for OpenAI Agents SDK', () => {
+        const body: LLMRequest = {
+            messages: [
+                { role: 'system', content: 'A'.repeat(3000) },
+                { role: 'user', content: 'B'.repeat(3000) },
+            ]
+        };
+        const result = applyContextCDN(body, false, '/v1/responses');
+
+        expect(result.modified).toBe(true);
+        expect(result.body.prompt_cache_key).toBeDefined();
+    });
+
+    it('should not overwrite existing prompt_cache_key', () => {
+        const body: LLMRequest = {
+            messages: [
+                { role: 'system', content: 'A'.repeat(2000) },
+                { role: 'user', content: 'B'.repeat(3000) },
+            ],
+            prompt_cache_key: 'user-provided-key'
+        };
+        const result = applyContextCDN(body, false, '/v1/chat/completions');
+
+        expect(result.body.prompt_cache_key).toBe('user-provided-key');
+    });
 });
