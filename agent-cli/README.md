@@ -1,63 +1,72 @@
 # agent-firewall
 
-**Agent Runtime Control** — Keep autonomous AI agents under control.
+**Agent Runtime Control** — Stop AI agents from burning your money.
 
-Loop detection, prompt caching, budget enforcement, and waste scanning for AI agents.
+Loop detection, prompt caching, budget enforcement, and waste scanning for autonomous AI agents.
 
 ## Quick Start
 
 ```bash
+# See how much your agents are wasting
+npx agent-firewall scan
+
+# Route agents through the firewall to fix it
 npx agent-firewall setup
 ```
 
-This will:
-1. Detect your installed agents (OpenClaw, Claude Code, etc.)
-2. Patch their configs to route through the governance proxy
-3. Set up environment variables for any OpenAI/Anthropic SDK
-4. Verify the connection is working
-
 ## Commands
 
-```bash
-npx agent-firewall setup    # Auto-configure everything
-npx agent-firewall scan     # Scan agent logs for waste patterns
-npx agent-firewall status   # Check live savings and blocked loops
-npx agent-firewall verify   # Test that routing is working
-```
+| Command | What it does |
+|---|---|
+| `npx agent-firewall scan` | Scan agent logs for waste — loops, retries, missed caching |
+| `npx agent-firewall setup` | Auto-configure agents to route through the firewall |
+| `npx agent-firewall status` | Check live proxy stats — requests, savings, blocked loops |
+| `npx agent-firewall verify` | Test that routing is working |
+| `npx agent-firewall uninstall` | Undo everything — restore original configs |
 
 ## What It Solves
 
-Autonomous agents fail **behaviorally** — they get stuck in loops, retry the same broken tool call, and re-send massive contexts. This costs real money and wastes time.
+Autonomous agents fail **behaviorally** — they get stuck in loops, retry the same broken tool call, and re-send massive contexts without caching. This costs real money.
 
-| Problem | Solution |
+| Problem | How Agent Firewall Fixes It |
 |---|---|
-| **Agent stuck in loops** | Circuit breaker kills after repeated identical requests |
-| **No-progress detection** | Tool-failure fingerprinting catches stuck retry cycles |
+| **Agent stuck in loops** | Circuit breaker kills after 3+ identical requests |
+| **Same error over and over** | No-progress detection stops after 5 identical tool failures |
 | **Runaway overnight costs** | Budget governor caps spend per session |
-| **Repeated context re-reads** | Prompt caching reduces cost up to 90% |
-| **Hidden waste** | Scanner finds waste patterns in agent logs |
+| **Re-sending the same context** | Auto-injects prompt caching headers — up to 90% savings |
+| **No visibility into waste** | Scanner analyzes your logs and shows exactly what you're wasting |
 
 ## How It Works
 
 ```
-Agent → Agentic Firewall Proxy → OpenAI / Anthropic / Gemini / NVIDIA
+Your Agent → Agent Firewall (proxy) → OpenAI / Anthropic / Gemini / NVIDIA
 ```
 
-The firewall sits between your agent and the LLM provider. It intercepts every request and:
-- Injects prompt caching headers for automatic cost reduction
-- Detects loops and kills stuck agents
-- Tracks costs and savings in real-time
-- Your API keys pass through transparently — never stored
+The firewall sits between your agent and the LLM provider. Every request passes through it:
 
-## Supported Agents
+- **Prompt caching** — injects `cache_control` headers automatically
+- **Loop detection** — hashes recent requests, blocks repeats
+- **Budget caps** — set a $ limit per session, get a hard 402 when hit
+- **No-progress detection** — fingerprints tool errors, stops spinning agents
+- **Your keys pass through** — never stored, never logged
 
-| Agent | Setup Method |
+## Works With
+
+| Agent / SDK | How it connects |
 |---|---|
-| OpenClaw | Config file patch (auto-detected) |
-| Claude Code | LLM gateway URL |
+| OpenClaw | Config file auto-patch |
+| Claude Code | `ANTHROPIC_BASE_URL` env var |
 | OpenAI SDK | `OPENAI_BASE_URL` env var |
 | Anthropic SDK | `ANTHROPIC_BASE_URL` env var |
 | Any OpenAI-compatible | `base_url` parameter |
+
+## Cross-Platform
+
+Works on **macOS**, **Linux**, and **Windows** (PowerShell + cmd.exe).
+
+- Auto-detects your shell config (`.zshrc`, `.bashrc`, `.bash_profile`, PowerShell `$PROFILE`)
+- Asks before modifying any files
+- Clean uninstall with `npx agent-firewall uninstall`
 
 ## License
 

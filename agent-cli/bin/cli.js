@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * agent-firewall CLI v0.3.0
+ * agent-firewall CLI v0.5.0
  * Agent Runtime Control — keep autonomous AI agents under control.
  *
  * Usage:
@@ -9,18 +9,26 @@
  *   npx agent-firewall scan      — scan agent logs for waste (with real $ numbers)
  *   npx agent-firewall status    — check proxy stats (requests, savings, blocked loops)
  *   npx agent-firewall verify    — test that traffic is routing through the firewall
+ *   npx agent-firewall uninstall — remove proxy routing from shell config + agent configs
  */
 
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const readline = require('readline');
 
+const VERSION = '0.5.1';
 const PROXY_URL = 'https://api.jockeyvc.com';
 const PROXY_API = `${PROXY_URL}/api/stats`;
+const HTTP_TIMEOUT_MS = 10_000;
 
-// ─── Colors ─────────────────────────────────────────────
-const c = {
+// ─── Platform Detection ─────────────────────────────────
+const IS_WIN = process.platform === 'win32';
+const IS_TTY = process.stdout.isTTY === true;
+
+// ─── Colors (TTY-aware, Windows-safe) ───────────────────
+const c = IS_TTY ? {
     reset: '\x1b[0m',
     bold: '\x1b[1m',
     dim: '\x1b[2m',
@@ -33,14 +41,52 @@ const c = {
     bgGreen: '\x1b[42m',
     white: '\x1b[37m',
     black: '\x1b[30m',
+} : Object.fromEntries(
+    ['reset', 'bold', 'dim', 'green', 'yellow', 'red', 'cyan', 'magenta', 'bgRed', 'bgGreen', 'white', 'black']
+        .map(k => [k, ''])
+);
+
+// Emoji fallback for Windows cmd.exe
+const icons = IS_WIN && !process.env.WT_SESSION ? {
+    ok: '[OK]', fail: '[FAIL]', warn: '[WARN]', info: '[i]', shield: '[#]',
+} : {
+    ok: '✅', fail: '❌', warn: '⚠️', info: 'ℹ', shield: '🛡️',
 };
 
 function log(msg) { console.log(msg); }
-function ok(msg) { log(`${c.green}✅${c.reset} ${msg}`); }
-function warn(msg) { log(`${c.yellow}⚠️${c.reset}  ${msg}`); }
-function fail(msg) { log(`${c.red}❌${c.reset} ${msg}`); }
-function info(msg) { log(`${c.cyan}ℹ${c.reset}  ${msg}`); }
-function header(msg) { log(`\n${c.bold}${c.magenta}🛡️  ${msg}${c.reset}\n`); }
+function ok(msg) { log(`${c.green}${icons.ok}${c.reset} ${msg}`); }
+function warn(msg) { log(`${c.yellow}${icons.warn}${c.reset}  ${msg}`); }
+function fail(msg) { log(`${c.red}${icons.fail}${c.reset} ${msg}`); }
+function info(msg) { log(`${c.cyan}${icons.info}${c.reset}  ${msg}`); }
+function header(msg) { log(`\n${c.bold}${c.magenta}${icons.shield}  ${msg}${c.reset}\n`); }
+
+// ─── Confirmation Prompt ────────────────────────────────
+function confirm(question) {
+    return new Promise((resolve) => {
+        if (!IS_TTY) { resolve(true); return; } // auto-yes in non-interactive
+        const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+        rl.question(`${c.cyan}?${c.reset} ${question} ${c.dim}[Y/n]${c.reset} `, (answer) => {
+            rl.close();
+            resolve(answer.trim().toLowerCase() !== 'n');
+        });
+    });
+}
+
+// ─── Spinner ────────────────────────────────────────────
+function spinner(msg) {
+    if (!IS_TTY) { log(`  ${msg}...`); return { stop() { } }; }
+    const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+    let i = 0;
+    const id = setInterval(() => {
+        process.stdout.write(`\r  ${c.cyan}${frames[i++ % frames.length]}${c.reset} ${msg}`);
+    }, 80);
+    return {
+        stop(result) {
+            clearInterval(id);
+            process.stdout.write(`\r  ${result || msg}${' '.repeat(20)}\n`);
+        }
+    };
+}
 
 // ─── Pricing (per million tokens) ───────────────────────
 const PRICING = {
@@ -63,7 +109,6 @@ function getModelPricing(model) {
     for (const [key, price] of Object.entries(PRICING)) {
         if (model.includes(key)) return price;
     }
-    // Default to mid-range pricing
     return { input: 3.00, output: 15.00, cached: 0.30 };
 }
 
@@ -71,28 +116,77 @@ function tokenCost(tokens, pricePerMillion) {
     return (tokens / 1_000_000) * pricePerMillion;
 }
 
-// ─── HTTP Helper ────────────────────────────────────────
+// ─── HTTP Helper (with timeout) ─────────────────────────
 function httpGet(url) {
     return new Promise((resolve, reject) => {
-        https.get(url, (res) => {
+        const req = https.get(url, (res) => {
             let data = '';
             res.on('data', chunk => data += chunk);
             res.on('end', () => {
                 try { resolve(JSON.parse(data)); }
                 catch { resolve(data); }
             });
-        }).on('error', reject);
+        });
+        req.on('error', reject);
+        req.setTimeout(HTTP_TIMEOUT_MS, () => {
+            req.destroy();
+            reject(new Error(`Request timed out after ${HTTP_TIMEOUT_MS / 1000}s`));
+        });
     });
 }
 
+// ─── Shell Config Detection (cross-platform) ────────────
+function findShellConfig() {
+    const home = os.homedir();
+
+    if (IS_WIN) {
+        // PowerShell profile
+        const psProfile = process.env.USERPROFILE
+            ? path.join(process.env.USERPROFILE, 'Documents', 'PowerShell', 'Microsoft.PowerShell_profile.ps1')
+            : null;
+        if (psProfile && fs.existsSync(psProfile)) return { path: psProfile, type: 'powershell' };
+        // Windows PowerShell (older)
+        const wpsProfile = process.env.USERPROFILE
+            ? path.join(process.env.USERPROFILE, 'Documents', 'WindowsPowerShell', 'Microsoft.PowerShell_profile.ps1')
+            : null;
+        if (wpsProfile && fs.existsSync(wpsProfile)) return { path: wpsProfile, type: 'powershell' };
+        // Create one if neither exists
+        if (psProfile) return { path: psProfile, type: 'powershell', create: true };
+        return null;
+    }
+
+    // Unix: prefer .zshrc, then .bashrc, then .bash_profile
+    const candidates = ['.zshrc', '.bashrc', '.bash_profile'];
+    for (const name of candidates) {
+        const p = path.join(home, name);
+        if (fs.existsSync(p)) return { path: p, type: 'posix' };
+    }
+    // Default to .zshrc on macOS, .bashrc on Linux
+    const defaultName = process.platform === 'darwin' ? '.zshrc' : '.bashrc';
+    return { path: path.join(home, defaultName), type: 'posix', create: true };
+}
+
+const MARKER = '# agent-firewall proxy routing';
+const MARKER_END = '# /agent-firewall';
+
+function getShellBlock(type) {
+    if (type === 'powershell') {
+        return `${MARKER}\n$env:OPENAI_BASE_URL = "${PROXY_URL}/v1"\n$env:ANTHROPIC_BASE_URL = "${PROXY_URL}"\n${MARKER_END}`;
+    }
+    return `${MARKER}\nexport OPENAI_BASE_URL="${PROXY_URL}/v1"\nexport ANTHROPIC_BASE_URL="${PROXY_URL}"\n${MARKER_END}`;
+}
+
 // ─── Agent Detection ────────────────────────────────────
+// Detects installed agents for display purposes.
+// OpenClaw routing is done via env vars (ANTHROPIC_BASE_URL / OPENAI_BASE_URL),
+// NOT by patching openclaw.json — see docs.openclaw.ai/gateway/configuration-reference
 function detectAgents() {
     const agents = [];
     const home = os.homedir();
 
-    const openclawConfig = path.join(home, '.openclaw', 'openclaw.json');
-    if (fs.existsSync(openclawConfig)) {
-        agents.push({ name: 'OpenClaw', configPath: openclawConfig, type: 'openclaw' });
+    const openclawDir = path.join(home, '.openclaw');
+    if (fs.existsSync(openclawDir)) {
+        agents.push({ name: 'OpenClaw', configPath: openclawDir, type: 'openclaw' });
     }
 
     const claudeConfig = path.join(home, '.claude', 'settings.json');
@@ -108,7 +202,7 @@ function findAllLogs() {
     const home = os.homedir();
     const logs = { claudeCode: [], openClaw: [] };
 
-    // Claude Code: ~/.claude/projects/*/sessions/*.jsonl and subagents/*.jsonl
+    // Claude Code: ~/.claude/projects/*/sessions/*.jsonl
     const claudeProjects = path.join(home, '.claude', 'projects');
     if (fs.existsSync(claudeProjects)) {
         const walkDir = (dir) => {
@@ -124,13 +218,22 @@ function findAllLogs() {
         walkDir(claudeProjects);
     }
 
-    // OpenClaw: ~/.openclaw/agents/main/sessions/*.jsonl
-    const openclawSessions = path.join(home, '.openclaw', 'agents', 'main', 'sessions');
-    if (fs.existsSync(openclawSessions)) {
+    // OpenClaw: ~/.openclaw/agents/<agentId>/sessions/*.jsonl (all agents, not just main)
+    const openclawAgents = path.join(home, '.openclaw', 'agents');
+    if (fs.existsSync(openclawAgents)) {
         try {
-            fs.readdirSync(openclawSessions)
-                .filter(f => f.endsWith('.jsonl'))
-                .forEach(f => logs.openClaw.push(path.join(openclawSessions, f)));
+            const agentDirs = fs.readdirSync(openclawAgents, { withFileTypes: true })
+                .filter(e => e.isDirectory());
+            for (const agentDir of agentDirs) {
+                const sessionsDir = path.join(openclawAgents, agentDir.name, 'sessions');
+                if (fs.existsSync(sessionsDir)) {
+                    try {
+                        fs.readdirSync(sessionsDir)
+                            .filter(f => f.endsWith('.jsonl'))
+                            .forEach(f => logs.openClaw.push(path.join(sessionsDir, f)));
+                    } catch { /* skip */ }
+                }
+            }
         } catch { /* skip */ }
     }
 
@@ -140,54 +243,37 @@ function findAllLogs() {
 // ─── Claude Code Transcript Analyzer ────────────────────
 function analyzeClaudeTranscript(filepath) {
     const result = {
-        totalInputTokens: 0,
-        totalOutputTokens: 0,
-        cacheCreationTokens: 0,
-        cacheReadTokens: 0,
-        toolErrors: 0,
-        retryLoops: 0,
-        requests: 0,
-        models: {},
-        wastedTokens: 0,
-        sessions: 0,
+        totalInputTokens: 0, totalOutputTokens: 0,
+        cacheCreationTokens: 0, cacheReadTokens: 0,
+        toolErrors: 0, retryLoops: 0, requests: 0,
+        models: {}, wastedTokens: 0, sessions: 0,
     };
 
     try {
         const content = fs.readFileSync(filepath, 'utf-8');
         const lines = content.split('\n').filter(l => l.trim());
-
         let lastToolError = '';
         let consecutiveErrors = 0;
-
-        // Deduplicate by requestId — Claude Code logs EACH content block
-        // (text, tool_use, etc.) as a separate JSONL line with the SAME
-        // requestId and duplicated usage data. Without dedup, one API call
-        // with 5 content blocks = 5x over-count.
         const seenRequestIds = new Set();
 
         for (const line of lines) {
             try {
                 const entry = JSON.parse(line);
 
-                // Count API responses with usage data — ONLY ONCE per requestId
                 if (entry.message?.usage && entry.requestId) {
                     if (!seenRequestIds.has(entry.requestId)) {
                         seenRequestIds.add(entry.requestId);
-
                         const u = entry.message.usage;
                         result.totalInputTokens += (u.input_tokens || 0);
                         result.totalOutputTokens += (u.output_tokens || 0);
                         result.cacheCreationTokens += (u.cache_creation_input_tokens || 0);
                         result.cacheReadTokens += (u.cache_read_input_tokens || 0);
                         result.requests++;
-
-                        // Track model usage
                         const model = entry.message.model || 'unknown';
                         result.models[model] = (result.models[model] || 0) + 1;
                     }
                 }
 
-                // Track tool errors (these are on user-type lines, not deduplicated)
                 if (entry.type === 'user' && entry.message?.content) {
                     const msgContent = entry.message.content;
                     if (Array.isArray(msgContent)) {
@@ -207,27 +293,17 @@ function analyzeClaudeTranscript(filepath) {
                     }
                 }
 
-                // Track session starts
                 if (entry.type === 'user' && entry.parentUuid === null) {
                     result.sessions++;
                 }
             } catch { /* skip non-JSON lines */ }
         }
 
-        // Calculate wasted tokens — conservative approach:
-        // Compare cache efficiency. If cache_read is much lower than
-        // cache_creation * (requests-1), some requests missed the cache.
-        // But cap the waste at a reasonable fraction of total input tokens.
         if (result.cacheCreationTokens > 0 && result.requests > 1) {
-            // Expected cache reads: each request after the first COULD read
-            // the same cached prefix. But only count missed reads for requests
-            // that actually had no cache_read at all.
             const expectedCacheReads = result.cacheCreationTokens;
             const missedCacheTokens = Math.max(0, expectedCacheReads - result.cacheReadTokens);
-            // Cap at total input tokens to avoid absurd numbers
             result.wastedTokens = Math.min(missedCacheTokens, result.totalInputTokens);
         }
-
     } catch { /* file read error */ }
 
     return result;
@@ -235,18 +311,11 @@ function analyzeClaudeTranscript(filepath) {
 
 // ─── OpenClaw Session Analyzer ──────────────────────────
 function analyzeOpenClawSession(filepath) {
-    const result = {
-        messages: 0,
-        provider: 'unknown',
-        modelId: 'unknown',
-        toolCalls: 0,
-        toolErrors: 0,
-    };
+    const result = { messages: 0, provider: 'unknown', modelId: 'unknown', toolCalls: 0, toolErrors: 0 };
 
     try {
         const content = fs.readFileSync(filepath, 'utf-8');
         const lines = content.split('\n').filter(l => l.trim());
-
         for (const line of lines) {
             try {
                 const entry = JSON.parse(line);
@@ -281,11 +350,12 @@ async function scan() {
         log(`  ${c.dim}~/.openclaw/agents/main/sessions/*.jsonl${c.reset}`);
         log('');
 
-        // Fall back to proxy stats
         try {
+            const s = spinner('Checking proxy for data');
             const stats = await httpGet(PROXY_API);
+            s.stop(`${c.green}${icons.ok}${c.reset} Proxy connected`);
             if (stats && stats.totalRequests > 0) {
-                info('Using proxy data instead...\n');
+                log('');
                 showProxyWaste(stats);
             } else {
                 info('Route some traffic through the firewall first: npx agent-firewall setup\n');
@@ -296,24 +366,17 @@ async function scan() {
         return;
     }
 
-    // ─── Analyze Claude Code ────────────────────────────
-    let grandTotalInput = 0;
-    let grandTotalOutput = 0;
-    let grandCacheCreation = 0;
-    let grandCacheRead = 0;
-    let grandToolErrors = 0;
-    let grandRetryLoops = 0;
-    let grandRequests = 0;
-    let grandWastedTokens = 0;
+    let grandTotalInput = 0, grandTotalOutput = 0;
+    let grandCacheCreation = 0, grandCacheRead = 0;
+    let grandToolErrors = 0, grandRetryLoops = 0;
+    let grandRequests = 0, grandWastedTokens = 0;
     const grandModels = {};
 
     if (logs.claudeCode.length > 0) {
         info(`Found ${c.bold}${logs.claudeCode.length}${c.reset} Claude Code transcript(s)\n`);
-
         for (const file of logs.claudeCode) {
             const r = analyzeClaudeTranscript(file);
             if (r.requests === 0) continue;
-
             grandTotalInput += r.totalInputTokens;
             grandTotalOutput += r.totalOutputTokens;
             grandCacheCreation += r.cacheCreationTokens;
@@ -322,14 +385,12 @@ async function scan() {
             grandRetryLoops += r.retryLoops;
             grandRequests += r.requests;
             grandWastedTokens += r.wastedTokens;
-
             for (const [model, count] of Object.entries(r.models)) {
                 grandModels[model] = (grandModels[model] || 0) + count;
             }
         }
     }
 
-    // ─── Analyze OpenClaw ───────────────────────────────
     if (logs.openClaw.length > 0) {
         info(`Found ${c.bold}${logs.openClaw.length}${c.reset} OpenClaw session(s)\n`);
         for (const file of logs.openClaw) {
@@ -341,16 +402,12 @@ async function scan() {
         log('');
     }
 
-    // ─── Cost Calculations ──────────────────────────────
-    // Use weighted average pricing based on models found
-    let totalInputCost = 0;
-    let totalOutputCost = 0;
-    let totalCacheSavings = 0;
-    let potentialCacheSavings = 0;
+    // Cost calculations
+    let totalInputCost = 0, totalOutputCost = 0;
+    let totalCacheSavings = 0, potentialCacheSavings = 0;
 
     for (const [model, count] of Object.entries(grandModels)) {
         const pricing = getModelPricing(model);
-        // Rough allocation: distribute tokens proportionally by request count
         const pct = count / Math.max(grandRequests, 1);
         const modelInputTokens = grandTotalInput * pct;
         const modelOutputTokens = grandTotalOutput * pct;
@@ -359,38 +416,33 @@ async function scan() {
         totalInputCost += tokenCost(modelInputTokens, pricing.input);
         totalOutputCost += tokenCost(modelOutputTokens, pricing.output);
 
-        // Savings from cache reads
         const savedPerToken = pricing.input - pricing.cached;
         totalCacheSavings += tokenCost(modelCacheRead, savedPerToken);
 
-        // Potential savings: tokens that could have been cached but weren't
         const modelWasted = grandWastedTokens * pct;
         potentialCacheSavings += tokenCost(modelWasted, savedPerToken);
     }
 
     const totalSpend = totalInputCost + totalOutputCost;
 
-    // ─── Results ────────────────────────────────────────
+    // Results
     log(`${c.bold}  ─── Your Agent Usage Report ───${c.reset}\n`);
-
     log(`  ${c.bold}API Calls:${c.reset}           ${grandRequests.toLocaleString()}`);
     log(`  ${c.bold}Input Tokens:${c.reset}        ${grandTotalInput.toLocaleString()}`);
     log(`  ${c.bold}Output Tokens:${c.reset}       ${grandTotalOutput.toLocaleString()}`);
     log(`  ${c.bold}Cache Created:${c.reset}       ${grandCacheCreation.toLocaleString()} tokens`);
     log(`  ${c.bold}Cache Read:${c.reset}          ${grandCacheRead.toLocaleString()} tokens`);
     log('');
-
     log(`  ${c.bold}Estimated Spend:${c.reset}     ${c.yellow}$${totalSpend.toFixed(2)}${c.reset}`);
     if (totalCacheSavings > 0) {
         log(`  ${c.bold}Already Saved:${c.reset}       ${c.green}$${totalCacheSavings.toFixed(2)}${c.reset} ${c.dim}(from cache hits)${c.reset}`);
     }
 
-    // The money shot — what they WOULD save
     if (potentialCacheSavings > 0.01) {
         log('');
         log(`  ${c.bgRed}${c.white}${c.bold} 🚨 MISSED SAVINGS: $${potentialCacheSavings.toFixed(2)} ${c.reset}`);
         log(`  ${c.dim}${grandWastedTokens.toLocaleString()} tokens were re-sent instead of cached.${c.reset}`);
-        log(`  ${c.dim}The Agentic Firewall would have cached these automatically.${c.reset}`);
+        log(`  ${c.dim}The Agent Firewall would have cached these automatically.${c.reset}`);
     }
 
     if (grandToolErrors > 0) {
@@ -403,7 +455,6 @@ async function scan() {
         }
     }
 
-    // Model breakdown
     if (Object.keys(grandModels).length > 0) {
         log(`\n  ${c.bold}Models Used:${c.reset}`);
         for (const [model, count] of Object.entries(grandModels).sort((a, b) => b[1] - a[1]).slice(0, 8)) {
@@ -411,7 +462,6 @@ async function scan() {
         }
     }
 
-    // CTA
     log('');
     if (potentialCacheSavings > 0.01 || grandToolErrors > 0) {
         log(`  ${c.bgGreen}${c.black}${c.bold} Fix this now → npx agent-firewall setup ${c.reset}`);
@@ -440,81 +490,80 @@ function showProxyWaste(stats) {
 
 // ─── Setup Command ──────────────────────────────────────
 async function setup() {
-    header('Agent Runtime Control — Setup');
+    header('Agent Firewall — Setup');
     log(`${c.dim}Stop runaway agents. Save money. Stay in control.${c.reset}\n`);
 
     const { agents } = detectAgents();
 
     if (agents.length === 0) {
-        warn('No agent config files detected (OpenClaw, Claude Code).');
-        info('Setting up environment variables for any OpenAI/Anthropic SDK.\n');
+        info('No agents detected. Setting up environment variables for any OpenAI/Anthropic SDK.\n');
     } else {
-        agents.forEach(a => ok(`Found ${c.bold}${a.name}${c.reset} at ${c.dim}${a.configPath}${c.reset}`));
+        agents.forEach(a => ok(`Detected ${c.bold}${a.name}${c.reset}`));
+        if (agents.some(a => a.type === 'openclaw')) {
+            info(`OpenClaw will pick up the proxy via ${c.bold}ANTHROPIC_BASE_URL${c.reset} / ${c.bold}OPENAI_BASE_URL${c.reset} env vars.`);
+            info(`${c.dim}No changes to openclaw.json needed.${c.reset}`);
+        }
         log('');
     }
 
-    for (const agent of agents) {
-        if (agent.type === 'openclaw') {
-            info(`Configuring ${agent.name}...`);
-            try {
-                const config = JSON.parse(fs.readFileSync(agent.configPath, 'utf-8'));
-                const backupPath = `${agent.configPath}.bak.${Date.now()}`;
-                fs.writeFileSync(backupPath, JSON.stringify(config, null, 2));
-                ok(`Backup: ${c.dim}${backupPath}${c.reset}`);
-
-                config.models = config.models || {};
-                config.models.providers = config.models.providers || {};
-
-                const currentBaseUrl = config.models.providers?.openai?.baseUrl || '';
-                if (currentBaseUrl.includes('jockeyvc.com')) {
-                    ok(`${agent.name} already configured.`);
+    // Shell env vars
+    const shell = findShellConfig();
+    if (shell) {
+        if (fs.existsSync(shell.path)) {
+            const content = fs.readFileSync(shell.path, 'utf-8');
+            if (content.includes(MARKER)) {
+                ok('Shell environment already configured.');
+            } else {
+                const fileName = path.basename(shell.path);
+                const yes = await confirm(`Add proxy env vars to ${fileName}?`);
+                if (yes) {
+                    fs.appendFileSync(shell.path, `\n${getShellBlock(shell.type)}\n`);
+                    ok(`Added to ${c.dim}${fileName}${c.reset}.`);
+                    if (shell.type === 'posix') {
+                        info(`Run ${c.bold}source ~/${fileName}${c.reset} to activate.`);
+                    } else {
+                        info(`Restart your PowerShell to activate.`);
+                    }
                 } else {
-                    config.models.providers.openai = {
-                        ...config.models.providers.openai,
-                        baseUrl: `${PROXY_URL}/v1`,
-                        models: config.models.providers?.openai?.models || [{ id: 'gpt-4o', name: 'GPT-4o' }]
-                    };
-                    config.models.providers.anthropic = {
-                        ...config.models.providers.anthropic,
-                        baseUrl: PROXY_URL,
-                        models: config.models.providers?.anthropic?.models || [{ id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4' }]
-                    };
-                    fs.writeFileSync(agent.configPath, JSON.stringify(config, null, 2));
-                    ok(`${agent.name} config patched.`);
+                    info('Skipped shell config.');
+                    info(`You can manually set:`);
+                    if (shell.type === 'powershell') {
+                        log(`  ${c.dim}$env:OPENAI_BASE_URL = "${PROXY_URL}/v1"${c.reset}`);
+                        log(`  ${c.dim}$env:ANTHROPIC_BASE_URL = "${PROXY_URL}"${c.reset}`);
+                    } else {
+                        log(`  ${c.dim}export OPENAI_BASE_URL="${PROXY_URL}/v1"${c.reset}`);
+                        log(`  ${c.dim}export ANTHROPIC_BASE_URL="${PROXY_URL}"${c.reset}`);
+                    }
                 }
-            } catch (err) {
-                fail(`Failed: ${err.message}`);
+            }
+        } else if (shell.create) {
+            const yes = await confirm(`Create ${path.basename(shell.path)} with proxy env vars?`);
+            if (yes) {
+                fs.mkdirSync(path.dirname(shell.path), { recursive: true });
+                fs.writeFileSync(shell.path, `${getShellBlock(shell.type)}\n`);
+                ok(`Created ${c.dim}${path.basename(shell.path)}${c.reset} with proxy config.`);
             }
         }
+    } else {
+        warn('Could not detect shell config file.');
+        info('Set these env vars manually:');
+        log(`  ${c.dim}OPENAI_BASE_URL=${PROXY_URL}/v1${c.reset}`);
+        log(`  ${c.dim}ANTHROPIC_BASE_URL=${PROXY_URL}${c.reset}`);
     }
 
-    // Shell env vars
-    const shellConfig = fs.existsSync(path.join(os.homedir(), '.zshrc'))
-        ? path.join(os.homedir(), '.zshrc')
-        : path.join(os.homedir(), '.bashrc');
-
-    if (shellConfig && fs.existsSync(shellConfig)) {
-        const content = fs.readFileSync(shellConfig, 'utf-8');
-        const marker = '# agent-firewall proxy routing';
-        if (content.includes(marker)) {
-            ok('Shell environment already configured.');
-        } else {
-            info(`Adding env vars to ${c.dim}${path.basename(shellConfig)}${c.reset}...`);
-            fs.appendFileSync(shellConfig, `\n${marker}\nexport OPENAI_BASE_URL="${PROXY_URL}/v1"\nexport ANTHROPIC_BASE_URL="${PROXY_URL}"\n`);
-            ok('Shell configured. Run `source ~/.zshrc` to activate.');
-        }
-    }
-
-    // Verify
+    // Verify proxy connection
     log('');
-    info('Verifying proxy...');
+    const s = spinner('Verifying proxy connection');
     try {
         const stats = await httpGet(PROXY_API);
         if (stats && typeof stats.totalRequests === 'number') {
-            ok(`Proxy live! ${stats.totalRequests} requests, $${stats.savedMoney?.toFixed(4) || '0'} saved.`);
+            s.stop(`${c.green}${icons.ok}${c.reset} Proxy live! ${stats.totalRequests} requests, $${stats.savedMoney?.toFixed(4) || '0'} saved.`);
+        } else {
+            s.stop(`${c.yellow}${icons.warn}${c.reset} Proxy responded but data format unexpected.`);
         }
     } catch (err) {
-        fail(`Cannot reach proxy: ${err.message}`);
+        s.stop(`${c.red}${icons.fail}${c.reset} Cannot reach proxy: ${err.message}`);
+        info('Check your internet connection and try again.');
         return;
     }
 
@@ -523,14 +572,49 @@ async function setup() {
     log(`${c.dim}• Prompt caching: up to 90% savings${c.reset}`);
     log(`${c.dim}• Budget control: cap spend per session${c.reset}`);
     log('');
-    log(`Run ${c.bold}npx agent-firewall scan${c.reset} to see your waste report.\n`);
+    log(`Run ${c.bold}npx agent-firewall scan${c.reset} to see your waste report.`);
+    log(`Run ${c.bold}npx agent-firewall uninstall${c.reset} to undo everything.\n`);
+}
+
+// ─── Uninstall Command ──────────────────────────────────
+async function uninstall() {
+    header('Agent Firewall — Uninstall');
+
+    // Remove shell config block
+    const shell = findShellConfig();
+    if (shell && fs.existsSync(shell.path)) {
+        const content = fs.readFileSync(shell.path, 'utf-8');
+        if (content.includes(MARKER)) {
+            const regex = new RegExp(`\\n?${MARKER.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\s\\S]*?${MARKER_END.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\n?`, 'g');
+            const cleaned = content.replace(regex, '\n');
+            fs.writeFileSync(shell.path, cleaned);
+            ok(`Removed env vars from ${c.dim}${path.basename(shell.path)}${c.reset}`);
+            if (shell.type === 'posix') {
+                info(`Run ${c.bold}source ~/${path.basename(shell.path)}${c.reset} to apply.`);
+            } else {
+                info('Restart PowerShell to apply.');
+            }
+        } else {
+            ok('Shell config already clean.');
+        }
+    }
+
+    // OpenClaw: no config changes needed — routing is via env vars only.
+    // Removing env vars from shell config (above) is sufficient.
+
+    log('');
+    ok('Agent Firewall uninstalled. Your agents now connect directly to providers.');
+    log(`${c.dim}Run ${c.bold}npx agent-firewall setup${c.reset}${c.dim} to re-enable.${c.reset}\n`);
 }
 
 // ─── Status Command ─────────────────────────────────────
 async function status() {
-    header('Agent Runtime Control — Status');
+    header('Agent Firewall — Status');
+    const s = spinner('Fetching proxy stats');
     try {
         const stats = await httpGet(PROXY_API);
+        s.stop(`${c.green}${icons.ok}${c.reset} Connected`);
+        log('');
         log(`  ${c.bold}Requests:${c.reset}      ${stats.totalRequests}`);
         log(`  ${c.bold}Money Saved:${c.reset}   $${stats.savedMoney?.toFixed(4) || '0.0000'}`);
         log(`  ${c.bold}Tokens Saved:${c.reset}  ${(stats.savedTokens || 0).toLocaleString()}`);
@@ -548,57 +632,81 @@ async function status() {
         }
         log('');
     } catch (err) {
-        fail(`Cannot reach proxy: ${err.message}`);
+        s.stop(`${c.red}${icons.fail}${c.reset} Cannot reach proxy: ${err.message}`);
+        info('Is the proxy running? Check https://api.jockeyvc.com/health');
     }
 }
 
 // ─── Verify Command ─────────────────────────────────────
 async function verify() {
-    header('Agent Runtime Control — Verify');
+    header('Agent Firewall — Verify');
     const ov = process.env.OPENAI_BASE_URL || 'not set';
     const av = process.env.ANTHROPIC_BASE_URL || 'not set';
     log(`  OPENAI_BASE_URL:    ${ov.includes('jockeyvc') ? c.green : c.red}${ov}${c.reset}`);
     log(`  ANTHROPIC_BASE_URL: ${av.includes('jockeyvc') ? c.green : c.red}${av}${c.reset}\n`);
 
+    const s = spinner('Testing proxy connection');
     try {
         const stats = await httpGet(PROXY_API);
-        ok(`Proxy live (${stats.totalRequests} requests)`);
+        s.stop(`${c.green}${icons.ok}${c.reset} Proxy live (${stats.totalRequests} requests)`);
     } catch (err) {
-        fail(`Proxy unreachable: ${err.message}`);
+        s.stop(`${c.red}${icons.fail}${c.reset} Proxy unreachable: ${err.message}`);
+        info('Run npx agent-firewall setup to configure.');
         return;
     }
 
-    const oc = path.join(os.homedir(), '.openclaw', 'openclaw.json');
-    if (fs.existsSync(oc)) {
-        try {
-            const cfg = JSON.parse(fs.readFileSync(oc, 'utf-8'));
-            const bu = cfg?.models?.providers?.openai?.baseUrl || 'not set';
-            if (bu.includes('jockeyvc')) ok(`OpenClaw: ${c.green}${bu}${c.reset}`);
-            else warn(`OpenClaw: ${c.yellow}${bu}${c.reset} — not proxied`);
-        } catch { /* ignore */ }
+    // OpenClaw check: it uses env vars, so checking ANTHROPIC_BASE_URL is sufficient
+    const ocDir = path.join(os.homedir(), '.openclaw');
+    if (fs.existsSync(ocDir)) {
+        if (av.includes('jockeyvc') || ov.includes('jockeyvc')) {
+            ok(`OpenClaw detected — will use proxy via env vars`);
+        } else {
+            warn(`OpenClaw detected but env vars not set — run ${c.bold}npx agent-firewall setup${c.reset}`);
+        }
+    }
+
+    // Check shell config
+    const shell = findShellConfig();
+    if (shell && fs.existsSync(shell.path)) {
+        const content = fs.readFileSync(shell.path, 'utf-8');
+        if (content.includes(MARKER)) {
+            ok(`Shell config: ${c.green}${path.basename(shell.path)}${c.reset} has proxy vars`);
+        } else {
+            warn(`Shell config: ${c.yellow}${path.basename(shell.path)}${c.reset} — no proxy vars found`);
+        }
     }
     log('');
 }
 
 // ─── Main ───────────────────────────────────────────────
-const command = process.argv[2] || 'setup';
+const command = process.argv[2] || '--help';
 
 switch (command) {
     case 'setup': setup().catch(err => fail(err.message)); break;
     case 'scan': scan().catch(err => fail(err.message)); break;
     case 'status': status().catch(err => fail(err.message)); break;
     case 'verify': verify().catch(err => fail(err.message)); break;
+    case 'uninstall': uninstall().catch(err => fail(err.message)); break;
+    case '--version': case '-v':
+        log(`agent-firewall v${VERSION}`);
+        break;
     case '--help': case '-h':
-        header('Agent Runtime Control');
+        header('Agent Firewall');
         log('  Keep autonomous AI agents under control.\n');
-        log('  Usage: npx agent-firewall <command>\n');
-        log('  Commands:');
-        log('    setup     Auto-detect agents, patch configs, verify connection');
-        log('    scan      Scan agent logs for waste (loops, retries, missed caching)');
-        log('    status    Check live proxy stats (requests, savings, blocked loops)');
-        log('    verify    Test that routing is working\n');
+        log(`  ${c.bold}Usage:${c.reset} npx agent-firewall <command>\n`);
+        log(`  ${c.bold}Commands:${c.reset}`);
+        log(`    ${c.green}setup${c.reset}       Auto-detect agents, patch configs, verify connection`);
+        log(`    ${c.green}scan${c.reset}        Scan agent logs for waste (loops, retries, missed caching)`);
+        log(`    ${c.green}status${c.reset}      Check live proxy stats (requests, savings, blocked loops)`);
+        log(`    ${c.green}verify${c.reset}      Test that routing is working`);
+        log(`    ${c.green}uninstall${c.reset}   Remove proxy routing and restore original configs`);
+        log('');
+        log(`  ${c.bold}Flags:${c.reset}`);
+        log(`    ${c.dim}--version${c.reset}   Show version`);
+        log(`    ${c.dim}--help${c.reset}      Show this help\n`);
         break;
     default:
         fail(`Unknown command: ${command}`);
-        log(`Run ${c.bold}npx agent-firewall --help${c.reset} to see commands.`);
+        log(`Run ${c.bold}npx agent-firewall --help${c.reset} to see available commands.`);
+        process.exitCode = 1;
 }

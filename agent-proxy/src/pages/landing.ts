@@ -3,11 +3,13 @@ import { globalStats } from '../stats';
 
 /**
  * Renders the public landing page HTML with live aggregate stats.
+ * Design: Light mode — Stripe/Notion-inspired. White bg, clean borders,
+ * Inter font, one accent color (indigo-600), generous whitespace.
  */
 export function renderLandingPage(): string {
-    const agg = getAggregateStats();
+  const agg = getAggregateStats();
 
-    return `<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -15,76 +17,123 @@ export function renderLandingPage(): string {
 <title>Agent Firewall — Agent Runtime Control</title>
 <meta name="description" content="Keep autonomous AI agents under control. Loop detection, prompt caching, budget enforcement for Claude Code, OpenClaw, and any LLM agent.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
+:root {
+  --bg: #ffffff;
+  --bg-secondary: #fafafa;
+  --border: #e5e7eb;
+  --border-hover: #d1d5db;
+  --text: #111827;
+  --text-secondary: #6b7280;
+  --text-muted: #9ca3af;
+  --accent: #4f46e5;
+  --accent-light: #eef2ff;
+  --accent-hover: #4338ca;
+}
+
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;background:#0a0a0f;color:#e2e8f0;min-height:100vh}
+body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
+
+/* Nav */
+.nav{display:flex;justify-content:space-between;align-items:center;padding:16px 32px;border-bottom:1px solid var(--border);max-width:1100px;margin:0 auto}
+.nav .logo{font-weight:700;font-size:1rem;color:var(--text);display:flex;align-items:center;gap:8px}
+.nav .logo span{font-size:1.1rem}
+.nav a{color:var(--text-secondary);text-decoration:none;font-size:0.9rem;font-weight:500;transition:color 0.2s}
+.nav a:hover{color:var(--text)}
 
 /* Hero */
-.hero{text-align:center;padding:80px 20px 60px;background:linear-gradient(180deg,#1a103a 0%,#0a0a0f 100%)}
-.hero h1{font-size:3rem;font-weight:800;background:linear-gradient(135deg,#a78bfa,#818cf8,#6366f1);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:12px}
-.hero .sub{color:#94a3b8;font-size:1.2rem;max-width:600px;margin:0 auto 40px}
+.hero{text-align:center;padding:80px 24px 64px;max-width:680px;margin:0 auto}
+.badge{display:inline-flex;align-items:center;gap:6px;padding:4px 14px;border-radius:100px;border:1px solid var(--border);font-size:0.8rem;color:var(--text-secondary);margin-bottom:24px;font-weight:500}
+.badge .dot{width:6px;height:6px;border-radius:50%;background:#22c55e}
+.hero h1{font-size:clamp(2.2rem,4.5vw,3.2rem);font-weight:800;letter-spacing:-0.035em;line-height:1.15;margin-bottom:16px;color:var(--text)}
+.hero .sub{color:var(--text-secondary);font-size:1.1rem;max-width:480px;margin:0 auto 40px;line-height:1.6}
 
 /* Stats Grid */
-.stats{display:flex;justify-content:center;gap:40px;flex-wrap:wrap;margin:40px 0}
-.stat{text-align:center;padding:24px 32px;background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.2);border-radius:16px;min-width:180px;transition:border-color 0.3s}
-.stat:hover{border-color:rgba(99,102,241,0.5)}
-.stat .num{font-size:2.5rem;font-weight:800;color:#818cf8;font-variant-numeric:tabular-nums}
-.stat .label{color:#94a3b8;font-size:0.9rem;margin-top:4px}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);max-width:560px;margin:0 auto 40px;border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.stat{padding:24px 16px;text-align:center;border-right:1px solid var(--border);transition:background 0.2s}
+.stat:last-child{border-right:none}
+.stat:hover{background:var(--bg-secondary)}
+.stat .num{font-size:1.8rem;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;letter-spacing:-0.02em}
+.stat .label{color:var(--text-muted);font-size:0.7rem;margin-top:4px;text-transform:uppercase;letter-spacing:0.06em;font-weight:600}
 
-/* CTA */
-.cta{display:inline-block;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;padding:16px 40px;border-radius:12px;font-size:1.1rem;font-weight:600;text-decoration:none;margin:20px 0;transition:transform 0.2s,box-shadow 0.2s}
-.cta:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(99,102,241,0.3)}
-.code{background:#1e1b2e;border:1px solid #2d2b3e;border-radius:10px;padding:16px 24px;font-family:'SF Mono',Consolas,monospace;font-size:1rem;color:#c4b5fd;display:inline-block;margin:16px 0;user-select:all}
+/* CTA area */
+.actions{display:flex;flex-direction:column;align-items:center;gap:12px}
+.code{background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:10px 20px;font-family:'SF Mono','Fira Code',Consolas,monospace;font-size:0.85rem;color:var(--text);display:inline-flex;align-items:center;gap:8px;user-select:all;transition:border-color 0.2s}
+.code:hover{border-color:var(--border-hover)}
+.code .prefix{color:var(--text-muted)}
+.cta{display:inline-block;background:var(--accent);color:#fff;padding:12px 28px;border-radius:8px;font-size:0.9rem;font-weight:600;text-decoration:none;transition:all 0.2s;letter-spacing:-0.01em}
+.cta:hover{background:var(--accent-hover);transform:translateY(-1px);box-shadow:0 4px 12px rgba(79,70,229,0.25)}
 
 /* Features */
-.features{max-width:800px;margin:60px auto;padding:0 20px}
-.feature{display:flex;gap:16px;margin:24px 0;padding:20px;background:rgba(255,255,255,0.02);border-radius:12px;border:1px solid rgba(255,255,255,0.06);transition:border-color 0.3s,background 0.3s}
-.feature:hover{border-color:rgba(99,102,241,0.2);background:rgba(99,102,241,0.04)}
-.feature .icon{font-size:1.5rem;min-width:40px;text-align:center}
-.feature h3{color:#e2e8f0;font-size:1rem;margin-bottom:4px}
-.feature p{color:#64748b;font-size:0.9rem;line-height:1.5}
+.features-section{background:var(--bg-secondary);border-top:1px solid var(--border);padding:80px 24px}
+.features{max-width:720px;margin:0 auto}
+.features-header{text-align:center;margin-bottom:48px}
+.features-header h2{font-size:1.5rem;font-weight:700;letter-spacing:-0.02em;color:var(--text)}
+.features-header p{color:var(--text-secondary);margin-top:8px;font-size:0.95rem}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.feature{background:var(--bg);padding:24px;border-radius:12px;border:1px solid var(--border);transition:border-color 0.2s,box-shadow 0.2s}
+.feature:hover{border-color:var(--border-hover);box-shadow:0 2px 8px rgba(0,0,0,0.04)}
+.feature .icon{font-size:1.2rem;margin-bottom:10px}
+.feature h3{color:var(--text);font-size:0.9rem;font-weight:600;margin-bottom:4px;letter-spacing:-0.01em}
+.feature p{color:var(--text-secondary);font-size:0.8rem;line-height:1.55}
 
 /* Footer */
-.footer{text-align:center;padding:40px;color:#475569;font-size:0.85rem;border-top:1px solid rgba(255,255,255,0.04)}
+.footer{text-align:center;padding:40px 24px;color:var(--text-muted);font-size:0.8rem;border-top:1px solid var(--border)}
 
 /* Responsive */
-@media(max-width:600px){
-  .hero h1{font-size:2rem}
-  .stats{gap:16px}
-  .stat{min-width:140px;padding:16px 20px}
-  .stat .num{font-size:1.8rem}
+@media(max-width:640px){
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .stat{border-bottom:1px solid var(--border)}
+  .grid{grid-template-columns:1fr}
+  .hero{padding:48px 20px 40px}
+  .nav{padding:12px 20px}
 }
 </style>
 </head>
 <body>
 
+<nav class="nav">
+  <div class="logo"><span>🛡️</span> Agent Firewall</div>
+  <a href="#features">Features</a>
+</nav>
+
 <div class="hero">
-  <h1>🛡️ Agent Firewall</h1>
-  <p class="sub">Keep autonomous AI agents under control. Loop detection, prompt caching, budget enforcement — one command to protect your wallet.</p>
+  <div class="badge"><span class="dot"></span>Live — proxying agent traffic now</div>
+  <h1>Stop agents from burning your money</h1>
+  <p class="sub">One command to add loop detection, prompt caching, and budget enforcement to any AI agent.</p>
 
   <div class="stats">
-    <div class="stat"><div class="num" id="users">${agg.totalUsers}</div><div class="label">Users Protected</div></div>
-    <div class="stat"><div class="num" id="saved">$${agg.totalSaved.toFixed(2)}</div><div class="label">Money Saved</div></div>
-    <div class="stat"><div class="num" id="reqs">${globalStats.totalRequests.toLocaleString()}</div><div class="label">Requests Proxied</div></div>
+    <div class="stat"><div class="num" id="users">${agg.totalUsers}</div><div class="label">Users</div></div>
+    <div class="stat"><div class="num" id="saved">$${agg.totalSaved.toFixed(2)}</div><div class="label">Saved</div></div>
+    <div class="stat"><div class="num" id="reqs">${globalStats.totalRequests.toLocaleString()}</div><div class="label">Requests</div></div>
     <div class="stat"><div class="num" id="loops">${globalStats.blockedLoops}</div><div class="label">Loops Killed</div></div>
   </div>
 
-  <div class="code">npx agent-firewall scan</div>
-  <br>
-  <a href="#start" class="cta">Get Started →</a>
+  <div class="actions">
+    <div class="code"><span class="prefix">$</span> npx agent-firewall scan</div>
+    <a href="#features" class="cta">Get Started →</a>
+  </div>
 </div>
 
-<div class="features" id="start">
-  <div class="feature"><div class="icon">🔍</div><div><h3>Waste Scanner</h3><p>Reads your Claude Code and OpenClaw logs. Shows exactly how much money you're burning on retries, re-sends, and loops.</p></div></div>
-  <div class="feature"><div class="icon">🔄</div><div><h3>Loop Detection</h3><p>Circuit breaker kills stuck agents after repeated identical requests. No more $200 overnight bills from a spinning agent.</p></div></div>
-  <div class="feature"><div class="icon">💰</div><div><h3>Prompt Caching</h3><p>Auto-injects cache headers for Anthropic and OpenAI. Saves up to 90% on repeated context.</p></div></div>
-  <div class="feature"><div class="icon">🚫</div><div><h3>Budget Governor</h3><p>Set per-session spend caps with X-Budget-Limit header. Agents get a 402 when they hit the limit.</p></div></div>
-  <div class="feature"><div class="icon">🧠</div><div><h3>No-Progress Detection</h3><p>Fingerprints tool failures. If an agent hits the same error 5 times, it gets stopped before wasting more tokens.</p></div></div>
-  <div class="feature"><div class="icon">📊</div><div><h3>Per-User Dashboard</h3><p>Every user gets a personal savings dashboard with spend tracking, cache hit rates, and loop history.</p></div></div>
+<div class="features-section" id="features">
+  <div class="features">
+    <div class="features-header">
+      <h2>Everything you need to control agents</h2>
+      <p>Works with Claude Code, OpenClaw, and any LLM-powered agent.</p>
+    </div>
+    <div class="grid">
+      <div class="feature"><div class="icon">🔍</div><h3>Waste Scanner</h3><p>Reads your agent logs. Shows exactly how much you're burning on retries, re-sends, and stuck loops.</p></div>
+      <div class="feature"><div class="icon">🔄</div><h3>Loop Detection</h3><p>Circuit breaker kills stuck agents after repeated identical requests. No more overnight surprise bills.</p></div>
+      <div class="feature"><div class="icon">💰</div><h3>Prompt Caching</h3><p>Auto-injects cache headers for Anthropic and OpenAI. Saves up to 90% on repeated context.</p></div>
+      <div class="feature"><div class="icon">🚫</div><h3>Budget Governor</h3><p>Set per-session spend caps. Agents get a 402 when they hit the limit — hard kill, not a suggestion.</p></div>
+      <div class="feature"><div class="icon">🧠</div><h3>No-Progress Detection</h3><p>Fingerprints tool failures. Same error 5 times? Stopped automatically.</p></div>
+      <div class="feature"><div class="icon">📊</div><h3>Per-User Dashboard</h3><p>Every user gets a personal savings dashboard with spend tracking and loop history.</p></div>
+    </div>
+  </div>
 </div>
 
-<div class="footer">Agent Firewall — Agent Runtime Control for AI Developers</div>
+<div class="footer">Agent Firewall — Agent Runtime Control</div>
 
 <script>
 setInterval(async () => {
