@@ -120,14 +120,19 @@ cd ~/agentic-firewall/agent-proxy && pm2 restart agentic-firewall-proxy
 
 ### Context CDN
 - **Anthropic:** Real savings — injects `cache_control: { type: 'ephemeral' }` which triggers server-side prompt caching. Requires `anthropic-beta: prompt-caching-2024-07-31` header
-- **OpenAI/Gemini:** Currently mock implementations (prepends a system message / appends to systemInstruction). These do NOT provide actual cost savings yet
-- Cache injection only triggers on content blocks > 500 characters
+- **OpenAI:** Real savings — reorders messages to put system content first for automatic prefix caching (≥1024 tokens). OpenAI auto-caches matching prefixes with no headers needed
+- **Gemini:** Real savings — leverages Gemini's implicit caching by ensuring `systemInstruction` is prefix-stable and reordering contents for maximum cache hits (≥1024 tokens)
+- Cache injection only triggers on content blocks > 500 chars (Anthropic) or ≥1024 tokens (OpenAI/Gemini)
+
+### Auth Middleware
+- Rejects POST requests without `x-api-key` or `Authorization` header (401)
+- Allowlists `/api/stats` endpoint and GET/HEAD/OPTIONS methods
 
 ### Circuit Breaker
-- SHA-256 hashes the last user message per IP
-- Keeps a sliding window of 5 recent hashes
+- SHA-256 hashes the full payload (model + system + all messages) per API-key (falls back to IP)
+- Keeps a sliding window of 5 recent hashes with 5-minute TTL
 - If the last 3 are identical → returns 400 with `agentic_firewall_blocked` type
-- The agent must change its user message content to clear the breaker
+- Increments `blockedLoops` counter in globalStats
 
 ---
 

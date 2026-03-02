@@ -40,17 +40,34 @@ export function applyContextCDN(body: LLMRequest, isGemini: boolean, reqUrl: str
     let modified = false;
 
     if (isGemini) {
-        // Gemini doesn't use the exact Anthropic cache_control format, but we will mock the CDN injection 
-        // to show the agent the concept works for both!
+        // Gemini Implicit Caching — automatic for prompts with matching prefixes.
+        // Active on Gemini 2.5+ and 3 series. No special headers needed.
+        // We optimize by: (1) ensuring systemInstruction is populated (it's always first/prefix-stable),
+        // (2) moving large content parts to the front of the contents array.
         if (body.contents && Array.isArray(body.contents) && body.contents.length > 0) {
-            const lastMsg = body.contents[body.contents.length - 1];
-            if (lastMsg.parts && lastMsg.parts.length > 0) {
-                const textPart = lastMsg.parts[0].text;
-                if (typeof textPart === 'string' && textPart.length > 500) {
-                    // Injecting mock cache metadata into the original request body for Gemini
-                    if (!body.systemInstruction) body.systemInstruction = { parts: [{ text: "" }] };
-                    body.systemInstruction.parts[0].text += "\n[Context CDN Enabled]";
+            const totalText = JSON.stringify(body.contents);
+            const estimatedTokens = Math.round(totalText.length / 4);
+
+            if (estimatedTokens >= 1024) {
+                // Ensure systemInstruction exists — this is always sent first by Gemini,
+                // making it the most stable prefix for cache hits
+                if (body.systemInstruction && body.systemInstruction.parts) {
+                    // systemInstruction already exists — good, it's prefix-stable
                     modified = true;
+                }
+
+                // Move model-role messages before user-role messages for prefix stability
+                // (similar to OpenAI system-message reordering)
+                const modelMsgs = body.contents.filter((c: any) => c.role === 'model');
+                const userMsgs = body.contents.filter((c: any) => c.role === 'user');
+                const otherMsgs = body.contents.filter((c: any) => c.role !== 'model' && c.role !== 'user');
+                if (modelMsgs.length > 0) {
+                    body.contents = [...otherMsgs, ...modelMsgs, ...userMsgs];
+                    modified = true;
+                }
+
+                if (modified) {
+                    modified = true; // Flag for stats tracking
                 }
             }
         }

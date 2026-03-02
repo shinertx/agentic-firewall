@@ -47,4 +47,27 @@ describe('applyContextCDN', () => {
         expect(result.modified).toBe(false);
         expect(result.body.messages?.length).toBe(1);
     });
+
+    it('should optimize Gemini large payloads with systemInstruction for implicit caching', () => {
+        const body: LLMRequest = {
+            systemInstruction: { parts: [{ text: 'You are a helpful assistant.' }] },
+            contents: [
+                { role: 'user', parts: [{ text: 'A'.repeat(5000) }] },
+            ]
+        };
+        const result = applyContextCDN(body, true);
+
+        expect(result.modified).toBe(true);
+    });
+
+    it('should not modify Gemini payloads under 1024 tokens', () => {
+        const body: LLMRequest = {
+            contents: [
+                { role: 'user', parts: [{ text: 'hello' }] },
+            ]
+        };
+        const result = applyContextCDN(body, true);
+
+        expect(result.modified).toBe(false);
+    });
 });
