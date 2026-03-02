@@ -3,6 +3,8 @@ import { checkCircuitBreaker } from './circuitBreaker';
 import { attemptShadowRouterFailover } from './shadowRouter';
 import { getInputCost, CACHE_SAVINGS_RATE } from './pricing';
 import { generateCacheKey } from './tokenCounter';
+import { getUserId, checkBudget, recordUserSpend, recordUserLoop, getOrCreateUser } from './budgetGovernor';
+import { checkNoProgress } from './noProgress';
 
 // Explicit Interfaces for Edge Case Handling
 export interface LLMRequest {
@@ -161,13 +163,45 @@ export async function handleProxyRequest(req: Request, res: Response) {
 
     let optimizedBody = req.body;
     let originalBodyStr = req.body ? JSON.stringify(req.body) : "";
+    const apiKey = (req.headers['x-api-key'] || req.headers['authorization'] || '') as string;
+    const userId = getUserId(apiKey);
 
     if (req.method !== 'GET' && req.method !== 'HEAD' && req.body && Object.keys(req.body).length > 0) {
         const ip = req.ip || '127.0.0.1';
-        const apiKey = (req.headers['x-api-key'] || req.headers['authorization'] || '') as string;
         const cb = checkCircuitBreaker(ip, req.body, apiKey || undefined);
         if (cb.blocked) {
+            recordUserLoop(userId);
             res.status(400).json({ error: { message: cb.reason, type: 'agentic_firewall_blocked' } });
+            return;
+        }
+
+        // Budget governor — check spend cap
+        const budgetHeader = req.headers['x-budget-limit'] as string | undefined;
+        const budgetLimit = budgetHeader ? parseFloat(budgetHeader) : null;
+        const budgetCheck = checkBudget(userId, budgetLimit);
+        if (!budgetCheck.allowed) {
+            res.status(402).json({
+                error: {
+                    message: budgetCheck.reason,
+                    type: 'budget_exceeded',
+                    spent: budgetCheck.spent,
+                    limit: budgetCheck.limit,
+                    userId,
+                }
+            });
+            return;
+        }
+
+        // No-progress detection
+        const npCheck = checkNoProgress(userId, req.body);
+        if (npCheck.noProgress) {
+            res.status(400).json({
+                error: {
+                    message: npCheck.reason,
+                    type: 'no_progress_detected',
+                    consecutiveErrors: npCheck.consecutiveErrors,
+                }
+            });
             return;
         }
 
@@ -183,6 +217,15 @@ export async function handleProxyRequest(req: Request, res: Response) {
                 headers['anthropic-beta'] = currentBeta ? `${currentBeta},prompt-caching-2024-07-31` : 'prompt-caching-2024-07-31';
             }
         }
+
+        // Add no-progress warning header if applicable
+        if (npCheck.warning) {
+            res.setHeader('X-Firewall-Warning', npCheck.warning);
+        }
+
+        // Add user ID and dashboard URL headers
+        res.setHeader('X-Firewall-User', userId);
+        res.setHeader('X-Firewall-Dashboard', `https://api.jockeyvc.com/dashboard/${userId}`);
     }
 
     console.log(`[PROXY] => ${req.method} ${url}`);
@@ -239,6 +282,9 @@ export async function handleProxyRequest(req: Request, res: Response) {
             globalStats.savedTokens += savedTokens;
             globalStats.savedMoney += savingsCost;
         }
+
+        // Record per-user spend
+        recordUserSpend(userId, displayModel, estimatedPromptTokens, isCDN);
 
         recordActivity({
             time: new Date().toLocaleTimeString(),
