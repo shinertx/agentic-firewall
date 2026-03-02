@@ -1,0 +1,16 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-500: #3b82f6;
+  --color-bg-dark: #0f172a;
+  --color-glass: rgba(30, 41, 59, 0.7);
+  --color-glass-border: rgba(255, 255, 255, 0.1);
+}
+
+@layer base {
+  body {
+    background-color: var(--color-bg-dark);
+    color: white;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+}
