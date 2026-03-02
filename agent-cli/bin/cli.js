@@ -159,29 +159,39 @@ function analyzeClaudeTranscript(filepath) {
         let lastToolError = '';
         let consecutiveErrors = 0;
 
+        // Deduplicate by requestId — Claude Code logs EACH content block
+        // (text, tool_use, etc.) as a separate JSONL line with the SAME
+        // requestId and duplicated usage data. Without dedup, one API call
+        // with 5 content blocks = 5x over-count.
+        const seenRequestIds = new Set();
+
         for (const line of lines) {
             try {
                 const entry = JSON.parse(line);
 
-                // Count API responses with usage data
-                if (entry.message?.usage) {
-                    const u = entry.message.usage;
-                    result.totalInputTokens += (u.input_tokens || 0);
-                    result.totalOutputTokens += (u.output_tokens || 0);
-                    result.cacheCreationTokens += (u.cache_creation_input_tokens || 0);
-                    result.cacheReadTokens += (u.cache_read_input_tokens || 0);
-                    result.requests++;
+                // Count API responses with usage data — ONLY ONCE per requestId
+                if (entry.message?.usage && entry.requestId) {
+                    if (!seenRequestIds.has(entry.requestId)) {
+                        seenRequestIds.add(entry.requestId);
 
-                    // Track model usage
-                    const model = entry.message.model || 'unknown';
-                    result.models[model] = (result.models[model] || 0) + 1;
+                        const u = entry.message.usage;
+                        result.totalInputTokens += (u.input_tokens || 0);
+                        result.totalOutputTokens += (u.output_tokens || 0);
+                        result.cacheCreationTokens += (u.cache_creation_input_tokens || 0);
+                        result.cacheReadTokens += (u.cache_read_input_tokens || 0);
+                        result.requests++;
+
+                        // Track model usage
+                        const model = entry.message.model || 'unknown';
+                        result.models[model] = (result.models[model] || 0) + 1;
+                    }
                 }
 
-                // Track tool errors
-                if (entry.message?.content) {
-                    const content = entry.message.content;
-                    if (Array.isArray(content)) {
-                        for (const block of content) {
+                // Track tool errors (these are on user-type lines, not deduplicated)
+                if (entry.type === 'user' && entry.message?.content) {
+                    const msgContent = entry.message.content;
+                    if (Array.isArray(msgContent)) {
+                        for (const block of msgContent) {
                             if (block.is_error) {
                                 result.toolErrors++;
                                 const errorSig = (block.content || '').slice(0, 100);
@@ -204,13 +214,18 @@ function analyzeClaudeTranscript(filepath) {
             } catch { /* skip non-JSON lines */ }
         }
 
-        // Calculate wasted tokens: tokens that COULD have been cached but weren't
-        // If cacheCreation > 0 but cacheRead is low relative to total input, that's waste
-        const totalCacheable = result.cacheCreationTokens;
-        if (totalCacheable > 0 && result.requests > 1) {
-            // Every request after the first could have read from cache
-            const couldHaveCached = totalCacheable * (result.requests - 1);
-            result.wastedTokens = Math.max(0, couldHaveCached - result.cacheReadTokens);
+        // Calculate wasted tokens — conservative approach:
+        // Compare cache efficiency. If cache_read is much lower than
+        // cache_creation * (requests-1), some requests missed the cache.
+        // But cap the waste at a reasonable fraction of total input tokens.
+        if (result.cacheCreationTokens > 0 && result.requests > 1) {
+            // Expected cache reads: each request after the first COULD read
+            // the same cached prefix. But only count missed reads for requests
+            // that actually had no cache_read at all.
+            const expectedCacheReads = result.cacheCreationTokens;
+            const missedCacheTokens = Math.max(0, expectedCacheReads - result.cacheReadTokens);
+            // Cap at total input tokens to avoid absurd numbers
+            result.wastedTokens = Math.min(missedCacheTokens, result.totalInputTokens);
         }
 
     } catch { /* file read error */ }

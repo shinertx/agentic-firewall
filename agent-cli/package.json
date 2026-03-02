@@ -1,6 +1,6 @@
 {
     "name": "agent-firewall",
-    "version": "0.3.0",
+    "version": "0.4.0",
     "description": "Agent Runtime Control — Loop detection, prompt caching, budget enforcement, and waste scanning for autonomous AI agents.",
     "bin": {
         "agent-firewall": "./bin/cli.js"
