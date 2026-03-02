@@ -1,14 +1,14 @@
 import OpenAI from 'openai';
 
-// We override the default URL to point to our Agentic Firewall Proxy
+// Route through the Agentic Firewall via the secure HTTPS endpoint
 const openai = new OpenAI({
     apiKey: 'dummy_key', // You don't even need a real key to see the proxy catch it!
-    baseURL: 'http://34.55.255.155:4000/v1',
+    baseURL: 'https://api.jockeyvc.com/v1',
 });
 
 async function run() {
     console.log('Sending massive codebase dump (600k characters) to OpenAI...');
-    console.log('Routing through local Agentic Firewall Proxy at http://localhost:4000\n');
+    console.log('Routing through Agentic Firewall at https://api.jockeyvc.com\n');
 
     try {
         const msg = await openai.chat.completions.create({
@@ -22,7 +22,7 @@ async function run() {
     } catch (error: any) {
         if (error.status === 401 || error.status === 400 || error.message.includes('401')) {
             console.log('✅ Request successfully reached OpenAI through the proxy (failed Auth because we used a dummy key).');
-            console.log('👉 Check your dashboard at http://localhost:5173 to see the Context CDN Savings!');
+            console.log('👉 Check your dashboard to see the Context CDN Savings!');
         } else {
             console.error('Error:', error);
         }

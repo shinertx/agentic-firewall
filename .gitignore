@@ -1,5 +1,36 @@
+# Dependencies
 node_modules/
+
+# Environment
 .env
+.env.local
+.env.*.local
+
+# Build output
 dist/
 build/
+*.tsbuildinfo
+
+# Compiled JS from TypeScript source (run via tsx, don't commit)
+agent-proxy/src/*.js
+
+# OS
 .DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# PM2
+*.pid
+ecosystem.config.js
+
+# Logs
+*.log
+npm-debug.log*
+
+# Coverage
+coverage/

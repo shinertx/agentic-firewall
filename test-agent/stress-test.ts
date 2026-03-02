@@ -2,12 +2,12 @@ import OpenAI from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
 
 // Replace with your GCP server IP if testing remotely, or leave locally
-const PROXY_URL = 'http://34.55.255.155:4000';
+const PROXY_URL = 'https://api.jockeyvc.com';
 
-const openai = new OpenAI({ apiKey: 'dummy', baseURL: `${PROXY_URL}/v1` });
-const anthropic = new Anthropic({ apiKey: 'dummy', baseURL: PROXY_URL });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || 'dummy', baseURL: `${PROXY_URL}/v1` });
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || 'dummy', baseURL: PROXY_URL });
 
-const MASSIVE_PROMPT = 'A'.repeat(500000); // 500k characters to trigger CDN
+const MASSIVE_PROMPT = 'This codebase is enormous, please analyze it perfectly because we need exact optimization rules! '.repeat(50000); // Massive context length
 
 async function simulateAgentLoop(agentId: string, provider: 'openai' | 'anthropic', iterations: number) {
     console.log(`[Agent ${agentId}] 🚀 Starting ${provider} loop for ${iterations} iterations...`);
@@ -26,7 +26,7 @@ async function simulateAgentLoop(agentId: string, provider: 'openai' | 'anthropi
                 });
             } else {
                 await anthropic.messages.create({
-                    model: 'claude-3-5-sonnet-20240620',
+                    model: 'claude-sonnet-4-6',
                     max_tokens: 100,
                     system: `You are Agent ${agentId}. Codebase: ${MASSIVE_PROMPT}`,
                     messages: [{ role: 'user', content: 'List the files.' }]
@@ -52,7 +52,7 @@ async function simulateAgentLoop(agentId: string, provider: 'openai' | 'anthropi
 async function runStressTest() {
     console.log('🔥 STARTING AGENTIC FIREWALL STRESS TEST 🔥\n');
     console.log(`🎯 Target: ${PROXY_URL}`);
-    console.log('📊 Open your dashboard at http://34.55.255.155:5173 to watch the savings explode!\n');
+    console.log('📊 Open your dashboard to watch the savings explode!\n');
 
     // Simulate 3 different agents going rogue at the exact same time
     await Promise.all([

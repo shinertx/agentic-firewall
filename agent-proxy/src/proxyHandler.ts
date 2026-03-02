@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { checkCircuitBreaker } from './circuitBreaker';
 import { attemptShadowRouterFailover } from './shadowRouter';
+import { getInputCost, CACHE_SAVINGS_RATE } from './pricing';
 
 // Explicit Interfaces for Edge Case Handling
 export interface LLMRequest {
@@ -55,19 +56,12 @@ export function applyContextCDN(body: LLMRequest, isGemini: boolean, reqUrl: str
         }
     } else if (reqUrl.includes('/v1/chat/completions') || reqUrl.includes('api.openai.com')) {
         // OpenAI Mock Context CDN (They don't have explicit block-level caching headers like Anthropic yet)
-        // We inject a fake developer system prompt token to represent the CDN interception for the MVP
-        if (body.messages && Array.isArray(body.messages) && body.messages.length > 0) {
-            const firstMsg = body.messages[0];
-            if (firstMsg.role === 'system') {
-                if (typeof firstMsg.content === 'string' && firstMsg.content.length > 500) {
-                    firstMsg.content += "\n[Context CDN Enabled - OpenAI Proxy]";
-                    modified = true;
-                }
-            } else if (firstMsg.role === 'user') {
-                if (typeof firstMsg.content === 'string' && firstMsg.content.length > 500) {
-                    body.messages.unshift({ role: 'system', content: '[Context CDN Enabled - OpenAI Proxy]' });
-                    modified = true;
-                }
+        // We evaluate the total payload length. If it's massive (RAG injection), we inject the mock CDN tag.
+        if (JSON.stringify(body).length > 2000) {
+            if (body.messages && Array.isArray(body.messages)) {
+                // Prepend an invisible system tag to signify the Context CDN caught the giant payload layer
+                body.messages.unshift({ role: 'system', content: '[Agentic Firewall Context CDN Intercepted - Optimizing Payload...]' });
+                modified = true;
             }
         }
     } else {
@@ -101,13 +95,14 @@ export function applyContextCDN(body: LLMRequest, isGemini: boolean, reqUrl: str
         else if (reqUrl.includes('/v1/chat/completions')) providerName = 'OpenAI';
         console.log(`[PROXY Context CDN] 🚀 Injected ephemeral cache_control headers for ${providerName}`);
     }
-    return body;
+    return { modified, body };
 }
 
 export async function handleProxyRequest(req: Request, res: Response) {
-    const isGemini = req.originalUrl.includes('/v1beta/models') || req.originalUrl.includes('/v1/models');
+    const hasGoogKey = req.query.key || req.headers['x-goog-api-key'];
+    const isGemini = !!(req.originalUrl.includes('/v1beta/models') || (req.originalUrl.includes('/v1/models') && hasGoogKey));
     const isNvidia = req.originalUrl.includes('integrate.api.nvidia.com') || (req.body?.model && (typeof req.body.model === 'string') && (req.body.model.startsWith('meta/') || req.body.model.startsWith('nvidia/')));
-    const isOpenAI = !isNvidia && (req.originalUrl.includes('/v1/chat/completions') || (req.headers.host && req.headers.host.includes('openai.com')));
+    const isOpenAI = !isNvidia && (req.originalUrl.includes('/v1/chat/completions') || req.originalUrl.includes('/v1/models') || (req.headers.host && req.headers.host.includes('openai.com')));
 
     let baseUrl = ANTHROPIC_BASE_URL;
     if (isGemini) baseUrl = GEMINI_BASE_URL;
@@ -141,8 +136,17 @@ export async function handleProxyRequest(req: Request, res: Response) {
         }
 
         // Deep copy so we don't accidentally mutate the original request when passing it
-        optimizedBody = applyContextCDN(JSON.parse(originalBodyStr), isGemini, req.originalUrl);
+        const result = applyContextCDN(JSON.parse(originalBodyStr), isGemini, req.originalUrl);
+        optimizedBody = result.body;
         init.body = JSON.stringify(optimizedBody);
+
+        // Anthropic strictly requires the beta header for prompt caching, otherwise it returns a 400 Bad Request
+        if (result.modified && !isGemini && !isOpenAI && !isNvidia) {
+            const currentBeta = headers['anthropic-beta'] || '';
+            if (!currentBeta.includes('prompt-caching-2024-07-31')) {
+                headers['anthropic-beta'] = currentBeta ? `${currentBeta},prompt-caching-2024-07-31` : 'prompt-caching-2024-07-31';
+            }
+        }
     }
 
     console.log(`[PROXY] => ${req.method} ${url}`);
@@ -167,19 +171,13 @@ export async function handleProxyRequest(req: Request, res: Response) {
     // Record stats
     import('./stats').then(({ globalStats, recordActivity }) => {
         globalStats.totalRequests++;
-        const reqTokens = optimizedBody?.max_tokens || 1000;
-        const isCDN = statusText === 'Pass-through' && JSON.stringify(optimizedBody) !== originalBodyStr;
 
-        if (isCDN) {
-            statusText = 'Context CDN Hit';
-            statusColor = 'text-emerald-400 bg-emerald-400/10';
-            // mock savings calc
-            const saved = (reqTokens > 0 ? reqTokens : 5000) * 0.8;
-            globalStats.savedTokens += saved;
-            globalStats.savedMoney += (saved / 1000000) * 3.0; // $3/M tokens
-        }
+        // Estimate prompt size: 1 token ~= 4 characters. This accurately measures massive NVIDIA/OpenAI payloads!
+        // We floor at 1,000 for standard interactions, but RAG code scans easily hit 2,000,000 tokens per loop.
+        const estimatedPromptTokens = Math.max(Math.round(originalBodyStr.length / 4), 1000);
 
-        // Extract model name accurately for both
+        const optimizedStr = optimizedBody ? JSON.stringify(optimizedBody) : "";
+        // Extract model name accurately before math
         let displayModel = optimizedBody?.model || 'unknown';
         if (isGemini) {
             const urlMatch = req.originalUrl.match(/models\/(gemini-[^:]+)/);
@@ -188,10 +186,28 @@ export async function handleProxyRequest(req: Request, res: Response) {
             displayModel = optimizedBody?.model || 'unknown'; // OpenAI/NVIDIA exact model specified in payload
         }
 
+        const isCDN = statusText === 'Pass-through' && optimizedStr !== originalBodyStr;
+
+        if (isCDN) {
+            statusText = 'Context CDN Hit';
+            statusColor = 'text-emerald-400 bg-emerald-400/10';
+
+            // Dynamic pricing via centralized pricing module
+            const inputCostPerMillionTokens = getInputCost(displayModel);
+
+            // Calculate the dollar value of cached tokens
+            const baseCost = (estimatedPromptTokens / 1_000_000) * inputCostPerMillionTokens;
+            const savingsCost = baseCost * CACHE_SAVINGS_RATE;
+            const savedTokens = estimatedPromptTokens * CACHE_SAVINGS_RATE;
+
+            globalStats.savedTokens += savedTokens;
+            globalStats.savedMoney += savingsCost;
+        }
+
         recordActivity({
             time: new Date().toLocaleTimeString(),
             model: displayModel,
-            tokens: reqTokens ? `${Math.round(reqTokens / 1000)}k` : 'auto',
+            tokens: estimatedPromptTokens ? `${Math.round(estimatedPromptTokens / 1000)}k` : 'auto',
             status: statusText,
             statusColor
         });
@@ -203,6 +219,13 @@ export async function handleProxyRequest(req: Request, res: Response) {
             res.setHeader(key, value);
         }
     });
+
+    const isSSE = response.headers.get('content-type')?.includes('text/event-stream');
+    if (isSSE) {
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+        res.flushHeaders();
+    }
 
     res.status(response.status);
 

@@ -14,7 +14,7 @@ function App() {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const res = await fetch('http://localhost:4000/api/stats');
+        const res = await fetch('https://api.jockeyvc.com/api/stats');
         if (res.ok) {
           const data = await res.json();
           if (data.totalRequests > 0) {
@@ -57,7 +57,7 @@ function App() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <StatCard
             title="Money Saved"
-            value={`$${stats.savedMoney.toFixed(2)}`}
+            value={`$${stats.savedMoney < 1 ? stats.savedMoney.toFixed(4) : stats.savedMoney.toFixed(2)}`}
             icon={<Zap className="w-5 h-5 text-yellow-400" />}
             color="from-yellow-500/20 to-transparent border-yellow-500/20"
           />

@@ -1,7 +1,7 @@
 import OpenAI from 'openai';
 
-// Target the Live GCP Agentic Firewall
-const PROXY_URL = 'http://34.55.255.155:4000/v1';
+// Route through the Agentic Firewall via the secure HTTPS endpoint
+const PROXY_URL = 'https://api.jockeyvc.com/v1';
 
 const openai = new OpenAI({
     apiKey: 'dummy_nvidia_key',
@@ -27,7 +27,7 @@ async function testNvidiaRouting() {
     } catch (error: any) {
         if (error.status === 401) {
             console.log('\n✅ TEST PASSED: The Firewall successfully caught the payload, injected the Context CDN tags, routed it directly to NVIDIA, and NVIDIA rejected our fake dummy key!');
-            console.log('\n👉 Check your live Dashboard at http://34.55.255.155:5173 to see the exact green "Context CDN Hit" and the Dollars Saved!');
+            console.log('\n👉 Check your live Dashboard to see the exact green "Context CDN Hit" and the Dollars Saved!');
         } else {
             console.error('Error:', error);
         }
