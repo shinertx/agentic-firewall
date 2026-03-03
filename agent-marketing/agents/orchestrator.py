@@ -1,7 +1,13 @@
+"""
+Studio Marketing Orchestrator — Product-Aware.
+Runs the core pipeline: Scout → Engager → Poster.
+Only imports agents that actually exist. Supports --single-cycle for cron/CI.
+"""
 import time
 import sys
 import os
 import logging
+import argparse
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 
 # Ensure we can import from local directory
@@ -10,21 +16,18 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from agents.scout import ScoutAgent
 from agents.engager import EngagerAgent
 from agents.poster import PosterAgent
-from agents.youtube_poster import YouTubePosterAgent
-from agents.tiktok_scout import TikTokScout
-from agents.youtube_scout import YouTubeScout
-from agents.twitter_sniper import TwitterSniper
-from agents.seo_generator import SEOGenerator
-from agents.account_healer import AccountHealerAgent
-from agents.gmail_monitor import GmailMonitor
 
+# Optional agents — import only if they exist
+try:
+    from agents.youtube_scout import YouTubeScout
+    HAS_YOUTUBE = True
+except ImportError:
+    HAS_YOUTUBE = False
 
 # Configure structured logging
 def _setup_logging():
-    """Initialize logging for the orchestrator and all agents."""
     log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
     os.makedirs(log_dir, exist_ok=True)
-
     log_file = os.path.join(log_dir, "orchestrator.log")
 
     logging.basicConfig(
@@ -35,25 +38,13 @@ def _setup_logging():
             logging.StreamHandler(sys.stdout)
         ]
     )
+    return logging.getLogger("studio.orchestrator")
 
-    return logging.getLogger("jenni.orchestrator")
 
-# Agent timeout setting (in seconds)
-AGENT_TIMEOUT_S = int(os.getenv("JENNI_AGENT_TIMEOUT", "120"))
+AGENT_TIMEOUT_S = int(os.getenv("AGENT_TIMEOUT", "120"))
+
 
 def _run_agent_with_timeout(logger, name, agent_fn, timeout=AGENT_TIMEOUT_S):
-    """
-    Run an agent with a timeout to prevent hung agents from blocking the pipeline.
-
-    Args:
-        logger: Logger instance
-        name: Agent name for logging
-        agent_fn: Callable (agent.run) to execute
-        timeout: Timeout in seconds
-
-    Returns:
-        True if successful, False if timed out or failed
-    """
     try:
         with ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(agent_fn)
@@ -67,93 +58,79 @@ def _run_agent_with_timeout(logger, name, agent_fn, timeout=AGENT_TIMEOUT_S):
         logger.error("%s failed: %s", name, e, exc_info=True)
         return False
 
-def run_swarm():
-    """Run the Jenni Marketing Swarm with error handling and timeouts."""
-    logger = logging.getLogger("jenni.orchestrator")
-    logger.info("Spinning up Jenni Marketing Swarm...")
 
+def run_cycle(logger, cycle_count=1):
+    """Run one marketing cycle: Scout → Engager → Poster."""
+    cycle_start = time.time()
+    logger.info("=== Cycle %d Starting ===", cycle_count)
+
+    # Core pipeline
     scout = ScoutAgent()
-    tiktok = TikTokScout()
-    youtube = YouTubeScout()
-    twitter = TwitterSniper()
-    seo = SEOGenerator()
-
     engager = EngagerAgent()
     poster = PosterAgent()
-    yt_poster = YouTubePosterAgent()
 
-    # Account health agents
-    healer = AccountHealerAgent(reddit=poster.reddit)
-    gmail_monitor = GmailMonitor()
+    # Phase 1: Hunt — find leads across all products
+    _run_agent_with_timeout(logger, "Scout", scout.run)
 
+    if HAS_YOUTUBE:
+        youtube = YouTubeScout()
+        _run_agent_with_timeout(logger, "YouTube Scout", youtube.run)
+
+    # Phase 2: Draft — generate product-specific replies
+    _run_agent_with_timeout(logger, "Engager", engager.run)
+
+    # Phase 3: Post — auto-post to Reddit
+    post_ok = _run_agent_with_timeout(logger, "Poster", poster.run)
+
+    cycle_duration = time.time() - cycle_start
+    logger.info("=== Cycle %d Complete (%.2fs) ===", cycle_count, cycle_duration)
+
+    return post_ok
+
+
+def run_swarm(single_cycle=False):
+    """Run the Studio Marketing Swarm."""
+    logger = logging.getLogger("studio.orchestrator")
+    logger.info("Studio Marketing Swarm starting...")
+
+    if single_cycle:
+        logger.info("Running single cycle (cron mode)")
+        run_cycle(logger, 1)
+        logger.info("Single cycle complete. Exiting.")
+        return
+
+    # Continuous mode
     cycle_count = 1
     poster_failures = 0
 
     try:
         while True:
-            cycle_start = time.time()
-            logger.info("=== Cycle %d Starting ===", cycle_count)
+            post_ok = run_cycle(logger, cycle_count)
 
-            # Phase 1: Hunt (Reddit + TikTok + YouTube + Twitter)
-            _run_agent_with_timeout(logger, "Scout", scout.run)
-            _run_agent_with_timeout(logger, "TikTok Scout", tiktok.run)
-            _run_agent_with_timeout(logger, "YouTube Scout", youtube.run)
-            _run_agent_with_timeout(logger, "Twitter Sniper", twitter.run)
-
-            # Phase 2: Build (SEO)
-            if cycle_count % 10 == 1:
-                _run_agent_with_timeout(logger, "SEO Generator", seo.run)
-
-            # Phase 3: React
-            _run_agent_with_timeout(logger, "Engager", engager.run)
-
-            # Phase 4: Action
-            post_ok = _run_agent_with_timeout(logger, "Poster", poster.run)
             if not post_ok:
                 poster_failures += 1
                 logger.warning("Poster failure #%d", poster_failures)
+                if poster_failures >= 5:
+                    logger.critical("Poster failed %d times — circuit breaker triggered.", poster_failures)
+                    break
             else:
                 poster_failures = 0
 
-            _run_agent_with_timeout(logger, "YouTube Poster", yt_poster.run)
-
-            # Phase 5: Health monitoring
-            # Check Gmail for Reddit alerts every cycle
-            try:
-                gmail_alerts = gmail_monitor.run(healer=healer)
-                if gmail_alerts:
-                    logger.warning("Gmail: %d Reddit alert(s) detected this cycle", len(gmail_alerts))
-            except Exception as e:
-                logger.warning("Gmail monitor error: %s", e)
-
-            # Run healer proactively every 5 cycles OR if poster failing repeatedly
-            if cycle_count % 5 == 0 or poster_failures >= 3:
-                if poster_failures >= 5:
-                    logger.critical("Poster failed %d times — REDDIT DOWN. Halting swarm circuit breaker.", poster_failures)
-                    break
-                
-                if poster_failures >= 3:
-                    logger.warning("Poster failed %d times — forcing AccountHealer", poster_failures)
-                try:
-                    _run_agent_with_timeout(logger, "AccountHealer", healer.run, timeout=600)
-                except Exception as e:
-                    logger.warning("AccountHealer error: %s", e)
-
-            cycle_duration = time.time() - cycle_start
-            logger.info("=== Cycle %d Complete (duration: %.2fs) ===", cycle_count, cycle_duration)
-
             cycle_count += 1
-
-            # Slower pacing to avoid rate limits
-            logger.info("Sleeping for 300 seconds before next cycle...")
+            logger.info("Sleeping 300s before next cycle...")
             time.sleep(300)
 
     except KeyboardInterrupt:
-        logger.info("Swarm stopping manually after %d cycles", cycle_count - 1)
+        logger.info("Swarm stopped after %d cycles", cycle_count - 1)
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Studio Marketing Swarm")
+    parser.add_argument("--single-cycle", action="store_true",
+                        help="Run one cycle and exit (for cron/CI)")
+    args = parser.parse_args()
+
     logger = _setup_logging()
     logger.info("Orchestrator starting")
-    run_swarm()
+    run_swarm(single_cycle=args.single_cycle)
     logger.info("Orchestrator shutdown complete")
