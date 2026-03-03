@@ -1,15 +1,16 @@
-import { getAggregateStats } from '../budgetGovernor';
-import { globalStats } from '../stats';
-
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.renderLandingPage = renderLandingPage;
+const budgetGovernor_1 = require("../budgetGovernor");
+const stats_1 = require("../stats");
 /**
  * Renders the public landing page HTML with live aggregate stats.
  * Design: Light mode — Stripe/Notion-inspired. White bg, clean borders,
  * Inter font, one accent color (indigo-600), generous whitespace.
  */
-export function renderLandingPage(): string {
-  const agg = getAggregateStats();
-
-  return `<!DOCTYPE html>
+function renderLandingPage() {
+    const agg = (0, budgetGovernor_1.getAggregateStats)();
+    return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -106,8 +107,8 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   <div class="stats">
     <div class="stat"><div class="num" id="users">${agg.totalUsers}</div><div class="label">Users</div></div>
     <div class="stat"><div class="num" id="saved">$${agg.totalSaved.toFixed(2)}</div><div class="label">Saved</div></div>
-    <div class="stat"><div class="num" id="reqs">${globalStats.totalRequests.toLocaleString()}</div><div class="label">Requests</div></div>
-    <div class="stat"><div class="num" id="loops">${globalStats.blockedLoops}</div><div class="label">Loops Killed</div></div>
+    <div class="stat"><div class="num" id="reqs">${stats_1.globalStats.totalRequests.toLocaleString()}</div><div class="label">Requests</div></div>
+    <div class="stat"><div class="num" id="loops">${stats_1.globalStats.blockedLoops}</div><div class="label">Loops Killed</div></div>
   </div>
 
   <div class="actions">

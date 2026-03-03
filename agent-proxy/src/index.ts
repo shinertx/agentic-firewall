@@ -58,7 +58,7 @@ function requireAdmin(req: Request, res: Response, next: express.NextFunction) {
     res.status(401).json({ error: 'Unauthorized — set Authorization: Bearer <ADMIN_TOKEN>' });
 }
 
-app.get('/api/stats', requireAdmin, (req: Request, res: Response) => {
+app.get('/api/stats', (req: Request, res: Response) => {
     res.json(globalStats);
 });
 

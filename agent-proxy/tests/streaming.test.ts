@@ -17,7 +17,7 @@ describe('Streaming Support', () => {
         // the cache_control header applies to the input, not the output stream
         const body: LLMRequest = {
             model: 'claude-sonnet-4-6',
-            system: 'A'.repeat(2000),
+            system: 'A'.repeat(5000),
             messages: [{ role: 'user', content: 'stream this' }],
         };
         const result = applyContextCDN(body, false);

@@ -3,16 +3,16 @@ import { applyContextCDN, LLMRequest } from '../src/proxyHandler';
 
 describe('applyContextCDN', () => {
 
-    it('should inject ephemeral cache control into Anthropic string system prompts > 500 chars', () => {
-        const body: LLMRequest = { system: 'A'.repeat(600) };
+    it('should inject ephemeral cache control into Anthropic string system prompts > 4096 chars', () => {
+        const body: LLMRequest = { system: 'A'.repeat(5000) };
         const result = applyContextCDN(body, false);
 
         expect(result.body.system[0].cache_control?.type).toBe('ephemeral');
-        expect(result.body.system[0].text.length).toBe(600);
+        expect(result.body.system[0].text.length).toBe(5000);
     });
 
-    it('should inject ephemeral cache control into Anthropic array system prompts > 500 chars', () => {
-        const body: LLMRequest = { system: [{ type: 'text', text: 'A'.repeat(600) }] };
+    it('should inject ephemeral cache control into Anthropic array system prompts > 4096 chars', () => {
+        const body: LLMRequest = { system: [{ type: 'text', text: 'A'.repeat(5000) }] };
         const result = applyContextCDN(body, false);
 
         expect(result.body.system[0].cache_control?.type).toBe('ephemeral');
