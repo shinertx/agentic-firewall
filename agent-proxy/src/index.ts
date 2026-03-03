@@ -69,6 +69,19 @@ app.get('/api/stats', (req: Request, res: Response) => {
     res.json(globalStats);
 });
 
+// CLI registration telemetry
+const registrations: any[] = [];
+app.post('/api/register', express.json(), (req: Request, res: Response) => {
+    const ping = { ...req.body, ip: req.ip, receivedAt: new Date().toISOString() };
+    registrations.push(ping);
+    console.log(`[REGISTER] 📥 Setup complete from ${req.ip} — ${ping.platform}/${ping.arch} node ${ping.node} v${ping.version}`);
+    res.json({ ok: true, totalRegistrations: registrations.length });
+});
+
+app.get('/api/registrations', requireAdmin, (req: Request, res: Response) => {
+    res.json({ total: registrations.length, registrations });
+});
+
 // Per-user stats API
 import { getUserStats, getAggregateStats, exportUserData, importUserData } from './budgetGovernor';
 import { getNoProgressStats } from './noProgress';

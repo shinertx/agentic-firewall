@@ -1,0 +1,74 @@
+services:
+  # ── Core Proxy Server ──────────────────────────────────────
+  proxy:
+    build:
+      context: ./agent-proxy
+      dockerfile: Dockerfile
+    container_name: agentic-firewall-proxy
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    env_file:
+      - ./agent-proxy/.env
+    volumes:
+      - proxy-data:/app/data
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4000/api/stats"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ── Dashboard ───────────────────────────────────────────────
+  dashboard:
+    build:
+      context: ./agent-dashboard
+      dockerfile: Dockerfile
+    container_name: agentic-firewall-dashboard
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    depends_on:
+      proxy:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  # ── Staging Proxy (same image, different port + env) ────────
+  proxy-staging:
+    build:
+      context: ./agent-proxy
+      dockerfile: Dockerfile
+    container_name: agentic-firewall-proxy-staging
+    restart: unless-stopped
+    ports:
+      - "4001:4000"
+    env_file:
+      - ./agent-proxy/.env
+    volumes:
+      - proxy-staging-data:/app/data
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4000/api/stats"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+    profiles:
+      - staging
+
+volumes:
+  proxy-data:
+  proxy-staging-data:

@@ -1,0 +1,177 @@
+{
+    "products": [
+        {
+            "id": "agentic-firewall",
+            "name": "Agentic Firewall",
+            "tagline": "Kill infinite loops. Cut API waste by 40%.",
+            "url": "https://api.jockeyvc.com",
+            "landing": "https://ai.jockeyvc.com",
+            "keywords": [
+                "api bill",
+                "huge openai bill",
+                "huge anthropic bill",
+                "agent loop",
+                "infinite loop",
+                "agent stuck",
+                "rate limit",
+                "429",
+                "cost runaway",
+                "agent burned my money",
+                "agent spent too much",
+                "tool call loop",
+                "agent spinning",
+                "agent keeps failing",
+                "openclaw expensive",
+                "claude code expensive",
+                "devin expensive",
+                "auto-gpt loop"
+            ],
+            "subreddits": [
+                "OpenAI",
+                "ClaudeAI",
+                "AutoGPT",
+                "LangChain",
+                "LocalLLaMA"
+            ],
+            "reply_style": "empathetic-technical",
+            "reply_template": "I built a proxy called {name} that sits between your agent and the LLM API — it detects loops, kills runaway calls, and tracks every dollar. {tagline} Check it out: {landing}"
+        },
+        {
+            "id": "waste-scanner",
+            "name": "Waste Scanner",
+            "tagline": "Free CLI — see exactly how much your agents waste in 30 seconds.",
+            "url": "https://scan.jockeyvc.com",
+            "npm": "npx @jockeyvc/waste-scan",
+            "keywords": [
+                "api costs",
+                "expensive api",
+                "token costs",
+                "reduce openai costs",
+                "reduce anthropic costs",
+                "save money openai",
+                "openai billing",
+                "anthropic billing",
+                "too expensive",
+                "cost optimization"
+            ],
+            "subreddits": [
+                "OpenAI",
+                "ClaudeAI",
+                "programming",
+                "webdev",
+                "MachineLearning"
+            ],
+            "reply_style": "helpful-free-tool",
+            "reply_template": "I made a free CLI that scans your agent logs and shows you exactly where the money goes — duplicate reads, loops, overkill model usage. Run `{npm}` and it generates a 'Grief Report' in 30 seconds. No signup, fully local."
+        },
+        {
+            "id": "context-shredder",
+            "name": "Context Shredder",
+            "tagline": "70% fewer tokens. Same results.",
+            "url": "https://shredder.jockeyvc.com",
+            "keywords": [
+                "token limit",
+                "context window",
+                "too many tokens",
+                "prompt caching",
+                "long conversation",
+                "context length",
+                "max tokens",
+                "truncated context",
+                "conversation too long",
+                "token usage",
+                "context overflow"
+            ],
+            "subreddits": [
+                "ClaudeAI",
+                "OpenAI",
+                "LocalLLaMA",
+                "LangChain",
+                "programming"
+            ],
+            "reply_style": "technical-benchmark",
+            "reply_template": "I built {name} — a proxy that compresses your conversation history into a high-density 'State Digest' before it hits the API. {tagline} It preserves your last 4 messages intact and extracts goals/decisions/errors from older ones. Drop-in replacement, one line config change."
+        },
+        {
+            "id": "agentic-cfo",
+            "name": "Agentic CFO",
+            "tagline": "Budget governance for AI agents — never get a surprise bill again.",
+            "url": "https://cfo.jockeyvc.com",
+            "keywords": [
+                "budget",
+                "spend limit",
+                "api budget",
+                "billing alert",
+                "cost control",
+                "spending too much",
+                "runaway costs",
+                "unexpected bill",
+                "api spending",
+                "cost governance",
+                "budget exceeded"
+            ],
+            "subreddits": [
+                "OpenAI",
+                "ClaudeAI",
+                "startups",
+                "SaaS",
+                "Entrepreneur"
+            ],
+            "reply_style": "business-focused",
+            "reply_template": "I built {name} — it sits between your agents and the API, scores every call 0-10 for necessity, and hard-blocks anything over budget. {tagline} Set per-agent dollar limits and get Slack alerts before you hit them."
+        },
+        {
+            "id": "resolution-arbitrator",
+            "name": "Resolution Arbitrator",
+            "tagline": "Verify your AI actually resolved tickets — don't trust the close button.",
+            "url": "https://resolve.jockeyvc.com",
+            "keywords": [
+                "support agent ai",
+                "ticket resolution",
+                "customer service ai",
+                "zendesk ai",
+                "intercom ai",
+                "freshdesk ai",
+                "ai closing tickets",
+                "false resolution",
+                "support quality",
+                "csat dropping"
+            ],
+            "subreddits": [
+                "customerservice",
+                "SaaS",
+                "startups",
+                "artificial",
+                "Entrepreneur"
+            ],
+            "reply_style": "pain-aware",
+            "reply_template": "I built {name} because I saw the same thing — AI agents marking tickets 'resolved' when the customer's actual question wasn't answered. It runs 5 signal checks (deflection, action presence, follow-up avoidance, etc.) and overrules false resolutions before they close."
+        },
+        {
+            "id": "jenni",
+            "name": "JENNi",
+            "tagline": "AI-powered Amazon product research.",
+            "url": "https://jenni.jockeyvc.com",
+            "keywords": [
+                "amazon fba",
+                "product research",
+                "amazon seller",
+                "private label",
+                "amazon niche",
+                "fba tools",
+                "jungle scout alternative",
+                "helium 10 alternative",
+                "amazon arbitrage",
+                "wholesale amazon"
+            ],
+            "subreddits": [
+                "AmazonSeller",
+                "FulfillmentByAmazon",
+                "Entrepreneur",
+                "ecommerce"
+            ],
+            "reply_style": "helpful-fellow-seller",
+            "reply_template": "I built {name} to help with exactly this — it uses AI to analyze Amazon categories, find low-competition niches, and estimate margins before you commit inventory. {tagline}"
+        }
+    ]
+}

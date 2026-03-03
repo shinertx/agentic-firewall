@@ -1,0 +1,11 @@
+node_modules
+npm-debug.log
+.git
+.DS_Store
+tests
+vitest.config.*
+tsconfig.json
+*.test.ts
+*.test.js
+.env.example
+README.md

@@ -1,0 +1,35 @@
+name: Health Check
+
+on:
+  schedule:
+    # Every 5 minutes
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  check:
+    name: Production Health Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check production proxy
+        run: |
+          HTTP_STATUS=$(curl -sf -o /dev/null -w "%{http_code}" https://api.jockeyvc.com/api/stats || echo "000")
+
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "✅ Production is healthy (HTTP $HTTP_STATUS)"
+          else
+            echo "❌ Production is DOWN (HTTP $HTTP_STATUS)"
+            exit 1
+          fi
+
+      - name: Check staging proxy
+        continue-on-error: true
+        run: |
+          HTTP_STATUS=$(curl -sf -o /dev/null -w "%{http_code}" https://staging.jockeyvc.com/api/stats || echo "000")
+
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "✅ Staging is healthy (HTTP $HTTP_STATUS)"
+          else
+            echo "⚠️  Staging is unreachable (HTTP $HTTP_STATUS) — may not be configured yet"
+          fi

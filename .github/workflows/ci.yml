@@ -1,4 +1,4 @@
-name: CI
+name: CI / CD
 
 on:
   push:
@@ -7,8 +7,9 @@ on:
     branches: [main]
 
 jobs:
+  # ── Test ─────────────────────────────────────────────────
   test:
-    name: Lint & Test
+    name: Test (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
 
     strategy:
@@ -32,3 +33,51 @@ jobs:
       - name: Run tests
         run: npm test
         working-directory: agent-proxy
+
+  # ── Deploy to Production (only on merge to main) ────────
+  deploy:
+    name: Deploy to Production
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VM_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "${{ secrets.VM_HOST_KEY }}" >> ~/.ssh/known_hosts
+
+      - name: Deploy via Docker Compose
+        run: |
+          ssh -i ~/.ssh/deploy_key benjijmac@34.55.255.155 << 'DEPLOY'
+            set -euo pipefail
+            cd ~/agentic-firewall
+
+            # Pull latest code
+            git pull origin main 2>/dev/null || true
+
+            # Rebuild and restart containers
+            docker compose up -d --build --remove-orphans
+
+            # Wait for health check
+            sleep 15
+
+            # Verify
+            curl -sf http://localhost:4000/api/stats > /dev/null || {
+              echo "❌ Health check failed!"
+              docker compose logs --tail=20 proxy
+              exit 1
+            }
+
+            echo "✅ Production deployment verified"
+          DEPLOY
+
+      - name: Verify external endpoint
+        run: |
+          sleep 5
+          curl -sf https://api.jockeyvc.com/api/stats > /dev/null
+          echo "✅ External endpoint verified"

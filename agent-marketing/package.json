@@ -1,0 +1,16 @@
+{
+  "name": "jenni-marketing-agents",
+  "version": "1.0.0",
+  "description": "This folder generates an outreach queue that markets the **Jenni Chrome extension** (\"check local stock, get it today\") by: - finding high-intent posts (mostly Reddit right now) about items being sold out / needing restock / shipping delays - drafting suggested replies that include the Chrome Web Store link - producing a click-through Markdown dashboard for manual posting",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1"
+  }
+}
