@@ -18,7 +18,7 @@ const path = require('path');
 const os = require('os');
 const readline = require('readline');
 
-const VERSION = '0.5.1';
+const VERSION = '0.5.2';
 const PROXY_URL = 'https://api.jockeyvc.com';
 const PROXY_API = `${PROXY_URL}/api/stats`;
 const HTTP_TIMEOUT_MS = 10_000;

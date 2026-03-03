@@ -49,7 +49,16 @@ app.use((err: any, req: Request, res: Response, next: express.NextFunction) => {
     next(err);
 });
 
-app.get('/api/stats', (req: Request, res: Response) => {
+// Admin auth middleware — protects stats/aggregate endpoints
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN || '';
+function requireAdmin(req: Request, res: Response, next: express.NextFunction) {
+    if (!ADMIN_TOKEN) return next(); // No token configured = open access (backwards compatible)
+    const auth = req.headers.authorization || '';
+    if (auth === `Bearer ${ADMIN_TOKEN}`) return next();
+    res.status(401).json({ error: 'Unauthorized — set Authorization: Bearer <ADMIN_TOKEN>' });
+}
+
+app.get('/api/stats', requireAdmin, (req: Request, res: Response) => {
     res.json(globalStats);
 });
 
@@ -82,13 +91,13 @@ setInterval(() => {
     }
 }, 30_000);
 
-app.get('/api/user/:userId', (req: Request, res: Response) => {
+app.get('/api/user/:userId', requireAdmin, (req: Request, res: Response) => {
     const stats = getUserStats(req.params.userId as string);
     if (!stats) return res.status(404).json({ error: 'User not found' });
     res.json(stats);
 });
 
-app.get('/api/aggregate', (req: Request, res: Response) => {
+app.get('/api/aggregate', requireAdmin, (req: Request, res: Response) => {
     const agg = getAggregateStats();
     const np = getNoProgressStats();
     res.json({ ...agg, ...np, ...globalStats });

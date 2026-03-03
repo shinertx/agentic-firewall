@@ -1,6 +1,6 @@
 {
     "name": "agent-firewall",
-    "version": "0.5.1",
+    "version": "0.5.2",
     "description": "Agent Runtime Control — Loop detection, prompt caching, budget enforcement, and waste scanning for autonomous AI agents.",
     "bin": {
         "agent-firewall": "./bin/cli.js"
@@ -21,9 +21,13 @@
     ],
     "author": "Jockey VC",
     "license": "MIT",
+    "homepage": "https://api.jockeyvc.com",
     "repository": {
         "type": "git",
-        "url": "https://github.com/benjijmac/vibebilling"
+        "url": "https://github.com/shinertx/agentic-firewall"
+    },
+    "bugs": {
+        "url": "https://github.com/shinertx/agentic-firewall/issues"
     },
     "files": [
         "bin/",

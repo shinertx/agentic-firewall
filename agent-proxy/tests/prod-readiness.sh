@@ -154,11 +154,12 @@ section "4. Circuit Breaker — Loop Detection"
 
 CB_BODY='{"model":"claude-sonnet-4-20250514","max_tokens":10,"messages":[{"role":"user","content":"circuit_breaker_test_message_unique_12345"}]}'
 CB_BLOCKED=false
+CB_KEY="sk-test-cb-fixed-key-$(date +%s)"
 
 for i in 1 2 3 4; do
     CB_RESP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$PROXY/v1/messages" \
         -H "Content-Type: application/json" \
-        -H "x-api-key: sk-test-cb-key-$RANDOM" \
+        -H "x-api-key: $CB_KEY" \
         -H "anthropic-version: 2023-06-01" \
         -d "$CB_BODY" \
         --max-time 10 2>/dev/null || echo "000")

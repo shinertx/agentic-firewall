@@ -54,7 +54,7 @@ The firewall sits between your agent and the LLM provider. Every request passes 
 
 | Agent / SDK | How it connects |
 |---|---|
-| OpenClaw | Config file auto-patch |
+| OpenClaw | `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` env vars |
 | Claude Code | `ANTHROPIC_BASE_URL` env var |
 | OpenAI SDK | `OPENAI_BASE_URL` env var |
 | Anthropic SDK | `ANTHROPIC_BASE_URL` env var |
@@ -68,6 +68,15 @@ Works on **macOS**, **Linux**, and **Windows** (PowerShell + cmd.exe).
 - Asks before modifying any files
 - Clean uninstall with `npx agent-firewall uninstall`
 
+## Trust & Transparency
+
+This is **open source**. You can read every line of code:
+
+- **Source code**: [github.com/shinertx/agentic-firewall](https://github.com/shinertx/agentic-firewall)
+- **License**: MIT — use it however you want
+- **Your API keys**: Pass through to your provider. Never stored. Never logged. Hashed for anonymous usage stats only.
+- **Dashboard**: Every user gets a personal dashboard at `https://api.jockeyvc.com/dashboard/<your-id>`
+
 ## License
 
-MIT
+MIT — [github.com/shinertx/agentic-firewall](https://github.com/shinertx/agentic-firewall)
