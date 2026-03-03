@@ -852,8 +852,38 @@ async function uninstall() {
     // OpenClaw: no config changes needed — routing is via env vars only.
     // Removing env vars from shell config (above) is sufficient.
 
+    // Stop running daemon if possible
     log('');
-    ok('Agent Firewall uninstalled. Your agents now connect directly to providers.');
+    try {
+        const health = await httpGet(`${PROXY_URL}/health`).catch(() => null);
+        if (health) {
+            info('Proxy is currently running. Attempting to stop...');
+            try {
+                const { execSync } = require('child_process');
+                execSync('pm2 delete agentic-firewall 2>/dev/null || true', { stdio: 'ignore' });
+                ok('Stopped daemon via PM2');
+            } catch {
+                const port = (PROXY_URL.match(/:(\d+)/) || [])[1] || '4000';
+                warn(`Could not stop daemon automatically. Run: ${c.bold}lsof -ti:${port} | xargs kill${c.reset}`);
+            }
+        }
+    } catch { /* proxy not running, nothing to stop */ }
+
+    // Offer to clean up ~/.firewall/ directory
+    const firewallDir = path.join(os.homedir(), '.firewall');
+    if (fs.existsSync(firewallDir)) {
+        log('');
+        const shouldRemove = await confirm(`Remove ${c.dim}~/.firewall/${c.reset} directory? (contains API keys)`);
+        if (shouldRemove) {
+            fs.rmSync(firewallDir, { recursive: true, force: true });
+            ok('Removed ~/.firewall/ directory');
+        } else {
+            info('Kept ~/.firewall/ directory');
+        }
+    }
+
+    log('');
+    ok('Agent Firewall uninstalled. API keys in your shell environment are unchanged.');
     log(`${c.dim}Run ${c.bold}npx agent-firewall setup${c.reset}${c.dim} to re-enable.${c.reset}\n`);
 }
 
@@ -940,6 +970,124 @@ async function verify() {
     log('');
 }
 
+// ─── Daemon Command ──────────────────────────────────────
+async function daemon(subcommand) {
+    const { execSync, spawn } = require('child_process');
+    const port = (PROXY_URL.match(/:(\d+)/) || [])[1] || '4000';
+
+    async function isProxyRunning() {
+        try {
+            const h = await httpGet(`${PROXY_URL}/health`);
+            return h && h.status === 'ok';
+        } catch { return false; }
+    }
+
+    function hasPM2() {
+        try { execSync('pm2 --version', { stdio: 'ignore' }); return true; } catch { return false; }
+    }
+
+    switch (subcommand) {
+        case 'start': {
+            header('Agent Firewall — Daemon Start');
+            if (await isProxyRunning()) {
+                ok('Proxy is already running.');
+                return;
+            }
+            const proxyDir = path.resolve(__dirname, '..', '..', 'agent-proxy');
+            if (hasPM2()) {
+                const ecosystemFile = path.join(proxyDir, 'ecosystem.config.js');
+                if (fs.existsSync(ecosystemFile)) {
+                    execSync(`pm2 start ${ecosystemFile}`, { stdio: 'inherit', cwd: proxyDir });
+                } else {
+                    execSync(`pm2 start npm --name agentic-firewall -- run dev`, { stdio: 'inherit', cwd: proxyDir });
+                }
+            } else {
+                info('PM2 not found. Starting detached process...');
+                const child = spawn('npx', ['tsx', 'src/index.ts'], {
+                    cwd: proxyDir,
+                    detached: true,
+                    stdio: 'ignore',
+                    env: { ...process.env },
+                });
+                child.unref();
+            }
+            // Poll for startup
+            const s = spinner('Waiting for proxy to start');
+            for (let i = 0; i < 20; i++) {
+                await new Promise(r => setTimeout(r, 500));
+                if (await isProxyRunning()) {
+                    s.stop(`${c.green}${icons.ok}${c.reset} Proxy started successfully`);
+                    return;
+                }
+            }
+            s.stop(`${c.yellow}${icons.warn}${c.reset} Proxy may not have started. Check logs.`);
+            break;
+        }
+        case 'stop': {
+            header('Agent Firewall — Daemon Stop');
+            if (hasPM2()) {
+                try {
+                    execSync('pm2 delete agentic-firewall', { stdio: 'inherit' });
+                    ok('Stopped via PM2');
+                    return;
+                } catch { /* not managed by pm2 */ }
+            }
+            try {
+                const IS_WIN = process.platform === 'win32';
+                if (IS_WIN) {
+                    execSync(`for /f "tokens=5" %a in ('netstat -aon ^| findstr :${port}') do taskkill /PID %a /F`, { stdio: 'ignore', shell: true });
+                } else {
+                    execSync(`lsof -ti:${port} | xargs kill 2>/dev/null`, { stdio: 'ignore' });
+                }
+                ok(`Stopped process on port ${port}`);
+            } catch {
+                warn('No running proxy found.');
+            }
+            break;
+        }
+        case 'restart': {
+            await daemon('stop');
+            await new Promise(r => setTimeout(r, 1000));
+            await daemon('start');
+            break;
+        }
+        case 'status': {
+            header('Agent Firewall — Daemon Status');
+            const running = await isProxyRunning();
+            if (running) {
+                try {
+                    const health = await httpGet(`${PROXY_URL}/health`);
+                    ok(`Proxy running (mode: ${health.mode || 'unknown'}, version: ${health.version || 'unknown'})`);
+                    if (health.providers) log(`  Providers: ${health.providers.join(', ')}`);
+                } catch {
+                    ok('Proxy running');
+                }
+            } else {
+                warn('Proxy is not running.');
+                info(`Start with: ${c.bold}npx agent-firewall daemon start${c.reset}`);
+            }
+            break;
+        }
+        case 'logs': {
+            header('Agent Firewall — Daemon Logs');
+            if (hasPM2()) {
+                try {
+                    execSync('pm2 logs agentic-firewall --lines 50', { stdio: 'inherit' });
+                } catch {
+                    warn('Could not fetch PM2 logs.');
+                }
+            } else {
+                warn('PM2 not available. Start with PM2 for log management.');
+                info('Install: npm install -g pm2');
+            }
+            break;
+        }
+        default:
+            fail(`Unknown daemon subcommand: ${subcommand || '(none)'}`);
+            log(`  Usage: ${c.bold}npx agent-firewall daemon <start|stop|restart|status|logs>${c.reset}\n`);
+    }
+}
+
 // ─── Main ───────────────────────────────────────────────
 const command = process.argv[2] || '--help';
 
@@ -949,6 +1097,7 @@ switch (command) {
     case 'status': status().catch(err => fail(err.message)); break;
     case 'verify': verify().catch(err => fail(err.message)); break;
     case 'uninstall': uninstall().catch(err => fail(err.message)); break;
+    case 'daemon': daemon(process.argv[3]).catch(err => fail(err.message)); break;
     case '--version': case '-v':
         log(`agent-firewall v${VERSION}`);
         break;
@@ -962,6 +1111,7 @@ switch (command) {
         log(`    ${c.green}status${c.reset}      Check live proxy stats (requests, savings, blocked loops)`);
         log(`    ${c.green}verify${c.reset}      Test that routing is working`);
         log(`    ${c.green}uninstall${c.reset}   Remove proxy routing and restore original configs`);
+        log(`    ${c.green}daemon${c.reset}      Manage proxy lifecycle (start, stop, restart, status, logs)`);
         log('');
         log(`  ${c.bold}Flags:${c.reset}`);
         log(`    ${c.dim}--version${c.reset}   Show version`);

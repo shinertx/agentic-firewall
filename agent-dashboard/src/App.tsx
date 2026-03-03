@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Shield, Zap, RefreshCw, BarChart2, ArrowDownRight, Scissors } from 'lucide-react';
+import { Shield, Zap, RefreshCw, BarChart2, ArrowDownRight, Scissors, Database, Globe, Archive } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 function App() {
@@ -10,6 +10,9 @@ function App() {
     totalRequests: 0,
     smartRouteDowngrades: 0,
     trimmedRequests: 0,
+    responseCacheHits: 0,
+    crossProviderFailovers: 0,
+    compressedTokensSaved: 0,
     recentActivity: [] as any[]
   });
 
@@ -92,6 +95,24 @@ function App() {
             value={stats.blockedLoops.toString()}
             icon={<RefreshCw className="w-5 h-5 text-red-400" />}
             color="from-red-500/20 to-transparent border-red-500/20"
+          />
+          <StatCard
+            title="Response Cache Hits"
+            value={stats.responseCacheHits.toString()}
+            icon={<Database className="w-5 h-5 text-purple-400" />}
+            color="from-purple-500/20 to-transparent border-purple-500/20"
+          />
+          <StatCard
+            title="Cross-Provider Failovers"
+            value={stats.crossProviderFailovers.toString()}
+            icon={<Globe className="w-5 h-5 text-orange-400" />}
+            color="from-orange-500/20 to-transparent border-orange-500/20"
+          />
+          <StatCard
+            title="Compressed Tokens"
+            value={(stats.compressedTokensSaved / 1000).toFixed(1) + 'k'}
+            icon={<Archive className="w-5 h-5 text-teal-400" />}
+            color="from-teal-500/20 to-transparent border-teal-500/20"
           />
         </div>
 

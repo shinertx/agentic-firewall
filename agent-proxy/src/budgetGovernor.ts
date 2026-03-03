@@ -137,6 +137,36 @@ export function getAggregateStats() {
 }
 
 /**
+ * Reconcile user spend when real usage data arrives from the provider.
+ * Adjusts the spend recorded by the heuristic estimate.
+ */
+export function reconcileUserSpend(
+    userId: string,
+    model: string,
+    estimatedTokens: number,
+    realInputTokens: number,
+    realOutputTokens: number,
+    isCDN: boolean
+): void {
+    const user = getOrCreateUser(userId);
+    const inputCostPerM = getInputCost(model);
+
+    const estimatedSpend = (estimatedTokens / 1_000_000) * inputCostPerM;
+    const realSpend = (realInputTokens / 1_000_000) * inputCostPerM;
+    const delta = realSpend - estimatedSpend;
+
+    user.totalSpend += delta;
+    user.totalTokens += (realInputTokens - estimatedTokens);
+
+    if (isCDN) {
+        const estimatedSaved = estimatedSpend * 0.9;
+        const realSaved = realSpend * 0.9;
+        user.savedMoney += (realSaved - estimatedSaved);
+        user.savedTokens += (realInputTokens * 0.9) - (estimatedTokens * 0.9);
+    }
+}
+
+/**
  * Export all user data for persistence.
  */
 export function exportUserData(): Record<string, UserBudget> {

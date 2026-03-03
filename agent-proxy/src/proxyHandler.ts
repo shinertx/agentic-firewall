@@ -1,14 +1,19 @@
 import { Request, Response } from 'express';
 import { checkCircuitBreaker } from './circuitBreaker';
-import { attemptShadowRouterFailover } from './shadowRouter';
+import { attemptShadowRouterFailover, attemptCrossProviderFailover } from './shadowRouter';
 import { getInputCost, CACHE_SAVINGS_RATE } from './pricing';
 import { generateCacheKey } from './tokenCounter';
-import { checkBudget, recordUserSpend, recordUserLoop, getOrCreateUser } from './budgetGovernor';
+import { checkBudget, recordUserSpend, recordUserLoop, getOrCreateUser, reconcileUserSpend } from './budgetGovernor';
 import { checkNoProgress } from './noProgress';
 import { getProviderKey, getProviderHeaderConfig, getLocalUserId, Provider } from './keyVault';
 import { globalStats, recordActivity } from './stats';
 import { trimContext, applyOllamaSummary, TrimResult } from './contextTrimmer';
 import { smartRoute, SmartRouteResult } from './smartRouter';
+import { resolveSessionId, getOrCreateSession, recordSessionSpend, recordSessionLoop, reconcileSessionSpend } from './sessionTracker';
+import { acquireSlot, releaseSlot, autoTuneFromHeaders, QueueFullError, QueueTimeoutError } from './requestQueue';
+import { getCachedResponse, setCachedResponse } from './responseCache';
+import { parseUsageFromChunks } from './usageParser';
+import { compressPrompt } from './promptCompressor';
 
 // Explicit Interfaces for Edge Case Handling
 export interface LLMRequest {
@@ -190,16 +195,44 @@ export async function handleProxyRequest(req: Request, res: Response) {
     let originalBodyStr = req.body ? JSON.stringify(req.body) : "";
     let optimizedBodyStr = "";
     let smartRouteResult: SmartRouteResult | null = null;
+    let cbHash = '';
+    let cbIdenticalCount = 0;
     // LOCAL-FIRST: User ID based on local machine identity, not API key
     const userId = getLocalUserId();
+    // Session tracking
+    const sessionId = resolveSessionId(req);
+    getOrCreateSession(sessionId, userId);
+    res.setHeader('X-Firewall-Session', sessionId);
 
     if (req.method !== 'GET' && req.method !== 'HEAD' && req.body && Object.keys(req.body).length > 0) {
         const ip = req.ip || '127.0.0.1';
-        const cb = checkCircuitBreaker(ip, req.body, userId);
+        const cb = checkCircuitBreaker(ip, req.body, userId, sessionId);
+        cbHash = cb.hash;
+        cbIdenticalCount = cb.identicalCount;
         if (cb.blocked) {
             recordUserLoop(userId);
+            recordSessionLoop(sessionId);
             res.status(400).json({ error: { message: cb.reason, type: 'agentic_firewall_blocked' } });
             return;
+        }
+
+        // Response cache — serve cached response on 2nd/3rd identical request (before 4th triggers circuit breaker)
+        if (cbHash && cbIdenticalCount >= 2 && cbIdenticalCount < 4) {
+            const cached = getCachedResponse(cbHash);
+            if (cached) {
+                globalStats.responseCacheHits++;
+                globalStats.totalRequests++;
+                for (const [k, v] of Object.entries(cached.headers)) {
+                    if (k.toLowerCase() !== 'transfer-encoding' && k.toLowerCase() !== 'content-encoding') {
+                        res.setHeader(k, v);
+                    }
+                }
+                res.setHeader('X-Firewall-Cache', 'HIT');
+                recordActivity({ time: new Date().toLocaleTimeString(), model: req.body?.model || 'unknown', tokens: 'cached', status: 'Response Cache Hit', statusColor: 'text-purple-400 bg-purple-400/10' });
+                res.status(cached.statusCode).end(cached.body);
+                return;
+            }
+            globalStats.responseCacheMisses++;
         }
 
         // Budget governor — check spend cap
@@ -219,8 +252,8 @@ export async function handleProxyRequest(req: Request, res: Response) {
             return;
         }
 
-        // No-progress detection
-        const npCheck = checkNoProgress(userId, req.body);
+        // No-progress detection (keyed on sessionId for per-session tracking)
+        const npCheck = checkNoProgress(sessionId || userId, req.body);
         if (npCheck.noProgress) {
             res.status(400).json({
                 error: {
@@ -267,9 +300,27 @@ export async function handleProxyRequest(req: Request, res: Response) {
             globalStats.trimmedTokensSaved += trimResult.trimmedTokens;
         }
 
+        // Prompt Compression — Ollama-powered system prompt + history compression
+        if (process.env.OLLAMA_ENABLED === 'true' && !noTrim && req.headers['x-no-compress'] !== 'true') {
+            const compression = await compressPrompt(trimResult.body, isGemini, isOpenAI || isNvidia, modelName);
+            if (compression.compressed) {
+                trimResult = { ...trimResult, body: compression.body };
+                globalStats.compressedTokensSaved += compression.savedTokens;
+                globalStats.compressionCalls++;
+                if (compression.cacheHit) globalStats.compressionCacheHits++;
+                res.setHeader('X-Firewall-Compressed', `${compression.savedTokens} tokens saved`);
+            }
+        }
+
         // Deep copy via structuredClone (avoids JSON.parse(JSON.stringify(...)) roundtrip)
         const result = applyContextCDN(structuredClone(trimResult.body), isGemini, req.originalUrl, originalBodyStr.length);
         optimizedBody = result.body;
+
+        // OpenAI/NVIDIA: inject stream_options to get real token usage in streaming responses
+        if ((isOpenAI || isNvidia) && optimizedBody?.stream === true) {
+            optimizedBody.stream_options = { ...(optimizedBody.stream_options || {}), include_usage: true };
+        }
+
         // Serialize optimized body once — reused for both init.body and stats comparison
         optimizedBodyStr = JSON.stringify(optimizedBody);
         init.body = optimizedBodyStr;
@@ -296,18 +347,56 @@ export async function handleProxyRequest(req: Request, res: Response) {
     const fetchUrl = (req as any)._geminiUrl || url;
     console.log(`[PROXY LOCAL] => ${req.method} ${url}`);
 
+    // Request Queue — acquire slot before calling provider
+    const noQueue = req.headers['x-no-queue'] === 'true';
+    const queuePriority = req.headers['x-queue-priority'] === 'high' ? 'high' as const : 'normal' as const;
+    if (!noQueue) {
+        try {
+            await acquireSlot(provider, queuePriority);
+            globalStats.queuedRequests++;
+        } catch (err) {
+            if (err instanceof QueueFullError) globalStats.queueFullRejections++;
+            else globalStats.queueTimeouts++;
+            res.status(429).json({ error: { message: (err as Error).message, type: err instanceof QueueFullError ? 'queue_full' : 'queue_timeout' } });
+            return;
+        }
+    }
+
+    try {
     let response = await fetch(fetchUrl, init);
+
+    // Auto-tune rate limits from provider response headers
+    autoTuneFromHeaders(provider, response.headers);
 
     let statusText = 'Pass-through';
     let statusColor = 'text-gray-400 bg-gray-400/10';
+    let crossProviderResult: { response: globalThis.Response; targetModel: string; targetProvider: string } | null = null;
 
-    if (response.status === 429 && optimizedBody && !isGemini) {
-        const failoverRes = await attemptShadowRouterFailover(optimizedBody, headers);
-        if (failoverRes) {
-            response = failoverRes;
-            statusText = 'Shadow Router Failover';
-            statusColor = 'text-yellow-400 bg-yellow-400/10';
-        } else {
+    if (response.status === 429 && optimizedBody) {
+        let failoverHandled = false;
+        // Step 1: Same-provider failover (existing shadow router)
+        if (!isGemini) {
+            const failoverRes = await attemptShadowRouterFailover(optimizedBody, headers);
+            if (failoverRes) {
+                response = failoverRes;
+                statusText = 'Shadow Router Failover';
+                statusColor = 'text-yellow-400 bg-yellow-400/10';
+                failoverHandled = true;
+            }
+        }
+        // Step 2: Cross-provider failover (new)
+        if (!failoverHandled && req.headers['x-no-cross-provider'] !== 'true') {
+            const cross = await attemptCrossProviderFailover(optimizedBody, optimizedBody?.model || '', provider);
+            if (cross) {
+                response = cross.response;
+                statusText = `Cross-Provider: ${provider} → ${cross.targetProvider}`;
+                statusColor = 'text-orange-400 bg-orange-400/10';
+                res.setHeader('X-Firewall-Cross-Provider', `${optimizedBody?.model}→${cross.targetModel}`);
+                crossProviderResult = cross;
+                failoverHandled = true;
+            }
+        }
+        if (!failoverHandled) {
             statusText = '429 Rate Limited';
             statusColor = 'text-red-400 bg-red-400/10';
         }
@@ -316,18 +405,15 @@ export async function handleProxyRequest(req: Request, res: Response) {
     // Record stats
     globalStats.totalRequests++;
 
-    // Estimate prompt size: 1 token ~= 4 characters. This accurately measures massive NVIDIA/OpenAI payloads!
-    // We floor at 1,000 for standard interactions, but RAG code scans easily hit 2,000,000 tokens per loop.
+    // Estimate prompt size: 1 token ~= 4 characters
     const estimatedPromptTokens = Math.max(Math.round(originalBodyStr.length / 4), 1000);
 
-    // Reuse pre-computed optimizedBodyStr — no re-serialization needed
-    // Extract model name accurately before math
     let displayModel = optimizedBody?.model || 'unknown';
     if (isGemini) {
         const urlMatch = req.originalUrl.match(/models\/(gemini-[^:]+)/);
         if (urlMatch) displayModel = urlMatch[1];
     } else if (isOpenAI || (typeof isNvidia !== 'undefined' && isNvidia)) {
-        displayModel = optimizedBody?.model || 'unknown'; // OpenAI/NVIDIA exact model specified in payload
+        displayModel = optimizedBody?.model || 'unknown';
     }
 
     const isCDN = statusText === 'Pass-through' && optimizedBodyStr !== originalBodyStr;
@@ -336,10 +422,7 @@ export async function handleProxyRequest(req: Request, res: Response) {
         statusText = 'Context CDN Hit';
         statusColor = 'text-emerald-400 bg-emerald-400/10';
 
-        // Dynamic pricing via centralized pricing module
         const inputCostPerMillionTokens = getInputCost(displayModel);
-
-        // Calculate the dollar value of cached tokens
         const baseCost = (estimatedPromptTokens / 1_000_000) * inputCostPerMillionTokens;
         const savingsCost = baseCost * CACHE_SAVINGS_RATE;
         const savedTokens = estimatedPromptTokens * CACHE_SAVINGS_RATE;
@@ -348,7 +431,7 @@ export async function handleProxyRequest(req: Request, res: Response) {
         globalStats.savedMoney += savingsCost;
     }
 
-    // Smart Route savings — price delta between original and downgraded model
+    // Smart Route savings
     if (smartRouteResult && smartRouteResult.routed) {
         const originalCost = getInputCost(smartRouteResult.originalModel);
         const newCost = getInputCost(smartRouteResult.newModel);
@@ -359,15 +442,28 @@ export async function handleProxyRequest(req: Request, res: Response) {
             globalStats.savedMoney += savings;
         }
 
-        // Override status for activity feed (unless CDN or failover already set)
         if (statusText === 'Pass-through') {
             statusText = `Smart Route: ${smartRouteResult.originalModel} → ${smartRouteResult.newModel}`;
             statusColor = 'text-blue-400 bg-blue-400/10';
         }
     }
 
-    // Record per-user spend
+    // Cross-provider failover savings
+    if (crossProviderResult) {
+        globalStats.crossProviderFailovers++;
+        const originalCost = getInputCost(displayModel);
+        const targetCost = getInputCost(crossProviderResult.targetModel);
+        const costDelta = originalCost - targetCost;
+        if (costDelta > 0) {
+            const savings = (estimatedPromptTokens / 1_000_000) * costDelta;
+            globalStats.crossProviderSavings += savings;
+            globalStats.savedMoney += savings;
+        }
+    }
+
+    // Record per-user + per-session spend
     recordUserSpend(userId, displayModel, estimatedPromptTokens, isCDN);
+    recordSessionSpend(sessionId, displayModel, estimatedPromptTokens, isCDN);
 
     recordActivity({
         time: new Date().toLocaleTimeString(),
@@ -397,16 +493,47 @@ export async function handleProxyRequest(req: Request, res: Response) {
         return res.end();
     }
 
+    // Stream response with chunk buffering for usage parsing + response caching
     const reader = response.body.getReader();
+    const allChunks: Buffer[] = [];
     try {
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
+            allChunks.push(Buffer.from(value));
             res.write(value);
         }
     } catch (err) {
         console.error('[PROXY STREAM ERROR]', err);
     } finally {
         res.end();
+    }
+
+    // Parse real token usage from streamed chunks
+    const providerType = isGemini ? 'gemini' : (isOpenAI || isNvidia) ? 'openai' : 'anthropic';
+    const realUsage = parseUsageFromChunks(allChunks.slice(-5), providerType);
+    if (realUsage && realUsage.inputTokens > 0) {
+        globalStats.realInputTokens += realUsage.inputTokens;
+        globalStats.realOutputTokens += realUsage.outputTokens;
+        globalStats.realCachedTokens += realUsage.cachedTokens;
+        globalStats.estimationErrorSum += Math.abs(estimatedPromptTokens - realUsage.inputTokens);
+        globalStats.estimationSamples++;
+        reconcileUserSpend(userId, displayModel, estimatedPromptTokens, realUsage.inputTokens, realUsage.outputTokens, isCDN);
+        reconcileSessionSpend(sessionId, displayModel, estimatedPromptTokens, realUsage.inputTokens, realUsage.outputTokens, isCDN);
+    }
+
+    // Cache response for replay on repeated identical requests
+    if (response.status === 200 && cbHash && allChunks.length > 0) {
+        const fullBody = Buffer.concat(allChunks);
+        const respHeaders: Record<string, string> = {};
+        response.headers.forEach((v, k) => { respHeaders[k] = v; });
+        setCachedResponse(cbHash, response.status, respHeaders, fullBody, response.headers.get('content-type') || '');
+    }
+
+    } finally {
+        // Request Queue — release slot after response is complete
+        if (!noQueue) {
+            releaseSlot(provider);
+        }
     }
 }

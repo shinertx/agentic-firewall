@@ -67,6 +67,26 @@ export const globalStats = {
     smartRouteDowngrades: 0,
     smartRouteSavings: 0,
     ollamaCalls: 0,
+    // Spec 1: Streaming Token Accounting
+    realInputTokens: 0,
+    realOutputTokens: 0,
+    realCachedTokens: 0,
+    estimationErrorSum: 0,
+    estimationSamples: 0,
+    // Spec 3: Response Caching
+    responseCacheHits: 0,
+    responseCacheMisses: 0,
+    // Spec 4: Cross-Provider Failover
+    crossProviderFailovers: 0,
+    crossProviderSavings: 0,
+    // Spec 5: Request Queue
+    queuedRequests: 0,
+    queueTimeouts: 0,
+    queueFullRejections: 0,
+    // Spec 6: Prompt Compression
+    compressedTokensSaved: 0,
+    compressionCalls: 0,
+    compressionCacheHits: 0,
 };
 
 // Circular buffer for O(1) insertion (replaces O(n) unshift)

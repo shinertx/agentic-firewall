@@ -74,10 +74,15 @@ import { getUserStats, getAggregateStats, exportUserData, importUserData } from 
 import { getNoProgressStats } from './noProgress';
 import { renderLandingPage } from './pages/landing';
 import { renderDashboard } from './pages/dashboard';
+import { getAllSessions, getSessionStats, getUserSessions, exportSessionData, importSessionData, expireStaleSessions } from './sessionTracker';
+import { getQueueStats } from './requestQueue';
+import { getCacheStats } from './responseCache';
+import { getCompressionStats } from './promptCompressor';
 
 // Load persisted user data on startup
 import fs from 'fs';
 const USERS_FILE = path.join(__dirname, '..', 'users.json');
+const SESSIONS_FILE = path.join(__dirname, '..', 'sessions.json');
 try {
     if (fs.existsSync(USERS_FILE)) {
         const raw = fs.readFileSync(USERS_FILE, 'utf-8');
@@ -87,13 +92,27 @@ try {
 } catch (err) {
     console.error('[USERS] ⚠️ Failed to load users.json:', err);
 }
+try {
+    if (fs.existsSync(SESSIONS_FILE)) {
+        const raw = fs.readFileSync(SESSIONS_FILE, 'utf-8');
+        importSessionData(JSON.parse(raw));
+        console.log('[SESSIONS] 📂 Loaded persisted session data');
+    }
+} catch (err) {
+    console.error('[SESSIONS] ⚠️ Failed to load sessions.json:', err);
+}
 
-// Persist user data every 30 seconds (non-blocking async write)
+// Persist user + session data every 30 seconds (non-blocking async write)
 setInterval(async () => {
     try {
         await fs.promises.writeFile(USERS_FILE, JSON.stringify(exportUserData(), null, 2));
     } catch (err) {
         console.error('[USERS] ⚠️ Failed to write users.json:', err);
+    }
+    try {
+        await fs.promises.writeFile(SESSIONS_FILE, JSON.stringify(exportSessionData(), null, 2));
+    } catch (err) {
+        console.error('[SESSIONS] ⚠️ Failed to write sessions.json:', err);
     }
 }, 30_000);
 
@@ -106,7 +125,25 @@ app.get('/api/user/:userId', requireAdmin, (req: Request, res: Response) => {
 app.get('/api/aggregate', requireAdmin, (req: Request, res: Response) => {
     const agg = getAggregateStats();
     const np = getNoProgressStats();
-    res.json({ ...agg, ...np, ...globalStats });
+    const queueStats = getQueueStats();
+    const cacheStats = getCacheStats();
+    const compressionStats = getCompressionStats();
+    res.json({ ...agg, ...np, ...globalStats, queue: queueStats, cache: cacheStats, compression: compressionStats });
+});
+
+// Session tracking API
+app.get('/api/sessions', requireAdmin, (req: Request, res: Response) => {
+    res.json(getAllSessions());
+});
+
+app.get('/api/sessions/:id', requireAdmin, (req: Request, res: Response) => {
+    const session = getSessionStats(req.params.id as string);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+    res.json(session);
+});
+
+app.get('/api/user/:userId/sessions', requireAdmin, (req: Request, res: Response) => {
+    res.json(getUserSessions(req.params.userId as string));
 });
 
 // Landing page (extracted to src/pages/landing.ts)

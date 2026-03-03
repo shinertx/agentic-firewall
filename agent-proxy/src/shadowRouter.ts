@@ -54,3 +54,57 @@ export async function attemptShadowRouterFailover(reqBody: any, originalHeaders:
 
     return null;
 }
+
+/**
+ * Cross-provider failover: translate the request to a different provider
+ * and attempt the call there. Used when same-provider failover is not
+ * available or also rate-limited.
+ */
+export async function attemptCrossProviderFailover(
+    reqBody: any,
+    originalModel: string,
+    sourceProvider: string,
+): Promise<{ response: Response; targetModel: string; targetProvider: string } | null> {
+    try {
+        const { detectFormat, findCrossProviderTarget, hasToolUseContent, translateRequest } = await import('./requestTranslator');
+        const { acquireSlot, releaseSlot } = await import('./requestQueue');
+
+        const target = findCrossProviderTarget(originalModel);
+        if (!target) return null;
+
+        const format = detectFormat(reqBody);
+        if (hasToolUseContent(reqBody, format)) return null;
+
+        const translation = translateRequest(reqBody, format, target.targetProvider, target.targetModel);
+        if ('error' in translation) return null;
+
+        console.log(`[SHADOW ROUTER] 🌐 Cross-provider failover: ${sourceProvider}/${originalModel} → ${target.targetProvider}/${target.targetModel}`);
+
+        try {
+            await acquireSlot(target.targetProvider, 'high');
+        } catch {
+            return null;
+        }
+
+        try {
+            const response = await fetch(translation.url, {
+                method: 'POST',
+                headers: translation.headers,
+                body: JSON.stringify(translation.body),
+            });
+
+            if (response.ok || response.status < 500) {
+                console.log(`[SHADOW ROUTER] ✅ Cross-provider failover to ${target.targetProvider}/${target.targetModel} returned ${response.status}`);
+                return { response, targetModel: target.targetModel, targetProvider: target.targetProvider };
+            }
+
+            console.log(`[SHADOW ROUTER] ⚠️ Cross-provider failover returned ${response.status}`);
+            return null;
+        } finally {
+            releaseSlot(target.targetProvider);
+        }
+    } catch (e) {
+        console.error('[SHADOW ROUTER] ❌ Cross-provider failover failed:', e);
+        return null;
+    }
+}
