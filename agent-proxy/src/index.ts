@@ -3,8 +3,15 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { handleProxyRequest } from './proxyHandler';
 import { authMiddleware } from './authMiddleware';
+import { validateAllKeys } from './keyVault';
+import path from 'path';
+import os from 'os';
 
 dotenv.config();
+
+// Also load keys from ~/.firewall/.env if it exists
+const firewallEnvPath = path.join(os.homedir(), '.firewall', '.env');
+dotenv.config({ path: firewallEnvPath });
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -70,7 +77,6 @@ import { renderDashboard } from './pages/dashboard';
 
 // Load persisted user data on startup
 import fs from 'fs';
-import path from 'path';
 const USERS_FILE = path.join(__dirname, '..', 'users.json');
 try {
     if (fs.existsSync(USERS_FILE)) {
@@ -82,10 +88,10 @@ try {
     console.error('[USERS] ⚠️ Failed to load users.json:', err);
 }
 
-// Persist user data every 30 seconds (alongside stats.json)
-setInterval(() => {
+// Persist user data every 30 seconds (non-blocking async write)
+setInterval(async () => {
     try {
-        fs.writeFileSync(USERS_FILE, JSON.stringify(exportUserData(), null, 2));
+        await fs.promises.writeFile(USERS_FILE, JSON.stringify(exportUserData(), null, 2));
     } catch (err) {
         console.error('[USERS] ⚠️ Failed to write users.json:', err);
     }
@@ -115,6 +121,18 @@ app.get('/dashboard/:userId', (req: Request, res: Response) => {
     res.send(renderDashboard(req.params.userId as string));
 });
 
+// Health endpoint — reports mode and configured providers
+app.get('/health', (req: Request, res: Response) => {
+    const { valid, missing } = validateAllKeys();
+    res.json({
+        status: 'ok',
+        mode: 'local',
+        version: '0.6.0',
+        providers: valid.map(v => v.toLowerCase()),
+        missingProviders: missing.map(m => m.toLowerCase()),
+    });
+});
+
 app.use(authMiddleware);
 
 app.use(async (req: Request, res: Response) => {
@@ -128,8 +146,20 @@ app.use(async (req: Request, res: Response) => {
     }
 });
 
-const server = app.listen(PORT, () => {
-    console.log(`🚀 Agentic Firewall Proxy running at http://localhost:${PORT}`);
+// LOCAL-FIRST: Validate provider keys on startup
+const keyValidation = validateAllKeys();
+if (keyValidation.valid.length > 0) {
+    console.log(`[FIREWALL LOCAL] Provider keys loaded: ${keyValidation.valid.join(', ')}`);
+}
+if (keyValidation.missing.length > 0) {
+    console.warn(`[FIREWALL LOCAL] No keys for: ${keyValidation.missing.join(', ')} — run: npx agentic-firewall setup`);
+}
+
+// LOCAL-FIRST: Bind to 127.0.0.1 only — reject external connections at the network level
+const BIND_HOST = process.env.BIND_HOST || '127.0.0.1';
+const server = app.listen(Number(PORT), BIND_HOST, () => {
+    console.log(`[FIREWALL LOCAL] Agentic Firewall running at http://${BIND_HOST}:${PORT} (local-first mode)`);
+    console.log(`[FIREWALL LOCAL] API keys never leave this machine.`);
 });
 
 // Explicitly unbounding timeouts for massive Agent LLM evaluations (30 minutes)

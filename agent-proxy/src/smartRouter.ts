@@ -1,0 +1,238 @@
+/**
+ * Smart Router — proactive model downgrade based on request complexity.
+ *
+ * Two-tier classification:
+ *   Tier 1: Fast heuristics (0ms) — catches obvious LOW/HIGH cases
+ *   Tier 2: Ollama classification (~200-500ms) — resolves ambiguous MEDIUM cases
+ *
+ * If Ollama is unavailable, MEDIUM is treated as HIGH (conservative, no downgrade).
+ */
+
+import { isOllamaAvailable, ollamaClassify } from './ollamaClient';
+import { globalStats } from './stats';
+
+export type Complexity = 'LOW' | 'MEDIUM' | 'HIGH';
+
+export interface SmartRouteResult {
+    routed: boolean;
+    originalModel: string;
+    newModel: string;
+    complexity: Complexity;
+    reason?: string;
+}
+
+interface DowngradeRule {
+    pattern: string;
+    downgrade: string;
+    maxComplexity: Complexity;
+}
+
+// Sorted by specificity: longer patterns first
+const DOWNGRADE_MAP: DowngradeRule[] = [
+    // LOW complexity: use cheapest model
+    { pattern: 'opus',   downgrade: 'claude-haiku-4-5',  maxComplexity: 'LOW' },
+    { pattern: 'sonnet', downgrade: 'claude-haiku-4-5',  maxComplexity: 'LOW' },
+    { pattern: 'gpt-4o', downgrade: 'gpt-4o-mini',       maxComplexity: 'LOW' },
+    { pattern: 'gpt-5',  downgrade: 'gpt-4o-mini',       maxComplexity: 'LOW' },
+    // MEDIUM complexity: one tier down
+    { pattern: 'opus',   downgrade: 'claude-sonnet-4-6',  maxComplexity: 'MEDIUM' },
+    { pattern: 'gpt-5',  downgrade: 'gpt-4o',             maxComplexity: 'MEDIUM' },
+];
+
+// Models that are already the cheapest tier — never downgrade these
+const CHEAP_MODELS = ['haiku', 'mini', 'flash', 'gpt-3.5'];
+
+const COMPLEXITY_RANK: Record<Complexity, number> = { LOW: 0, MEDIUM: 1, HIGH: 2 };
+
+/**
+ * Extract the last user message text from a request body.
+ * Handles Anthropic, OpenAI, and Gemini formats.
+ */
+function getLastUserMessage(body: any, isGemini: boolean): string {
+    if (isGemini && body.contents && Array.isArray(body.contents)) {
+        for (let i = body.contents.length - 1; i >= 0; i--) {
+            const c = body.contents[i];
+            if (c.role === 'user' && c.parts) {
+                return c.parts.map((p: any) => p.text || '').join(' ');
+            }
+        }
+        return '';
+    }
+
+    const messages = body.messages;
+    if (!messages || !Array.isArray(messages)) return '';
+
+    for (let i = messages.length - 1; i >= 0; i--) {
+        const m = messages[i];
+        if (m.role === 'user') {
+            if (typeof m.content === 'string') return m.content;
+            if (Array.isArray(m.content)) {
+                return m.content
+                    .filter((b: any) => b.type === 'text')
+                    .map((b: any) => b.text || '')
+                    .join(' ');
+            }
+        }
+    }
+    return '';
+}
+
+/**
+ * Count conversation messages (excluding system).
+ */
+function getMessageCount(body: any, isGemini: boolean): number {
+    if (isGemini) return body.contents?.length || 0;
+    if (!body.messages) return 0;
+    return body.messages.filter((m: any) => m.role !== 'system').length;
+}
+
+/**
+ * Check if recent messages contain tool usage.
+ */
+function hasRecentToolUse(body: any, isGemini: boolean): boolean {
+    const messages = isGemini ? body.contents : body.messages;
+    if (!messages || !Array.isArray(messages)) return false;
+
+    // Check last 5 messages for tool usage
+    const recent = messages.slice(-5);
+    for (const m of recent) {
+        // Anthropic: tool_use in content blocks
+        if (Array.isArray(m.content)) {
+            if (m.content.some((b: any) => b.type === 'tool_use' || b.type === 'tool_result')) return true;
+        }
+        // OpenAI: tool_calls on assistant, role=tool for results
+        if (m.tool_calls) return true;
+        if (m.role === 'tool') return true;
+        // Gemini: functionCall / functionResponse in parts
+        if (m.parts && Array.isArray(m.parts)) {
+            if (m.parts.some((p: any) => p.functionCall || p.functionResponse)) return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Tier 1: Fast heuristic classification.
+ * Returns a definitive LOW/HIGH or null for MEDIUM (ambiguous).
+ */
+export function classifyHeuristic(body: any, isGemini: boolean): { complexity: Complexity | null; reason: string } {
+    const msgCount = getMessageCount(body, isGemini);
+    const lastMsg = getLastUserMessage(body, isGemini);
+    const hasTools = hasRecentToolUse(body, isGemini);
+
+    // HIGH: lots of context or active tool use
+    if (hasTools) {
+        return { complexity: 'HIGH', reason: 'Active tool use in recent messages' };
+    }
+    if (msgCount > 20) {
+        return { complexity: 'HIGH', reason: `Large conversation (${msgCount} messages)` };
+    }
+
+    // LOW: short conversation with simple last message
+    if (msgCount <= 3 && lastMsg.length < 200 && !lastMsg.includes('```')) {
+        return { complexity: 'LOW', reason: 'Short conversation, simple message' };
+    }
+
+    // LOW: very short last message with no code
+    if (lastMsg.length < 100 && !lastMsg.includes('```') && msgCount <= 6) {
+        return { complexity: 'LOW', reason: 'Brief message, no code' };
+    }
+
+    // MEDIUM: ambiguous — let Tier 2 decide
+    return { complexity: null, reason: 'Ambiguous complexity' };
+}
+
+/**
+ * Tier 2: Ollama-based classification for ambiguous cases.
+ */
+async function classifyWithOllama(lastMessage: string): Promise<Complexity> {
+    const prompt = `Classify this user request's complexity as exactly one word: LOW, MEDIUM, or HIGH.
+
+LOW = simple question, greeting, short clarification, basic lookup
+MEDIUM = moderate coding task, explanation, analysis of a specific topic
+HIGH = complex multi-step task, architecture design, debugging, large refactor
+
+User request: "${lastMessage.slice(0, 500)}"
+
+Classification:`;
+
+    globalStats.ollamaCalls++;
+    const result = await ollamaClassify(prompt);
+    const upper = result.toUpperCase().trim();
+
+    if (upper.includes('LOW')) return 'LOW';
+    if (upper.includes('MEDIUM')) return 'MEDIUM';
+    // Default to HIGH (conservative) if unclear
+    return 'HIGH';
+}
+
+/**
+ * Find the best downgrade rule for a model + complexity combination.
+ */
+function findDowngrade(model: string, complexity: Complexity): DowngradeRule | null {
+    const lower = model.toLowerCase();
+
+    // Never downgrade already-cheap models
+    if (CHEAP_MODELS.some(c => lower.includes(c))) return null;
+
+    // Find the best matching rule where complexity <= maxComplexity
+    for (const rule of DOWNGRADE_MAP) {
+        if (lower.includes(rule.pattern) && COMPLEXITY_RANK[complexity] <= COMPLEXITY_RANK[rule.maxComplexity]) {
+            // Don't downgrade to the same model
+            if (lower !== rule.downgrade.toLowerCase()) {
+                return rule;
+            }
+        }
+    }
+    return null;
+}
+
+/**
+ * Main entry point: classify request complexity and optionally downgrade the model.
+ */
+export async function smartRoute(body: any, isGemini: boolean, isOpenAI: boolean): Promise<SmartRouteResult> {
+    const model = body?.model || '';
+    const noResult: SmartRouteResult = {
+        routed: false,
+        originalModel: model,
+        newModel: model,
+        complexity: 'HIGH',
+    };
+
+    if (!model || !body) return noResult;
+
+    // For Gemini, model is often in the URL not the body — extract if missing
+    const modelName = model.toLowerCase();
+
+    // Tier 1: fast heuristics
+    const heuristic = classifyHeuristic(body, isGemini);
+    let complexity: Complexity;
+
+    if (heuristic.complexity !== null) {
+        complexity = heuristic.complexity;
+    } else {
+        // Tier 2: Ollama classification for ambiguous cases
+        const available = await isOllamaAvailable();
+        if (available) {
+            const lastMsg = getLastUserMessage(body, isGemini);
+            complexity = await classifyWithOllama(lastMsg);
+        } else {
+            // Conservative: treat ambiguous as HIGH (no downgrade)
+            complexity = 'HIGH';
+        }
+    }
+
+    // Find applicable downgrade rule
+    const rule = findDowngrade(model, complexity);
+    if (!rule) {
+        return { routed: false, originalModel: model, newModel: model, complexity, reason: heuristic.reason };
+    }
+
+    return {
+        routed: true,
+        originalModel: model,
+        newModel: rule.downgrade,
+        complexity,
+        reason: heuristic.reason,
+    };
+}

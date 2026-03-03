@@ -3,8 +3,12 @@ import { checkCircuitBreaker } from './circuitBreaker';
 import { attemptShadowRouterFailover } from './shadowRouter';
 import { getInputCost, CACHE_SAVINGS_RATE } from './pricing';
 import { generateCacheKey } from './tokenCounter';
-import { getUserId, checkBudget, recordUserSpend, recordUserLoop, getOrCreateUser } from './budgetGovernor';
+import { checkBudget, recordUserSpend, recordUserLoop, getOrCreateUser } from './budgetGovernor';
 import { checkNoProgress } from './noProgress';
+import { getProviderKey, getProviderHeaderConfig, getLocalUserId, Provider } from './keyVault';
+import { globalStats, recordActivity } from './stats';
+import { trimContext, applyOllamaSummary, TrimResult } from './contextTrimmer';
+import { smartRoute, SmartRouteResult } from './smartRouter';
 
 // Explicit Interfaces for Edge Case Handling
 export interface LLMRequest {
@@ -42,7 +46,7 @@ function injectEphemeralCache(block: any): { modified: boolean, content: any } {
     return { modified: false, content: block };
 }
 
-export function applyContextCDN(body: LLMRequest, isGemini: boolean, reqUrl: string = "") {
+export function applyContextCDN(body: LLMRequest, isGemini: boolean, reqUrl: string = "", originalBodyLength?: number) {
     if (!body) return body;
     let modified = false;
 
@@ -53,8 +57,10 @@ export function applyContextCDN(body: LLMRequest, isGemini: boolean, reqUrl: str
         // NOTE: We do NOT reorder conversation turns — Gemini requires strict alternating
         // user/model turns. Reordering would cause 400 errors.
         if (body.contents && Array.isArray(body.contents) && body.contents.length > 0) {
-            const totalText = JSON.stringify(body.contents);
-            const estimatedTokens = Math.round(totalText.length / 4);
+            // Use pre-computed body length to avoid re-serialization
+            const estimatedTokens = originalBodyLength
+                ? Math.round(originalBodyLength / 4)
+                : Math.round(JSON.stringify(body.contents).length / 4);
 
             if (estimatedTokens >= 1024) {
                 // systemInstruction is always sent first by Gemini, making it the
@@ -69,8 +75,10 @@ export function applyContextCDN(body: LLMRequest, isGemini: boolean, reqUrl: str
         // We optimize by: (1) ensuring system messages are first (prefix-stable),
         // (2) injecting prompt_cache_key for deterministic cache hits across sessions,
         // (3) setting prompt_cache_retention to 24h for extended TTL.
-        const bodyStr = JSON.stringify(body);
-        const estimatedTokens = Math.round(bodyStr.length / 4);
+        // Use pre-computed body length to avoid re-serialization
+        const estimatedTokens = originalBodyLength
+            ? Math.round(originalBodyLength / 4)
+            : Math.round(JSON.stringify(body).length / 4);
         if (estimatedTokens >= 1024 && body.messages && Array.isArray(body.messages)) {
             // Move system messages to front for stable prefix matching
             const systemMsgs = body.messages.filter((m: any) => m.role === 'system');
@@ -144,6 +152,35 @@ export async function handleProxyRequest(req: Request, res: Response) {
     // Clean up content-length as it will change if we mutate the body string later
     delete headers['content-length'];
 
+    // LOCAL-FIRST: Strip any client-sent API key headers (defense in depth)
+    // The proxy injects keys from local env vars — never forward client keys
+    delete headers['x-api-key'];
+    delete headers['authorization'];
+    delete headers['x-goog-api-key'];
+
+    // LOCAL-FIRST: Inject the real API key from local env vars
+    const provider: Provider = isGemini ? 'gemini' : isNvidia ? 'nvidia' : isOpenAI ? 'openai' : 'anthropic';
+    const vaultResult = getProviderKey(provider);
+    if ('error' in vaultResult) {
+        res.status(400).json({
+            error: {
+                message: vaultResult.error,
+                type: 'provider_not_configured',
+            }
+        });
+        return;
+    }
+    const { headerName, headerPrefix } = getProviderHeaderConfig(provider);
+    headers[headerName] = `${headerPrefix}${vaultResult.key}`;
+
+    // For Gemini query-param auth, also inject the key as a URL param
+    if (isGemini && !req.query.key) {
+        const separator = req.originalUrl.includes('?') ? '&' : '?';
+        const geminiUrl = `${baseUrl}${req.originalUrl}${separator}key=${vaultResult.key}`;
+        // We'll use this below when constructing the URL
+        (req as any)._geminiUrl = geminiUrl;
+    }
+
     const init: RequestInit = {
         method: req.method,
         headers,
@@ -151,12 +188,14 @@ export async function handleProxyRequest(req: Request, res: Response) {
 
     let optimizedBody = req.body;
     let originalBodyStr = req.body ? JSON.stringify(req.body) : "";
-    const apiKey = (req.headers['x-api-key'] || req.headers['authorization'] || '') as string;
-    const userId = getUserId(apiKey);
+    let optimizedBodyStr = "";
+    let smartRouteResult: SmartRouteResult | null = null;
+    // LOCAL-FIRST: User ID based on local machine identity, not API key
+    const userId = getLocalUserId();
 
     if (req.method !== 'GET' && req.method !== 'HEAD' && req.body && Object.keys(req.body).length > 0) {
         const ip = req.ip || '127.0.0.1';
-        const cb = checkCircuitBreaker(ip, req.body, apiKey || undefined);
+        const cb = checkCircuitBreaker(ip, req.body, userId);
         if (cb.blocked) {
             recordUserLoop(userId);
             res.status(400).json({ error: { message: cb.reason, type: 'agentic_firewall_blocked' } });
@@ -193,10 +232,47 @@ export async function handleProxyRequest(req: Request, res: Response) {
             return;
         }
 
-        // Deep copy so we don't accidentally mutate the original request when passing it
-        const result = applyContextCDN(JSON.parse(originalBodyStr), isGemini, req.originalUrl);
+        // Smart Router — proactive model downgrade for simple tasks
+        let modelName = req.body?.model || '';
+        const noDowngrade = req.headers['x-no-downgrade'] === 'true';
+        if (!noDowngrade && modelName) {
+            smartRouteResult = await smartRoute(req.body, isGemini, isOpenAI || isNvidia);
+            if (smartRouteResult.routed) {
+                req.body.model = smartRouteResult.newModel;
+                modelName = smartRouteResult.newModel;
+                console.log(`[PROXY Smart Router] ${smartRouteResult.originalModel} → ${smartRouteResult.newModel} (${smartRouteResult.complexity})`);
+                res.setHeader('X-Firewall-Routed', `${smartRouteResult.originalModel} → ${smartRouteResult.newModel}`);
+                globalStats.smartRouteDowngrades++;
+            }
+        }
+
+        // Context Trimmer — reduce oversized histories before CDN processing
+        // Runs after smart router (which may change the model) and no-progress check
+        const noTrim = req.headers['x-no-trim'] === 'true';
+        let trimResult: TrimResult = { trimmed: false, body: req.body, originalTokens: 0, trimmedTokens: 0, removedMessages: 0 };
+        if (!noTrim) {
+            trimResult = trimContext(req.body, isGemini, isOpenAI || isNvidia, modelName, originalBodyStr.length);
+        }
+
+        // Ollama summarization — summarize dropped messages instead of just truncating
+        if (trimResult.trimmed) {
+            trimResult = await applyOllamaSummary(trimResult, isGemini);
+        }
+
+        if (trimResult.trimmed) {
+            const suffix = trimResult.summarized ? ' (summarized)' : '';
+            console.log(`[PROXY Context Trimmer] Removed ${trimResult.removedMessages} messages, saved ~${trimResult.trimmedTokens} tokens${suffix}`);
+            res.setHeader('X-Firewall-Trimmed', `${trimResult.removedMessages} messages, ~${trimResult.trimmedTokens} tokens${suffix}`);
+            globalStats.trimmedRequests++;
+            globalStats.trimmedTokensSaved += trimResult.trimmedTokens;
+        }
+
+        // Deep copy via structuredClone (avoids JSON.parse(JSON.stringify(...)) roundtrip)
+        const result = applyContextCDN(structuredClone(trimResult.body), isGemini, req.originalUrl, originalBodyStr.length);
         optimizedBody = result.body;
-        init.body = JSON.stringify(optimizedBody);
+        // Serialize optimized body once — reused for both init.body and stats comparison
+        optimizedBodyStr = JSON.stringify(optimizedBody);
+        init.body = optimizedBodyStr;
 
         // Anthropic strictly requires the beta header for prompt caching, otherwise it returns a 400 Bad Request
         if (result.modified && !isGemini && !isOpenAI && !isNvidia) {
@@ -213,12 +289,14 @@ export async function handleProxyRequest(req: Request, res: Response) {
 
         // Add user ID and dashboard URL headers
         res.setHeader('X-Firewall-User', userId);
-        res.setHeader('X-Firewall-Dashboard', `https://api.jockeyvc.com/dashboard/${userId}`);
+        res.setHeader('X-Firewall-Dashboard', `http://localhost:${process.env.PORT || 4000}/dashboard/${userId}`);
     }
 
-    console.log(`[PROXY] => ${req.method} ${url}`);
+    // Use Gemini URL with key param if injected
+    const fetchUrl = (req as any)._geminiUrl || url;
+    console.log(`[PROXY LOCAL] => ${req.method} ${url}`);
 
-    let response = await fetch(url, init);
+    let response = await fetch(fetchUrl, init);
 
     let statusText = 'Pass-through';
     let statusColor = 'text-gray-400 bg-gray-400/10';
@@ -236,51 +314,67 @@ export async function handleProxyRequest(req: Request, res: Response) {
     }
 
     // Record stats
-    import('./stats').then(({ globalStats, recordActivity }) => {
-        globalStats.totalRequests++;
+    globalStats.totalRequests++;
 
-        // Estimate prompt size: 1 token ~= 4 characters. This accurately measures massive NVIDIA/OpenAI payloads!
-        // We floor at 1,000 for standard interactions, but RAG code scans easily hit 2,000,000 tokens per loop.
-        const estimatedPromptTokens = Math.max(Math.round(originalBodyStr.length / 4), 1000);
+    // Estimate prompt size: 1 token ~= 4 characters. This accurately measures massive NVIDIA/OpenAI payloads!
+    // We floor at 1,000 for standard interactions, but RAG code scans easily hit 2,000,000 tokens per loop.
+    const estimatedPromptTokens = Math.max(Math.round(originalBodyStr.length / 4), 1000);
 
-        const optimizedStr = optimizedBody ? JSON.stringify(optimizedBody) : "";
-        // Extract model name accurately before math
-        let displayModel = optimizedBody?.model || 'unknown';
-        if (isGemini) {
-            const urlMatch = req.originalUrl.match(/models\/(gemini-[^:]+)/);
-            if (urlMatch) displayModel = urlMatch[1];
-        } else if (isOpenAI || (typeof isNvidia !== 'undefined' && isNvidia)) {
-            displayModel = optimizedBody?.model || 'unknown'; // OpenAI/NVIDIA exact model specified in payload
+    // Reuse pre-computed optimizedBodyStr — no re-serialization needed
+    // Extract model name accurately before math
+    let displayModel = optimizedBody?.model || 'unknown';
+    if (isGemini) {
+        const urlMatch = req.originalUrl.match(/models\/(gemini-[^:]+)/);
+        if (urlMatch) displayModel = urlMatch[1];
+    } else if (isOpenAI || (typeof isNvidia !== 'undefined' && isNvidia)) {
+        displayModel = optimizedBody?.model || 'unknown'; // OpenAI/NVIDIA exact model specified in payload
+    }
+
+    const isCDN = statusText === 'Pass-through' && optimizedBodyStr !== originalBodyStr;
+
+    if (isCDN) {
+        statusText = 'Context CDN Hit';
+        statusColor = 'text-emerald-400 bg-emerald-400/10';
+
+        // Dynamic pricing via centralized pricing module
+        const inputCostPerMillionTokens = getInputCost(displayModel);
+
+        // Calculate the dollar value of cached tokens
+        const baseCost = (estimatedPromptTokens / 1_000_000) * inputCostPerMillionTokens;
+        const savingsCost = baseCost * CACHE_SAVINGS_RATE;
+        const savedTokens = estimatedPromptTokens * CACHE_SAVINGS_RATE;
+
+        globalStats.savedTokens += savedTokens;
+        globalStats.savedMoney += savingsCost;
+    }
+
+    // Smart Route savings — price delta between original and downgraded model
+    if (smartRouteResult && smartRouteResult.routed) {
+        const originalCost = getInputCost(smartRouteResult.originalModel);
+        const newCost = getInputCost(smartRouteResult.newModel);
+        const costDelta = originalCost - newCost;
+        if (costDelta > 0) {
+            const savings = (estimatedPromptTokens / 1_000_000) * costDelta;
+            globalStats.smartRouteSavings += savings;
+            globalStats.savedMoney += savings;
         }
 
-        const isCDN = statusText === 'Pass-through' && optimizedStr !== originalBodyStr;
-
-        if (isCDN) {
-            statusText = 'Context CDN Hit';
-            statusColor = 'text-emerald-400 bg-emerald-400/10';
-
-            // Dynamic pricing via centralized pricing module
-            const inputCostPerMillionTokens = getInputCost(displayModel);
-
-            // Calculate the dollar value of cached tokens
-            const baseCost = (estimatedPromptTokens / 1_000_000) * inputCostPerMillionTokens;
-            const savingsCost = baseCost * CACHE_SAVINGS_RATE;
-            const savedTokens = estimatedPromptTokens * CACHE_SAVINGS_RATE;
-
-            globalStats.savedTokens += savedTokens;
-            globalStats.savedMoney += savingsCost;
+        // Override status for activity feed (unless CDN or failover already set)
+        if (statusText === 'Pass-through') {
+            statusText = `Smart Route: ${smartRouteResult.originalModel} → ${smartRouteResult.newModel}`;
+            statusColor = 'text-blue-400 bg-blue-400/10';
         }
+    }
 
-        // Record per-user spend
-        recordUserSpend(userId, displayModel, estimatedPromptTokens, isCDN);
+    // Record per-user spend
+    recordUserSpend(userId, displayModel, estimatedPromptTokens, isCDN);
 
-        recordActivity({
-            time: new Date().toLocaleTimeString(),
-            model: displayModel,
-            tokens: estimatedPromptTokens ? `${Math.round(estimatedPromptTokens / 1000)}k` : 'auto',
-            status: statusText,
-            statusColor
-        });
+    recordActivity({
+        time: new Date().toLocaleTimeString(),
+        model: displayModel,
+        tokens: estimatedPromptTokens ? `${Math.round(estimatedPromptTokens / 1000)}k` : 'auto',
+        status: statusText,
+        statusColor
     });
 
     // Forward response headers

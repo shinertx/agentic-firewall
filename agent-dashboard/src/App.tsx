@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Shield, Zap, RefreshCw, BarChart2 } from 'lucide-react';
+import { Shield, Zap, RefreshCw, BarChart2, ArrowDownRight, Scissors } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 function App() {
@@ -8,6 +8,8 @@ function App() {
     savedMoney: 0,
     blockedLoops: 0,
     totalRequests: 0,
+    smartRouteDowngrades: 0,
+    trimmedRequests: 0,
     recentActivity: [] as any[]
   });
 
@@ -54,7 +56,7 @@ function App() {
         </header>
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <StatCard
             title="Money Saved"
             value={`$${stats.savedMoney < 1 ? stats.savedMoney.toFixed(4) : stats.savedMoney.toFixed(2)}`}
@@ -68,16 +70,28 @@ function App() {
             color="from-blue-500/20 to-transparent border-blue-500/20"
           />
           <StatCard
-            title="Blocked Loops"
-            value={stats.blockedLoops.toString()}
-            icon={<RefreshCw className="w-5 h-5 text-red-400" />}
-            color="from-red-500/20 to-transparent border-red-500/20"
-          />
-          <StatCard
             title="Proxied Requests"
             value={stats.totalRequests.toString()}
             icon={<Shield className="w-5 h-5 text-emerald-400" />}
             color="from-emerald-500/20 to-transparent border-emerald-500/20"
+          />
+          <StatCard
+            title="Smart Downgrades"
+            value={stats.smartRouteDowngrades.toString()}
+            icon={<ArrowDownRight className="w-5 h-5 text-blue-400" />}
+            color="from-blue-500/20 to-transparent border-blue-500/20"
+          />
+          <StatCard
+            title="Trimmed Requests"
+            value={stats.trimmedRequests.toString()}
+            icon={<Scissors className="w-5 h-5 text-purple-400" />}
+            color="from-purple-500/20 to-transparent border-purple-500/20"
+          />
+          <StatCard
+            title="Blocked Loops"
+            value={stats.blockedLoops.toString()}
+            icon={<RefreshCw className="w-5 h-5 text-red-400" />}
+            color="from-red-500/20 to-transparent border-red-500/20"
           />
         </div>
 

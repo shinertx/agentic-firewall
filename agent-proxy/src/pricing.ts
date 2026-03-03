@@ -62,23 +62,19 @@ export const DEFAULT_COST_PER_MILLION_TOKENS = 3.00;
 // Anthropic prompt caching discount (server-side cache hit rate)
 export const CACHE_SAVINGS_RATE = 0.90;
 
+// Sort by pattern length descending at module load — longer patterns match first.
+// This eliminates fragile skip logic: 'gpt-4o-mini' naturally matches before 'gpt-4o' before 'gpt-4'.
+const SORTED_PRICING = [...MODEL_PRICING].sort((a, b) => b.pattern.length - a.pattern.length);
+
 /**
  * Look up the input cost for a given model name.
- * Uses first-match against the patterns above — order matters.
+ * Uses first-match against patterns sorted by length (longest first).
  * The proxy forwards ALL models regardless — this is only for dashboard math.
  */
 export function getInputCost(modelName: string): number {
     const lower = modelName.toLowerCase();
 
-    for (const tier of MODEL_PRICING) {
-        // Prevent 'gpt-4o' from matching the generic 'gpt-4' pattern
-        if (tier.pattern === 'gpt-4' && (lower.includes('gpt-4o') || lower.includes('gpt-4.1') || lower.includes('gpt-4-turbo'))) {
-            continue;
-        }
-        // Prevent 'gpt-5' from matching when it's 'gpt-5.2' or 'gpt-5-mini'
-        if (tier.pattern === 'gpt-5' && (lower.includes('gpt-5.') || lower.includes('gpt-5-'))) {
-            continue;
-        }
+    for (const tier of SORTED_PRICING) {
         if (lower.includes(tier.pattern)) {
             return tier.costPerMillionTokens;
         }

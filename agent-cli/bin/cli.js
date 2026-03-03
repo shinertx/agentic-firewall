@@ -18,10 +18,18 @@ const path = require('path');
 const os = require('os');
 const readline = require('readline');
 
-const VERSION = '0.5.2';
-const PROXY_URL = 'https://api.jockeyvc.com';
+const VERSION = '0.6.0';
+const PROXY_URL = 'http://localhost:4000';
 const PROXY_API = `${PROXY_URL}/api/stats`;
 const HTTP_TIMEOUT_MS = 10_000;
+
+// Provider env var names (matches keyVault.ts fallback chains)
+const PROVIDER_ENV_VARS = {
+    anthropic: ['ANTHROPIC_API_KEY', 'ANTHROPIC_KEY'],
+    openai: ['OPENAI_API_KEY', 'OPENAI_KEY'],
+    gemini: ['GEMINI_API_KEY', 'GOOGLE_API_KEY'],
+    nvidia: ['NVIDIA_API_KEY', 'NVIDIA_KEY'],
+};
 
 // ─── Platform Detection ─────────────────────────────────
 const IS_WIN = process.platform === 'win32';
@@ -116,10 +124,12 @@ function tokenCost(tokens, pricePerMillion) {
     return (tokens / 1_000_000) * pricePerMillion;
 }
 
-// ─── HTTP Helper (with timeout) ─────────────────────────
+// ─── HTTP Helper (with timeout, supports http:// and https://) ──
+const http = require('http');
 function httpGet(url) {
     return new Promise((resolve, reject) => {
-        const req = https.get(url, (res) => {
+        const client = url.startsWith('https') ? https : http;
+        const req = client.get(url, (res) => {
             let data = '';
             res.on('data', chunk => data += chunk);
             res.on('end', () => {
@@ -170,10 +180,26 @@ const MARKER = '# agent-firewall proxy routing';
 const MARKER_END = '# /agent-firewall';
 
 function getShellBlock(type) {
+    // LOCAL-FIRST: Source API keys from ~/.firewall/.env and route agents through localhost
     if (type === 'powershell') {
-        return `${MARKER}\n$env:OPENAI_BASE_URL = "${PROXY_URL}/v1"\n$env:ANTHROPIC_BASE_URL = "${PROXY_URL}"\n${MARKER_END}`;
+        return [
+            MARKER,
+            '# Agentic Firewall: local-first proxy (API keys never leave this machine)',
+            `$firewallEnv = Join-Path $env:USERPROFILE ".firewall\\.env"`,
+            `if (Test-Path $firewallEnv) { Get-Content $firewallEnv | ForEach-Object { if ($_ -match '^([^#=]+)=(.*)$') { [Environment]::SetEnvironmentVariable($Matches[1].Trim(), $Matches[2].Trim(), "Process") } } }`,
+            `$env:OPENAI_BASE_URL = "${PROXY_URL}/v1"`,
+            `$env:ANTHROPIC_BASE_URL = "${PROXY_URL}"`,
+            MARKER_END,
+        ].join('\n');
     }
-    return `${MARKER}\nexport OPENAI_BASE_URL="${PROXY_URL}/v1"\nexport ANTHROPIC_BASE_URL="${PROXY_URL}"\n${MARKER_END}`;
+    return [
+        MARKER,
+        '# Agentic Firewall: local-first proxy (API keys never leave this machine)',
+        '[ -f ~/.firewall/.env ] && set -a && source ~/.firewall/.env && set +a',
+        `export OPENAI_BASE_URL="${PROXY_URL}/v1"`,
+        `export ANTHROPIC_BASE_URL="${PROXY_URL}"`,
+        MARKER_END,
+    ].join('\n');
 }
 
 // ─── Agent Detection ────────────────────────────────────
@@ -194,7 +220,52 @@ function detectAgents() {
         agents.push({ name: 'Claude Code', configPath: claudeConfig, type: 'claude-code' });
     }
 
+    // Check for Ollama (local LLM runtime)
+    try {
+        const { execSync } = require('child_process');
+        const ollamaVersion = execSync('ollama --version', { encoding: 'utf-8', timeout: 3000 }).trim();
+        agents.push({ name: `Ollama (${ollamaVersion})`, configPath: path.join(home, '.ollama'), type: 'ollama' });
+    } catch {
+        // Ollama not installed — skip silently
+    }
+
     return { agents };
+}
+
+// ─── Ollama Helpers ─────────────────────────────────────
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+/** Check if Ollama API is responding on localhost:11434 */
+function isOllamaRunning() {
+    return new Promise((resolve) => {
+        const req = http.get('http://localhost:11434/api/tags', (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => resolve(res.statusCode === 200));
+        });
+        req.on('error', () => resolve(false));
+        req.setTimeout(2000, () => { req.destroy(); resolve(false); });
+    });
+}
+
+/** Check if a specific model is already pulled in Ollama */
+function ollamaHasModel(modelName) {
+    return new Promise((resolve) => {
+        const req = http.get('http://localhost:11434/api/tags', (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+                try {
+                    const parsed = JSON.parse(data);
+                    const models = (parsed.models || []).map(m => m.name || '');
+                    // Match "qwen2.5:3b" against "qwen2.5:3b" or "qwen2.5:3b-..." variants
+                    resolve(models.some(m => m === modelName || m.startsWith(modelName)));
+                } catch { resolve(false); }
+            });
+        });
+        req.on('error', () => resolve(false));
+        req.setTimeout(3000, () => { req.destroy(); resolve(false); });
+    });
 }
 
 // ─── Log Discovery ──────────────────────────────────────
@@ -488,34 +559,222 @@ function showProxyWaste(stats) {
     }
 }
 
-// ─── Setup Command ──────────────────────────────────────
-async function setup() {
-    header('Agent Firewall — Setup');
-    log(`${c.dim}Stop runaway agents. Save money. Stay in control.${c.reset}\n`);
-
-    const { agents } = detectAgents();
-
-    if (agents.length === 0) {
-        info('No agents detected. Setting up environment variables for any OpenAI/Anthropic SDK.\n');
-    } else {
-        agents.forEach(a => ok(`Detected ${c.bold}${a.name}${c.reset}`));
-        if (agents.some(a => a.type === 'openclaw')) {
-            info(`OpenClaw will pick up the proxy via ${c.bold}ANTHROPIC_BASE_URL${c.reset} / ${c.bold}OPENAI_BASE_URL${c.reset} env vars.`);
-            info(`${c.dim}No changes to openclaw.json needed.${c.reset}`);
+// ─── Key Detection ──────────────────────────────────────
+function detectExistingKeys() {
+    const found = {};
+    for (const [provider, envVars] of Object.entries(PROVIDER_ENV_VARS)) {
+        for (const envVar of envVars) {
+            if (process.env[envVar]) {
+                found[provider] = { envVar, masked: maskKey(process.env[envVar]) };
+                break;
+            }
         }
+    }
+    return found;
+}
+
+function maskKey(key) {
+    if (!key || key.length < 8) return '***';
+    return key.slice(0, 4) + '...' + key.slice(-4);
+}
+
+// ─── Firewall Env File ─────────────────────────────────
+function getFirewallEnvPath() {
+    return path.join(os.homedir(), '.firewall', '.env');
+}
+
+function readFirewallEnv() {
+    const envPath = getFirewallEnvPath();
+    if (!fs.existsSync(envPath)) return {};
+    const content = fs.readFileSync(envPath, 'utf-8');
+    const vars = {};
+    for (const line of content.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const eqIdx = trimmed.indexOf('=');
+        if (eqIdx > 0) {
+            const key = trimmed.slice(0, eqIdx).trim();
+            let val = trimmed.slice(eqIdx + 1).trim();
+            // Strip surrounding quotes
+            if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+                val = val.slice(1, -1);
+            }
+            vars[key] = val;
+        }
+    }
+    return vars;
+}
+
+function writeFirewallEnv(vars) {
+    const envDir = path.join(os.homedir(), '.firewall');
+    fs.mkdirSync(envDir, { recursive: true });
+    const envPath = getFirewallEnvPath();
+    const lines = ['# Agentic Firewall — provider API keys (local-only, never transmitted)', '#'];
+    for (const [key, val] of Object.entries(vars)) {
+        lines.push(`${key}="${val}"`);
+    }
+    fs.writeFileSync(envPath, lines.join('\n') + '\n', { mode: 0o600 });
+}
+
+// ─── Hidden Input ───────────────────────────────────────
+function promptHidden(question) {
+    return new Promise((resolve) => {
+        if (!IS_TTY) { resolve(''); return; }
+        const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+        // Mute output for hidden input
+        process.stdout.write(`${c.cyan}?${c.reset} ${question}: `);
+        const stdin = process.stdin;
+        const wasRaw = stdin.isRaw;
+        if (stdin.setRawMode) stdin.setRawMode(true);
+        let input = '';
+        const onData = (ch) => {
+            const char = ch.toString();
+            if (char === '\n' || char === '\r') {
+                if (stdin.setRawMode) stdin.setRawMode(wasRaw || false);
+                stdin.removeListener('data', onData);
+                process.stdout.write('\n');
+                rl.close();
+                resolve(input);
+            } else if (char === '\u007f' || char === '\b') {
+                input = input.slice(0, -1);
+            } else if (char === '\u0003') {
+                // Ctrl+C
+                process.exit(1);
+            } else {
+                input += char;
+            }
+        };
+        stdin.on('data', onData);
+    });
+}
+
+// ─── Setup Command (Local-First) ────────────────────────
+async function setup() {
+    header('Agent Firewall — Local Setup');
+    log(`${c.dim}API keys stay on your machine. Never transmitted to any server.${c.reset}\n`);
+
+    // Step 1: Detect agents
+    const { agents } = detectAgents();
+    if (agents.length > 0) {
+        agents.forEach(a => ok(`Detected ${c.bold}${a.name}${c.reset}`));
         log('');
     }
 
-    // Shell env vars
+    // Step 2: Detect existing API keys
+    const existingKeys = detectExistingKeys();
+    const firewallEnv = readFirewallEnv();
+    const allKeys = { ...firewallEnv };
+
+    const providers = [
+        { id: 'anthropic', name: 'Anthropic (Claude)', envVar: 'ANTHROPIC_API_KEY' },
+        { id: 'openai', name: 'OpenAI (GPT)', envVar: 'OPENAI_API_KEY' },
+        { id: 'gemini', name: 'Google Gemini', envVar: 'GEMINI_API_KEY' },
+        { id: 'nvidia', name: 'NVIDIA NIM', envVar: 'NVIDIA_API_KEY' },
+    ];
+
+    for (const p of providers) {
+        if (existingKeys[p.id]) {
+            ok(`${p.name}: found in env (${c.dim}${existingKeys[p.id].masked}${c.reset})`);
+            // Copy to firewall env if not already there
+            if (!allKeys[p.envVar]) {
+                allKeys[p.envVar] = process.env[existingKeys[p.id].envVar];
+            }
+        } else if (firewallEnv[p.envVar]) {
+            ok(`${p.name}: found in ~/.firewall/.env (${c.dim}${maskKey(firewallEnv[p.envVar])}${c.reset})`);
+        } else {
+            const yes = await confirm(`Add ${p.name} API key?`);
+            if (yes) {
+                const key = await promptHidden(`Enter ${p.envVar}`);
+                if (key && key.trim().length > 5) {
+                    allKeys[p.envVar] = key.trim();
+                    ok(`${p.name} key saved.`);
+                } else {
+                    info(`Skipped ${p.name}.`);
+                }
+            }
+        }
+    }
+
+    // Step 2.5: Ollama — detect, start service, pull model, enable
+    log('');
+    const ollamaAgent = agents.find(a => a.type === 'ollama');
+    if (ollamaAgent) {
+        ok(`${ollamaAgent.name} detected!`);
+        const ollamaModel = allKeys['OLLAMA_MODEL'] || 'qwen2.5:3b';
+
+        // Ensure Ollama service is running
+        const ollamaRunning = await isOllamaRunning();
+        if (!ollamaRunning) {
+            const s1 = spinner('Starting Ollama service');
+            try {
+                const { exec } = require('child_process');
+                // Start ollama serve in background (detached, no stdio)
+                const child = exec('ollama serve', { stdio: 'ignore', detached: true });
+                child.unref();
+                // Wait for it to come up (poll up to 10s)
+                let started = false;
+                for (let attempt = 0; attempt < 20; attempt++) {
+                    await sleep(500);
+                    if (await isOllamaRunning()) { started = true; break; }
+                }
+                if (started) {
+                    s1.stop(`${c.green}${icons.ok}${c.reset} Ollama service started`);
+                } else {
+                    s1.stop(`${c.yellow}${icons.warn}${c.reset} Ollama installed but service didn't start. Run: ${c.bold}ollama serve${c.reset}`);
+                }
+            } catch {
+                s1.stop(`${c.yellow}${icons.warn}${c.reset} Could not start Ollama service. Run: ${c.bold}ollama serve${c.reset}`);
+            }
+        } else {
+            ok('Ollama service is running.');
+        }
+
+        // Check if the model is already pulled
+        const hasModel = await ollamaHasModel(ollamaModel);
+        if (!hasModel) {
+            const s2 = spinner(`Pulling ${ollamaModel} (this may take a minute)`);
+            try {
+                const { execSync } = require('child_process');
+                execSync(`ollama pull ${ollamaModel}`, { stdio: 'ignore', timeout: 300_000 });
+                s2.stop(`${c.green}${icons.ok}${c.reset} Model ${c.bold}${ollamaModel}${c.reset} pulled`);
+            } catch {
+                s2.stop(`${c.yellow}${icons.warn}${c.reset} Could not pull ${ollamaModel}. Run: ${c.bold}ollama pull ${ollamaModel}${c.reset}`);
+            }
+        } else {
+            ok(`Model ${c.bold}${ollamaModel}${c.reset} ready.`);
+        }
+
+        allKeys['OLLAMA_ENABLED'] = 'true';
+        allKeys['OLLAMA_MODEL'] = ollamaModel;
+        info(`Smart routing + prompt summarization will use ${c.bold}${ollamaModel}${c.reset}`);
+        info(`Change model: edit OLLAMA_MODEL in ~/.firewall/.env`);
+    } else {
+        info(`${c.dim}Ollama not found — smart routing disabled. Install: https://ollama.ai${c.reset}`);
+    }
+
+    // Step 3: Write keys to ~/.firewall/.env
+    if (Object.keys(allKeys).length > 0) {
+        writeFirewallEnv(allKeys);
+        ok(`Keys saved to ${c.dim}~/.firewall/.env${c.reset} (chmod 600)`);
+    } else {
+        warn('No API keys configured. Add them later with: npx agent-firewall setup');
+    }
+
+    // Step 4: Shell env vars (agent routing to localhost)
+    log('');
     const shell = findShellConfig();
     if (shell) {
         if (fs.existsSync(shell.path)) {
             const content = fs.readFileSync(shell.path, 'utf-8');
             if (content.includes(MARKER)) {
-                ok('Shell environment already configured.');
+                // Replace existing block with updated local-first block
+                const regex = new RegExp(`\\n?${MARKER.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\s\\S]*?${MARKER_END.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\n?`, 'g');
+                const cleaned = content.replace(regex, '\n');
+                fs.writeFileSync(shell.path, cleaned + `\n${getShellBlock(shell.type)}\n`);
+                ok('Shell config updated for local-first mode.');
             } else {
                 const fileName = path.basename(shell.path);
-                const yes = await confirm(`Add proxy env vars to ${fileName}?`);
+                const yes = await confirm(`Add local proxy routing to ${fileName}?`);
                 if (yes) {
                     fs.appendFileSync(shell.path, `\n${getShellBlock(shell.type)}\n`);
                     ok(`Added to ${c.dim}${fileName}${c.reset}.`);
@@ -524,55 +783,46 @@ async function setup() {
                     } else {
                         info(`Restart your PowerShell to activate.`);
                     }
-                } else {
-                    info('Skipped shell config.');
-                    info(`You can manually set:`);
-                    if (shell.type === 'powershell') {
-                        log(`  ${c.dim}$env:OPENAI_BASE_URL = "${PROXY_URL}/v1"${c.reset}`);
-                        log(`  ${c.dim}$env:ANTHROPIC_BASE_URL = "${PROXY_URL}"${c.reset}`);
-                    } else {
-                        log(`  ${c.dim}export OPENAI_BASE_URL="${PROXY_URL}/v1"${c.reset}`);
-                        log(`  ${c.dim}export ANTHROPIC_BASE_URL="${PROXY_URL}"${c.reset}`);
-                    }
                 }
             }
         } else if (shell.create) {
-            const yes = await confirm(`Create ${path.basename(shell.path)} with proxy env vars?`);
+            const yes = await confirm(`Create ${path.basename(shell.path)} with proxy routing?`);
             if (yes) {
                 fs.mkdirSync(path.dirname(shell.path), { recursive: true });
                 fs.writeFileSync(shell.path, `${getShellBlock(shell.type)}\n`);
                 ok(`Created ${c.dim}${path.basename(shell.path)}${c.reset} with proxy config.`);
             }
         }
-    } else {
-        warn('Could not detect shell config file.');
-        info('Set these env vars manually:');
-        log(`  ${c.dim}OPENAI_BASE_URL=${PROXY_URL}/v1${c.reset}`);
-        log(`  ${c.dim}ANTHROPIC_BASE_URL=${PROXY_URL}${c.reset}`);
     }
 
-    // Verify proxy connection
+    // Step 5: Check if proxy is running
     log('');
-    const s = spinner('Verifying proxy connection');
+    const s = spinner('Checking local proxy');
     try {
-        const stats = await httpGet(PROXY_API);
-        if (stats && typeof stats.totalRequests === 'number') {
-            s.stop(`${c.green}${icons.ok}${c.reset} Proxy live! ${stats.totalRequests} requests, $${stats.savedMoney?.toFixed(4) || '0'} saved.`);
+        const health = await httpGet(`${PROXY_URL}/health`);
+        if (health && health.status === 'ok') {
+            s.stop(`${c.green}${icons.ok}${c.reset} Proxy running! Providers: ${health.providers?.join(', ') || 'none'}`);
         } else {
-            s.stop(`${c.yellow}${icons.warn}${c.reset} Proxy responded but data format unexpected.`);
+            s.stop(`${c.yellow}${icons.warn}${c.reset} Proxy responded but health check unexpected.`);
         }
     } catch (err) {
-        s.stop(`${c.red}${icons.fail}${c.reset} Cannot reach proxy: ${err.message}`);
-        info('Check your internet connection and try again.');
-        return;
+        s.stop(`${c.yellow}${icons.warn}${c.reset} Proxy not running on localhost:4000.`);
+        info(`Start it with: ${c.bold}cd agent-proxy && npm run dev${c.reset}`);
+        info(`Or with PM2:   ${c.bold}pm2 start "npx tsx agent-proxy/src/index.ts" --name agentic-firewall${c.reset}`);
     }
 
     header('Setup Complete!');
-    log(`${c.dim}• Loop detection: kills stuck agents${c.reset}`);
-    log(`${c.dim}• Prompt caching: up to 90% savings${c.reset}`);
-    log(`${c.dim}• Budget control: cap spend per session${c.reset}`);
+    log(`${c.bold}${c.green}Your API keys never leave this machine.${c.reset}`);
+    log('');
+    log(`${c.dim}• Keys stored locally in ~/.firewall/.env (chmod 600)${c.reset}`);
+    log(`${c.dim}• Proxy runs on localhost:4000 — agents route through it${c.reset}`);
+    log(`${c.dim}• Loop detection, prompt caching, budget control — all local${c.reset}`);
+    if (allKeys['OLLAMA_ENABLED'] === 'true') {
+        log(`${c.dim}• Ollama optimizes requests locally (smart routing + summarization)${c.reset}`);
+    }
     log('');
     log(`Run ${c.bold}npx agent-firewall scan${c.reset} to see your waste report.`);
+    log(`Run ${c.bold}npx agent-firewall verify${c.reset} to test the connection.`);
     log(`Run ${c.bold}npx agent-firewall uninstall${c.reset} to undo everything.\n`);
 }
 
@@ -633,36 +883,48 @@ async function status() {
         log('');
     } catch (err) {
         s.stop(`${c.red}${icons.fail}${c.reset} Cannot reach proxy: ${err.message}`);
-        info('Is the proxy running? Check https://api.jockeyvc.com/health');
+        info('Is the local proxy running? Start with: cd agent-proxy && npm run dev');
     }
 }
 
 // ─── Verify Command ─────────────────────────────────────
 async function verify() {
-    header('Agent Firewall — Verify');
+    header('Agent Firewall — Verify (Local-First)');
     const ov = process.env.OPENAI_BASE_URL || 'not set';
     const av = process.env.ANTHROPIC_BASE_URL || 'not set';
-    log(`  OPENAI_BASE_URL:    ${ov.includes('jockeyvc') ? c.green : c.red}${ov}${c.reset}`);
-    log(`  ANTHROPIC_BASE_URL: ${av.includes('jockeyvc') ? c.green : c.red}${av}${c.reset}\n`);
+    const isLocal = (url) => url.includes('localhost') || url.includes('127.0.0.1');
+    log(`  OPENAI_BASE_URL:    ${isLocal(ov) ? c.green : c.red}${ov}${c.reset}`);
+    log(`  ANTHROPIC_BASE_URL: ${isLocal(av) ? c.green : c.red}${av}${c.reset}\n`);
 
-    const s = spinner('Testing proxy connection');
+    // Check ~/.firewall/.env exists
+    const envPath = getFirewallEnvPath();
+    if (fs.existsSync(envPath)) {
+        const envVars = readFirewallEnv();
+        const providers = Object.keys(envVars).filter(k => k.includes('API_KEY'));
+        ok(`Keys file: ${c.dim}~/.firewall/.env${c.reset} (${providers.length} key${providers.length !== 1 ? 's' : ''})`);
+    } else {
+        warn(`Keys file: ${c.yellow}~/.firewall/.env not found${c.reset} — run ${c.bold}npx agent-firewall setup${c.reset}`);
+    }
+
+    // Check proxy health
+    const s = spinner('Testing local proxy');
     try {
-        const stats = await httpGet(PROXY_API);
-        s.stop(`${c.green}${icons.ok}${c.reset} Proxy live (${stats.totalRequests} requests)`);
+        const health = await httpGet(`${PROXY_URL}/health`);
+        if (health && health.status === 'ok') {
+            s.stop(`${c.green}${icons.ok}${c.reset} Proxy live (mode: ${health.mode}, providers: ${health.providers?.join(', ') || 'none'})`);
+        } else {
+            s.stop(`${c.green}${icons.ok}${c.reset} Proxy responding`);
+        }
     } catch (err) {
-        s.stop(`${c.red}${icons.fail}${c.reset} Proxy unreachable: ${err.message}`);
-        info('Run npx agent-firewall setup to configure.');
+        s.stop(`${c.red}${icons.fail}${c.reset} Proxy not running: ${err.message}`);
+        info('Start it with: cd agent-proxy && npm run dev');
         return;
     }
 
-    // OpenClaw check: it uses env vars, so checking ANTHROPIC_BASE_URL is sufficient
-    const ocDir = path.join(os.homedir(), '.openclaw');
-    if (fs.existsSync(ocDir)) {
-        if (av.includes('jockeyvc') || ov.includes('jockeyvc')) {
-            ok(`OpenClaw detected — will use proxy via env vars`);
-        } else {
-            warn(`OpenClaw detected but env vars not set — run ${c.bold}npx agent-firewall setup${c.reset}`);
-        }
+    // Check existing provider keys in env
+    const existingKeys = detectExistingKeys();
+    for (const [provider, info_] of Object.entries(existingKeys)) {
+        ok(`${provider}: ${c.dim}${info_.masked}${c.reset}`);
     }
 
     // Check shell config

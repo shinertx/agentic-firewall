@@ -26,7 +26,23 @@ function loadStats(): PersistedStats {
     return { savedTokens: 0, savedMoney: 0, blockedLoops: 0, totalRequests: 0 };
 }
 
-function saveStats() {
+// Async version for periodic saves (non-blocking)
+async function saveStatsAsync(): Promise<void> {
+    try {
+        const persisted: PersistedStats = {
+            savedTokens: globalStats.savedTokens,
+            savedMoney: globalStats.savedMoney,
+            blockedLoops: globalStats.blockedLoops,
+            totalRequests: globalStats.totalRequests,
+        };
+        await fs.promises.writeFile(STATS_FILE, JSON.stringify(persisted, null, 2));
+    } catch (err) {
+        console.error('[STATS] ⚠️ Failed to write stats.json:', err);
+    }
+}
+
+// Sync version for signal handlers only (process exits immediately after)
+function saveStatsSync(): void {
     try {
         const persisted: PersistedStats = {
             savedTokens: globalStats.savedTokens,
@@ -45,19 +61,37 @@ const loaded = loadStats();
 
 export const globalStats = {
     ...loaded,
-    recentActivity: [] as any[]
+    recentActivity: [] as any[],
+    trimmedRequests: 0,
+    trimmedTokensSaved: 0,
+    smartRouteDowngrades: 0,
+    smartRouteSavings: 0,
+    ollamaCalls: 0,
 };
 
+// Circular buffer for O(1) insertion (replaces O(n) unshift)
+const MAX_RECENT = 50;
+const activityBuffer: any[] = new Array(MAX_RECENT).fill(null);
+let activityWriteIndex = 0;
+let activityCount = 0;
+
 export function recordActivity(activity: { time: string, model: string, tokens: number | string, status: string, statusColor: string }) {
-    globalStats.recentActivity.unshift(activity);
-    if (globalStats.recentActivity.length > 50) {
-        globalStats.recentActivity.pop();
+    activityBuffer[activityWriteIndex] = activity;
+    activityWriteIndex = (activityWriteIndex + 1) % MAX_RECENT;
+    activityCount = Math.min(activityCount + 1, MAX_RECENT);
+
+    // Rebuild the external-facing array (most recent first) for /api/stats
+    const result = [];
+    for (let i = 0; i < activityCount; i++) {
+        const idx = (activityWriteIndex - 1 - i + MAX_RECENT) % MAX_RECENT;
+        result.push(activityBuffer[idx]);
     }
+    globalStats.recentActivity = result;
 }
 
-// Flush to disk every 30 seconds
-setInterval(saveStats, 30_000);
+// Flush to disk every 30 seconds (non-blocking)
+setInterval(saveStatsAsync, 30_000);
 
-// Graceful shutdown — persist before exit
-process.on('SIGTERM', () => { saveStats(); process.exit(0); });
-process.on('SIGINT', () => { saveStats(); process.exit(0); });
+// Graceful shutdown — sync write to ensure data persists before exit
+process.on('SIGTERM', () => { saveStatsSync(); process.exit(0); });
+process.on('SIGINT', () => { saveStatsSync(); process.exit(0); });

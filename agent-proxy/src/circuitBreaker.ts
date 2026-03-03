@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { globalStats } from './stats';
 
 interface SessionEntry {
     hash: string;
@@ -9,7 +10,7 @@ interface Session {
     entries: SessionEntry[];
 }
 
-const memoryStore: Record<string, Session> = {};
+const memoryStore = new Map<string, Session>();
 
 // Entries older than 5 minutes are expired (prevents false positives across sessions)
 const TTL_MS = 5 * 60 * 1000;
@@ -17,6 +18,22 @@ const TTL_MS = 5 * 60 * 1000;
 const WINDOW_SIZE = 5;
 // Number of identical requests before triggering
 const THRESHOLD = 3;
+
+// Periodic cleanup of stale sessions to prevent unbounded memory growth
+setInterval(() => {
+    const now = Date.now();
+    for (const [key, session] of memoryStore) {
+        session.entries = session.entries.filter(e => now - e.timestamp < TTL_MS);
+        if (session.entries.length === 0) {
+            memoryStore.delete(key);
+        }
+    }
+}, 60_000).unref();
+
+/** Get the number of active sessions (for observability/testing) */
+export function getMemoryStoreSize(): number {
+    return memoryStore.size;
+}
 
 /**
  * Smarter circuit breaker:
@@ -41,11 +58,11 @@ export function checkCircuitBreaker(ip: string, body: any, apiKey?: string): { b
     const hash = crypto.createHash('sha256').update(payloadToHash).digest('hex');
     const now = Date.now();
 
-    if (!memoryStore[sessionKey]) {
-        memoryStore[sessionKey] = { entries: [] };
+    if (!memoryStore.has(sessionKey)) {
+        memoryStore.set(sessionKey, { entries: [] });
     }
 
-    const session = memoryStore[sessionKey];
+    const session = memoryStore.get(sessionKey)!;
 
     // Expire old entries
     session.entries = session.entries.filter(e => now - e.timestamp < TTL_MS);
@@ -66,9 +83,7 @@ export function checkCircuitBreaker(ip: string, body: any, apiKey?: string): { b
             console.log(`[FIREWALL] 🚨 Circuit Breaker triggered for session ${sessionKey}! Agent stuck in loop.`);
 
             // Increment blocked loops counter
-            import('./stats').then(({ globalStats }) => {
-                globalStats.blockedLoops++;
-            });
+            globalStats.blockedLoops++;
 
             return { blocked: true, reason: 'Agentic Firewall: Loop detected. Terminating connection to prevent wasted tokens.' };
         }

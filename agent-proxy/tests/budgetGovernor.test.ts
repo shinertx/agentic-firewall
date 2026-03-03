@@ -5,26 +5,26 @@ describe('Budget Governor', () => {
     // Each test uses a unique fake key to avoid cross-contamination
 
     describe('getUserId', () => {
-        it('should return a 12-char hex hash for valid API keys', () => {
+        it('should return a 12-char hex hash for valid identifiers', () => {
             const id = getUserId('sk-proj-testkey123456');
             expect(id).toHaveLength(12);
             expect(id).toMatch(/^[a-f0-9]+$/);
         });
 
-        it('should return the same ID for the same key', () => {
-            const a = getUserId('sk-proj-stablekey999');
-            const b = getUserId('sk-proj-stablekey999');
+        it('should return the same ID for the same input', () => {
+            const a = getUserId('my-machine-id');
+            const b = getUserId('my-machine-id');
             expect(a).toBe(b);
         });
 
-        it('should return "anonymous" for short/missing keys', () => {
+        it('should return "anonymous" for short/missing identifiers', () => {
             expect(getUserId('')).toBe('anonymous');
-            expect(getUserId('short')).toBe('anonymous');
+            expect(getUserId('ab')).toBe('anonymous');
         });
 
-        it('should return different IDs for different keys', () => {
-            const a = getUserId('sk-proj-firstkey12345');
-            const b = getUserId('sk-proj-secondkey6789');
+        it('should return different IDs for different inputs', () => {
+            const a = getUserId('machine-one');
+            const b = getUserId('machine-two');
             expect(a).not.toBe(b);
         });
     });

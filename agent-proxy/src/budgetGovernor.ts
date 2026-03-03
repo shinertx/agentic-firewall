@@ -4,12 +4,11 @@ import { getInputCost } from './pricing';
 /**
  * Budget Governor — per-user spend tracking and enforcement.
  *
- * Tracks cumulative spend per API key hash. When a user sends a
- * X-Budget-Limit header (dollar amount), requests are blocked
- * once their tracked spend exceeds the limit.
+ * In local-first mode, users are identified by a machine-based ID
+ * (from keyVault.getLocalUserId) rather than an API key hash.
  *
- * Users are identified by a SHA-256 hash of their API key,
- * so we never store the key itself.
+ * When a user sends an X-Budget-Limit header (dollar amount),
+ * requests are blocked once their tracked spend exceeds the limit.
  */
 
 export interface UserBudget {
@@ -28,12 +27,14 @@ export interface UserBudget {
 const userBudgets = new Map<string, UserBudget>();
 
 /**
- * Generate a stable user ID from an API key.
+ * Generate a stable user ID from a string identifier.
+ * In local-first mode, the caller passes the machine-based ID from keyVault.
+ * Kept for backward compatibility with tests and any code that needs hashing.
  * Returns first 12 chars of SHA-256 hex hash.
  */
-export function getUserId(apiKey: string): string {
-    if (!apiKey || apiKey.length < 10) return 'anonymous';
-    return crypto.createHash('sha256').update(apiKey).digest('hex').slice(0, 12);
+export function getUserId(identifier: string): string {
+    if (!identifier || identifier.length < 3) return 'anonymous';
+    return crypto.createHash('sha256').update(identifier).digest('hex').slice(0, 12);
 }
 
 /**
