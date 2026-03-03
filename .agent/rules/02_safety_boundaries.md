@@ -16,6 +16,9 @@ These rules apply to ALL agents working on this project. No exceptions.
 - **NEVER** deploy to production without running the full test suite first (`cd agent-proxy && npm test`).
 - **NEVER** commit directly to the `main` branch. Use `feature/*` branches and merge via PR.
 - **ALWAYS** verify deployment via `curl -s https://api.jockeyvc.com/api/stats` after deploying.
+- **ALWAYS** update BOTH `.ts` AND `.js` files when editing proxy source. The server runs compiled JS — if you only edit the `.ts`, the production server won't see your changes.
+- **ALWAYS** delete `stats.json` and `users.json` before a clean PM2 restart if the stats are polluted. These files persist across restarts.
+- **ALWAYS** add new public API endpoints to `OPEN_ROUTES` in `authMiddleware.js` — otherwise the auth middleware blocks unauthenticated requests.
 
 ## Code Integrity
 
