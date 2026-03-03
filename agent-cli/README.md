@@ -34,6 +34,7 @@ Autonomous agents fail **behaviorally** — they get stuck in loops, retry the s
 | **Same error over and over** | No-progress detection stops after 5 identical tool failures |
 | **Runaway overnight costs** | Budget governor caps spend per session |
 | **Re-sending the same context** | Auto-injects prompt caching headers — up to 90% savings |
+| **Rate limits (429 errors)** | Shadow Routing auto-downgrades to faster models instantly |
 | **No visibility into waste** | Scanner analyzes your logs and shows exactly what you're wasting |
 
 ## How It Works
@@ -46,6 +47,7 @@ The firewall sits between your agent and the LLM provider. Every request passes 
 
 - **Prompt caching** — injects `cache_control` headers automatically
 - **Loop detection** — hashes recent requests, blocks repeats
+- **Shadow Routing** — immediately fails over to lighter models on 429 rate limits
 - **Budget caps** — set a $ limit per session, get a hard 402 when hit
 - **No-progress detection** — fingerprints tool errors, stops spinning agents
 - **Your keys pass through** — never stored, never logged
