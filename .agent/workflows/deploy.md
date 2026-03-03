@@ -1,56 +1,37 @@
 ---
-description: How to deploy the Agentic Firewall proxy to production
+description: Deploy changes to the production VM
 ---
 
-# Deployment Workflow
+# Deploy Workflow
 
-Follow these steps exactly to deploy changes to production.
-
-## Prerequisites
-- SSH access to `meme-snipe-v19-vm`
-- All tests passing locally
+// turbo-all
 
 ## Steps
 
-### 1. Run the test suite locally
+1. Run tests locally:
 ```bash
-cd /Users/benjijmac/Documents/vibebilling/agent-proxy && npm test
+npm test
 ```
-**STOP if any tests fail.** Fix them before proceeding.
+**STOP if any tests fail.**
 
-### 2. Commit your changes
+2. Commit and push:
 ```bash
-git add -A
-git commit -m "feat: <description of change>"
-git push origin feature/<branch-name>
+git add -A && git commit -m "feat: update" && git push origin main
 ```
 
-### 3. Create a Pull Request on GitHub
-Open a PR from `feature/<branch-name>` → `main`. Wait for CI to pass.
-
-### 4. Merge the PR
-Once CI passes and the PR is approved, merge to `main`.
-
-### 5. Deploy to the server
+3. Deploy to VM:
 ```bash
-cd /Users/benjijmac/Documents/vibebilling
-./deploy.sh
-```
-This runs `rsync` to copy files to the GCP VM (excludes `node_modules`, `.git`, `.env`).
-
-### 6. Restart the proxy on the server
-```bash
-ssh meme-snipe-v19-vm "cd ~/agentic-firewall/agent-proxy && npm install --production && pm2 restart agentic-firewall-proxy"
+REPO_NAME=$(basename $(git rev-parse --show-toplevel))
+ssh meme-snipe-v19-vm "cd /home/benjijmac/$REPO_NAME && git pull origin main && npm install && pm2 restart $REPO_NAME"
 ```
 
-### 7. Verify the deployment
+4. Verify deployment:
 ```bash
-curl -s https://api.jockeyvc.com/api/stats | python3 -m json.tool
+ssh meme-snipe-v19-vm "pm2 list"
 ```
-Confirm the response shows valid stats. Check that `totalRequests` is incrementing if agents are running.
 
-### 8. Check PM2 logs for errors
+5. Check logs for errors:
 ```bash
-ssh meme-snipe-v19-vm "pm2 logs agentic-firewall-proxy --lines 20"
+REPO_NAME=$(basename $(git rev-parse --show-toplevel))
+ssh meme-snipe-v19-vm "pm2 logs $REPO_NAME --lines 10 --nostream"
 ```
-Look for any `[ERROR]` entries. If clean, deployment is complete.
