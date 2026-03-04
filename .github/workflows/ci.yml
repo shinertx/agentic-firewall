@@ -65,22 +65,35 @@ jobs:
             pm2 stop all 2>/dev/null || true
             pm2 delete all 2>/dev/null || true
 
-            # Free port 4000 if anything else is using it
-            sudo lsof -ti:4000 | xargs -r sudo kill -9 2>/dev/null || true
-
-            # Rebuild and restart containers
+            # Tear down existing containers and free ports
             docker compose down --remove-orphans 2>/dev/null || true
-            docker compose up -d --build --remove-orphans
+            sudo lsof -ti:4000 | xargs -r sudo kill -9 2>/dev/null || true
+            sleep 2
 
-            # Wait for health check
-            sleep 15
+            # Build and start only the proxy first (dashboard depends on it)
+            docker compose build
+            docker compose up -d proxy
 
-            # Verify
-            curl -sf http://localhost:4000/api/stats > /dev/null || {
-              echo "❌ Health check failed!"
-              docker compose logs --tail=20 proxy
-              exit 1
-            }
+            # Wait for proxy to be healthy (up to 90s)
+            echo "Waiting for proxy health check..."
+            for i in $(seq 1 18); do
+              if curl -sf http://localhost:4000/api/stats > /dev/null 2>&1; then
+                echo "✅ Proxy healthy after ${i}x5s"
+                break
+              fi
+              if [ "$i" = "18" ]; then
+                echo "❌ Proxy failed to start!"
+                echo "--- Container status ---"
+                docker compose ps
+                echo "--- Proxy logs ---"
+                docker compose logs --tail=50 proxy
+                exit 1
+              fi
+              sleep 5
+            done
+
+            # Now start dashboard
+            docker compose up -d dashboard
 
             echo "✅ Production deployment verified"
           DEPLOY
