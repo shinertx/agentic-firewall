@@ -21,7 +21,10 @@ QUERIES = [
     "langchain api cost",
     "autogpt expensive",
     "reduce llm costs",
-    "prompt caching tutorial"
+    "prompt caching tutorial",
+    "openclaw tutorial",
+    "openclaw loop",
+    "openclaw expensive"
 ]
 
 KEYWORDS = [
@@ -32,6 +35,7 @@ KEYWORDS = [
     "agent stuck in loop", "infinite loop agent", "llm infinite loop",
     "agent repeating itself", "tool call loop", "agent hallucinating loop",
     "agent keeps failing tool", "tool error loop", "agent spinning",
+    "openclaw", "openclaw loop", "openclaw cost",
     "openclaw expensive", "claude code expensive", "devin expensive", 
     "auto-gpt loop", "autogpt expensive", "vibe billing",
     

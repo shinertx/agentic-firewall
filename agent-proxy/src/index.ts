@@ -198,18 +198,27 @@ app.use(async (req: Request, res: Response) => {
 
 // LOCAL-FIRST: Validate provider keys on startup
 const keyValidation = validateAllKeys();
-if (keyValidation.valid.length > 0) {
-    console.log(`[FIREWALL LOCAL] Provider keys loaded: ${keyValidation.valid.join(', ')}`);
-}
-if (keyValidation.missing.length > 0) {
-    console.warn(`[FIREWALL LOCAL] No keys for: ${keyValidation.missing.join(', ')} — run: npx vibe-billing setup`);
+const isPublicMode = process.env.PUBLIC_MODE !== 'false' && process.env.PUBLIC_MODE !== '0';
+
+if (!isPublicMode) {
+    if (keyValidation.valid.length > 0) {
+        console.log(`[FIREWALL LOCAL] Provider keys loaded: ${keyValidation.valid.join(', ')}`);
+    }
+    if (keyValidation.missing.length > 0) {
+        console.warn(`[FIREWALL LOCAL] No keys for: ${keyValidation.missing.join(', ')} — run: npx vibe-billing setup`);
+    }
 }
 
-// LOCAL-FIRST: Bind to 127.0.0.1 only — reject external connections at the network level
+// Bind to 127.0.0.1 by default unless BIND_HOST is overridden
 const BIND_HOST = process.env.BIND_HOST || '127.0.0.1';
 const server = app.listen(Number(PORT), BIND_HOST, () => {
-    console.log(`[FIREWALL LOCAL] Agentic Firewall running at http://${BIND_HOST}:${PORT} (local-first mode)`);
-    console.log(`[FIREWALL LOCAL] API keys never leave this machine.`);
+    if (isPublicMode) {
+        console.log(`[FIREWALL PUBLIC] Agentic Firewall running at http://${BIND_HOST}:${PORT} (public remote mode)`);
+        console.log(`[FIREWALL PUBLIC] Proxy requires agents to pass their own keys in request headers.`);
+    } else {
+        console.log(`[FIREWALL LOCAL] Agentic Firewall running at http://${BIND_HOST}:${PORT} (local-first mode)`);
+        console.log(`[FIREWALL LOCAL] API keys never leave this machine.`);
+    }
 });
 
 // Explicitly unbounding timeouts for massive Agent LLM evaluations (30 minutes)

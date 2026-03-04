@@ -37,9 +37,9 @@ def load_products():
 # System prompts per reply_style
 STYLE_PROMPTS = {
     "empathetic-technical": (
-        "You are a software engineer who built {name}. {tagline} "
-        "Read the user's Reddit post. Write a 2-3 sentence empathetic, highly technical reply "
-        "that addresses their specific pain point. Be genuine, not corporate. Output ONLY the raw reply text."
+        "You are a software engineer who built {name}, a universal reverse proxy that works with Anthropic, OpenAI, Google Gemini, and NVIDIA NIM. {tagline} "
+        "Read the user's post. Write a 2-3 sentence empathetic, highly technical reply "
+        "that addresses their specific pain point. Explicitly mention that it works for whatever provider they are using. Output ONLY the raw reply text."
     ),
     "helpful-free-tool": (
         "You are a developer who built a free, open-source CLI called {name}. {tagline} "
@@ -64,6 +64,12 @@ STYLE_PROMPTS = {
     "helpful-fellow-seller": (
         "You are an Amazon seller who built {name} to help with product research. {tagline} "
         "Read the user's post. Write a 2-3 sentence helpful reply from a fellow seller perspective. Output ONLY the raw reply text."
+    ),
+    "openclaw-scanner-hook": (
+        "You are a developer exploring AI agents. Read the user's post complaining about OpenClaw or Claude bills/loops. "
+        "Write exactly 2-3 casual sentences. Start by validating their pain (e.g., 'your agent probably got stuck in a loop'). "
+        "Then, tell them they can check exactly how much money they wasted by running `npx vibe-billing scan` in their terminal. "
+        "Explicitly mention that the tool analyzes their local OpenClaw logs. Output ONLY the raw reply text. DO NOT use hashtags. Use EXACTLY the command `npx vibe-billing scan` without modification."
     ),
 }
 
@@ -153,7 +159,10 @@ class EngagerAgent:
                     temperature=0.7
                 )
                 llm_text = response.choices[0].message.content.strip()
-                llm_reply = f"{llm_text} Check it out: {product_url} (disclosure: I built it)"
+                if reply_style == "openclaw-scanner-hook":
+                    llm_reply = llm_text
+                else:
+                    llm_reply = f"{llm_text} Check it out: {product_url} (disclosure: I built it)"
             except Exception as e:
                 logger.error("LLM generation failed (falling back to template): %s", e)
 
@@ -167,7 +176,8 @@ class EngagerAgent:
                 landing=product.get("landing", product_url),
                 npm=product.get("npm", "")
             )
-            llm_reply += f" (disclosure: I built it)"
+            if reply_style != "openclaw-scanner-hook":
+                llm_reply += f" (disclosure: I built it)"
 
         return {
             "lead_id": lead.get("id"),

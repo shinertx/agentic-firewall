@@ -181,6 +181,10 @@ function getShellBlock(type) {
     return `${MARKER}\nexport OPENAI_BASE_URL="${PROXY_URL}/v1"\nexport ANTHROPIC_BASE_URL="${PROXY_URL}"\n${MARKER_END}`;
 }
 
+function getOpenClawEnvBlock() {
+    return `${MARKER}\nOPENAI_BASE_URL="${PROXY_URL}/v1"\nANTHROPIC_BASE_URL="${PROXY_URL}"\n${MARKER_END}`;
+}
+
 // ─── Agent Detection ────────────────────────────────────
 // Detects installed agents for display purposes.
 // OpenClaw routing is done via env vars (ANTHROPIC_BASE_URL / OPENAI_BASE_URL),
@@ -510,8 +514,24 @@ async function setup() {
     } else {
         agents.forEach(a => ok(`Detected ${c.bold}${a.name}${c.reset}`));
         if (agents.some(a => a.type === 'openclaw')) {
-            info(`OpenClaw will pick up the proxy via ${c.bold}ANTHROPIC_BASE_URL${c.reset} / ${c.bold}OPENAI_BASE_URL${c.reset} env vars.`);
-            info(`${c.dim}No changes to openclaw.json needed.${c.reset}`);
+            const openClawEnvPath = path.join(os.homedir(), '.openclaw', '.env');
+            info(`OpenClaw detected. Configuring internal routing...`);
+
+            try {
+                let existingEnv = '';
+                if (fs.existsSync(openClawEnvPath)) {
+                    existingEnv = fs.readFileSync(openClawEnvPath, 'utf-8');
+                }
+
+                if (!existingEnv.includes(MARKER) && !existingEnv.includes(LEGACY_MARKER)) {
+                    fs.appendFileSync(openClawEnvPath, `\n${getOpenClawEnvBlock()}\n`);
+                    ok(`Injected routing rules into ${c.dim}.openclaw/.env${c.reset}`);
+                } else {
+                    ok(`${c.dim}.openclaw/.env${c.reset} already configured.`);
+                }
+            } catch (err) {
+                warn(`Could not configure OpenClaw .env: ${err.message}`);
+            }
         }
         log('');
     }
@@ -629,7 +649,23 @@ async function uninstall() {
         }
     }
 
-    // OpenClaw: no config changes needed — routing is via env vars only.
+    // OpenClaw: Native .env configuration removal
+    const openClawEnvPath = path.join(os.homedir(), '.openclaw', '.env');
+    if (fs.existsSync(openClawEnvPath)) {
+        try {
+            const content = fs.readFileSync(openClawEnvPath, 'utf-8');
+            if (content.includes(MARKER) || content.includes(LEGACY_MARKER)) {
+                const regex = new RegExp(`\\n?${MARKER.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}[\\s\\S]*?${MARKER_END.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}\\n?`, 'g');
+                let cleaned = content.replace(regex, '\n');
+                const legacyRegex = new RegExp(`\\n?${LEGACY_MARKER.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}[\\s\\S]*?${LEGACY_MARKER_END.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}\\n?`, 'g');
+                cleaned = cleaned.replace(legacyRegex, '\n');
+                fs.writeFileSync(openClawEnvPath, cleaned);
+                ok(`Removed proxy routing from ${c.dim}.openclaw/.env${c.reset}`);
+            }
+        } catch (err) {
+            warn(`Could not clean OpenClaw .env: ${err.message}`);
+        }
+    }
     // Removing env vars from shell config (above) is sufficient.
 
     log('');
@@ -825,6 +861,79 @@ async function replayCmd() {
     }
 }
 
+// ─── Distribution Primitives (Badge, Report, Doctor) ──────
+async function badgeCmd() {
+    try {
+        const statsStr = await httpGet(PROXY_API);
+        const saved = `$${statsStr.savedMoney.toFixed(2)}`;
+        const loops = statsStr.blockedLoops || 0;
+        log(`[![Protected by Vibe Billing](https://img.shields.io/badge/Vibe_Billing-Saved_${saved}_|_Loops_${loops}-green.svg)](https://github.com/shinertx/agentic-firewall)`);
+    } catch {
+        warn('Could not fetch stats for badge. Is the proxy running?');
+    }
+}
+
+async function reportCmd() {
+    const isShare = process.argv.includes('--share');
+    if (isShare) { log(`\n${c.dim}Generating shareable block...${c.reset}\n`); }
+
+    try {
+        const stats = await httpGet(PROXY_API);
+        log(`== VIBE BILLING REPORT ==`);
+        log(`Total API Requests:  ${stats.totalRequests}`);
+        log(`Tokens Cached:       ${(stats.savedTokens || 0).toLocaleString()}`);
+        log(`Infinite Loops Cut:  ${stats.blockedLoops || 0}`);
+        log(`Total Money Saved:   $${(stats.savedMoney || 0).toFixed(2)}`);
+        log(`=========================`);
+        if (isShare) {
+            log(`\nShare this on X or Discord:`);
+            log(`${c.cyan}\`\`\`text\n== VIBE BILLING REPORT ==\nTotal API Requests:  ${stats.totalRequests}\nTokens Cached:       ${(stats.savedTokens || 0).toLocaleString()}\nInfinite Loops Cut:  ${stats.blockedLoops || 0}\nTotal Money Saved:   $${(stats.savedMoney || 0).toFixed(2)}\n=========================\n\`\`\`${c.reset}\n`);
+        }
+    } catch {
+        warn('Could not generate report. Run \`npx vibe-billing setup\` first.');
+    }
+}
+
+async function doctorCmd() {
+    header('Agent Firewall — Doctor');
+    let okCount = 0;
+
+    const pSpin = spinner('Checking proxy connection');
+    try {
+        await httpGet(PROXY_API);
+        pSpin.stop(`${c.green}✓ Proxy routing active${c.reset}`);
+        okCount++;
+    } catch {
+        pSpin.stop(`${c.red}✗ Proxy unreachable (run npx vibe-billing setup)${c.reset}`);
+    }
+
+    const envSpin = spinner('Checking shell configuration');
+    const shell = findShellConfig();
+    let shellOk = false;
+    if (shell && fs.existsSync(shell.path) && fs.readFileSync(shell.path, 'utf-8').includes(MARKER)) {
+        shellOk = true;
+    }
+    if (shellOk) {
+        envSpin.stop(`${c.green}✓ Shell variables injected${c.reset}`);
+        okCount++;
+    } else {
+        envSpin.stop(`${c.yellow}⚠ Shell variables missing (optional if using OpenClaw)${c.reset}`);
+    }
+
+    const ocSpin = spinner('Checking OpenClaw integration');
+    const openClawEnvPath = path.join(os.homedir(), '.openclaw', '.env');
+    if (fs.existsSync(openClawEnvPath) && fs.readFileSync(openClawEnvPath, 'utf-8').includes(MARKER)) {
+        ocSpin.stop(`${c.green}✓ OpenClaw integration active${c.reset}`);
+        okCount++;
+    } else {
+        ocSpin.stop(`${c.dim}ℹ OpenClaw not detected or not configured${c.reset}`);
+    }
+
+    log('');
+    if (okCount > 0) ok('Agent Firewall detected ✓\\n  Your setup looks good!');
+    else warn('Doctor checks failed. Try running npx vibe-billing setup.');
+}
+
 // ─── Main ───────────────────────────────────────────────
 const command = process.argv[2] || '--help';
 
@@ -836,6 +945,9 @@ switch (command) {
     case 'uninstall': uninstall().catch(err => fail(err.message)); break;
     case 'run': runCmd().catch(err => fail(err.message)); break;
     case 'replay': replayCmd().catch(err => fail(err.message)); break;
+    case 'badge': badgeCmd().catch(err => fail(err.message)); break;
+    case 'report': reportCmd().catch(err => fail(err.message)); break;
+    case 'doctor': doctorCmd().catch(err => fail(err.message)); break;
     case '--version': case '-v':
         log(`vibe-billing v${VERSION}`);
         break;
@@ -851,6 +963,9 @@ switch (command) {
         log(`    ${c.green}status${c.reset}      Check live proxy stats (requests, savings, blocked loops)`);
         log(`    ${c.green}verify${c.reset}      Test that routing is working`);
         log(`    ${c.green}uninstall${c.reset}   Remove proxy routing and restore original configs`);
+        log(`    ${c.green}badge${c.reset}       Generate a markdown badge of your savings`);
+        log(`    ${c.green}report${c.reset}      Generate a shareable text report of waste blocked`);
+        log(`    ${c.green}doctor${c.reset}      Diagnose and validate your local proxy configuration`);
         log('');
         log(`  ${c.bold}Flags:${c.reset}`);
         log(`    ${c.dim}--version${c.reset}   Show version`);

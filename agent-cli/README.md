@@ -1,86 +1,58 @@
 # vibe-billing
 
-**Agent Runtime Control** — Stop AI agents from burning your money.
+**Agent Runtime Control** — Stop AI agents from getting stuck in loops and burning your money.
 
-Loop detection, prompt caching, budget enforcement, and waste scanning for autonomous AI agents.
-
-## Quick Start
+## Install
 
 ```bash
-# See how much your agents are wasting
-npx vibe-billing scan
-
-# Route agents through the firewall to fix it
 npx vibe-billing setup
 ```
 
-## Commands
+## Proof of Savings
 
-| Command | What it does |
-|---|---|
-| `npx vibe-billing scan` | Scan agent logs for waste — loops, retries, missed caching |
-| `npx vibe-billing setup` | Auto-configure agents to route through the firewall |
-| `npx vibe-billing run <agent_cmd>` | Wrap an agent to get a receipt of your savings |
-| `npx vibe-billing replay <1\|2>` | Re-run your last wrapped agent with cheaper routing |
-| `npx vibe-billing status` | Check live proxy stats — requests, savings, blocked loops |
-| `npx vibe-billing verify` | Test that routing is working |
-| `npx vibe-billing uninstall` | Undo everything — restore original configs |
+Run `npx vibe-billing scan` to analyze your local agent logs and instantly see exactly how much money you've lost to API hallucinations. 
 
-## What It Solves
+```text
+Agent Waste Report
 
-Autonomous agents fail **behaviorally** — they get stuck in loops, retry the same broken tool call, and re-send massive contexts without caching. This costs real money.
+Runs analyzed: 142
+Retry loops: 18
+Context re-sends: 32
+Overkill model usage: 56
 
-| Problem | How Agent Firewall Fixes It |
-|---|---|
-| **Agent stuck in loops** | Circuit breaker kills after 3+ identical requests |
-| **Same error over and over** | No-progress detection stops after 5 identical tool failures |
-| **Runaway overnight costs** | Budget governor caps spend per session |
-| **Re-sending the same context** | Auto-injects prompt caching headers — up to 90% savings |
-| **Rate limits (429 errors)** | Shadow Routing auto-downgrades to faster models instantly |
-| **No visibility into waste** | Scanner analyzes your logs and shows exactly what you're wasting |
+Total agent spend: $124.50
+Estimated wasted spend: $102.09
 
-## How It Works
-
+Fix with:
+npx vibe-billing setup
 ```
-Your Agent → Agent Firewall (proxy) → OpenAI / Anthropic / Gemini / NVIDIA
-```
-
-The firewall sits between your agent and the LLM provider. Every request passes through it:
-
-- **Prompt caching** — injects `cache_control` headers automatically
-- **Loop detection** — hashes recent requests, blocks repeats
-- **Shadow Routing** — immediately fails over to lighter models on 429 rate limits
-- **Budget caps** — set a $ limit per session, get a hard 402 when hit
-- **No-progress detection** — fingerprints tool errors, stops spinning agents
-- **Your keys pass through** — never stored, never logged
 
 ## Works With
 
-| Agent / SDK | How it connects |
-|---|---|
-| OpenClaw | `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` env vars |
-| Claude Code | `ANTHROPIC_BASE_URL` env var |
-| OpenAI SDK | `OPENAI_BASE_URL` env var |
-| Anthropic SDK | `ANTHROPIC_BASE_URL` env var |
-| Any OpenAI-compatible | `base_url` parameter |
+100% invisible, native routing for the most popular SDKs:
 
-## Cross-Platform
+- **OpenClaw** (`openclaw.json` / `.openclaw/.env`)
+- **Claude Code** (`ANTHROPIC_BASE_URL` env var)
+- **OpenAI SDK** (`OPENAI_BASE_URL` env var)
+- **Anthropic SDK** (`ANTHROPIC_BASE_URL` env var)
+- **Any framework** supporting standard `base_url` overrides.
 
-Works on **macOS**, **Linux**, and **Windows** (PowerShell + cmd.exe).
+## Uninstall
 
-- Auto-detects your shell config (`.zshrc`, `.bashrc`, `.bash_profile`, PowerShell `$PROFILE`)
-- Asks before modifying any files
-- Clean uninstall with `npx vibe-billing uninstall`
+If you ever want to remove it, it restores your computer to exactly how it was:
 
-## Trust & Transparency
+```bash
+npx vibe-billing uninstall
+```
 
-This is **open source**. You can read every line of code:
+## How It Works
 
-- **Source code**: [github.com/shinertx/agentic-firewall](https://github.com/shinertx/agentic-firewall)
-- **License**: MIT — use it however you want
-- **Your API keys**: Pass through to your provider. Never stored. Never logged. Hashed for anonymous usage stats only.
-- **Dashboard**: Every user gets a personal dashboard at `https://api.jockeyvc.com/dashboard/<your-id>`
+The firewall sits locally on your machine at `localhost:4000`. Every API request from your agent passes through it before hitting Anthropic or OpenAI.
 
-## License
+1. **Loop detection** — If an agent submits the exact same request 3 times in a row, the proxy hard-kills the connection before you are billed for infinite loops.
+2. **Context caching** — The proxy auto-injects `ephemeral` caching headers into your payloads, yielding up to 80% cheaper system prompts on supported models.
+3. **No Config Needed** — `setup` handles the environment variables and `openclaw.json` bindings automatically.
 
-MIT — [github.com/shinertx/agentic-firewall](https://github.com/shinertx/agentic-firewall)
+```text
+Your Agent → Agent Firewall (localhost) → AI Provider
+```

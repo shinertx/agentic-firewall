@@ -125,8 +125,8 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     <div class="grid">
       <div class="feature"><div class="icon">🔍</div><h3>Waste Scanner</h3><p>Reads your agent logs. Shows exactly how much you're burning on retries, re-sends, and stuck loops.</p></div>
       <div class="feature"><div class="icon">🔄</div><h3>Loop Detection</h3><p>Circuit breaker kills stuck agents after repeated identical requests. No more overnight surprise bills.</p></div>
-      <div class="feature"><div class="icon">💰</div><h3>Prompt Caching</h3><p>Auto-injects cache headers for Anthropic and OpenAI. Saves up to 90% on repeated context.</p></div>
-      <div class="feature"><div class="icon">⚡️</div><h3>Shadow Routing (Failover)</h3><p>Detects 429 Rate Limits and auto-downgrades from heavy models (Opus) to fast models (Haiku) instantly to keep agents moving.</p></div>
+      <div class="feature"><div class="icon">💰</div><h3>Prompt Caching</h3><p>Auto-injects cache headers for Anthropic, OpenAI, Gemini, and NVIDIA. Saves up to 90% on repeated context.</p></div>
+      <div class="feature"><div class="icon">⚡️</div><h3>Shadow Routing (Failover)</h3><p>Detects 429 Rate Limits and auto-downgrades models instantly (e.g. from Opus to Haiku, or across providers) to keep agents moving.</p></div>
       <div class="feature"><div class="icon">🚫</div><h3>Budget Governor</h3><p>Set per-session spend caps. Agents get a 402 when they hit the limit — hard kill, not a suggestion.</p></div>
       <div class="feature"><div class="icon">🧠</div><h3>No-Progress Detection</h3><p>Fingerprints tool failures. Same error 5 times? Stopped automatically.</p></div>
       <div class="feature"><div class="icon">📊</div><h3>Per-User Dashboard</h3><p>Every user gets a personal savings dashboard with spend tracking and loop history.</p></div>

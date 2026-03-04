@@ -20,27 +20,33 @@ def run_agent(script_path):
     logger.info(f"Starting {script_path}...")
     try:
         start_time = time.time()
-        # Run the script and capture output for the dashboard regexes
-        process = subprocess.Popen(
+        # Run the script with a strict timeout to prevent hanging the orchestrator loop
+        result = subprocess.run(
             [sys.executable, script_path],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            text=True
+            text=True,
+            timeout=120
         )
         
-        for line in process.stdout:
-            sys.stdout.write(line)
+        if result.stdout:
+            sys.stdout.write(result.stdout)
             sys.stdout.flush()
             
-        process.wait()
         duration = time.time() - start_time
         
-        if process.returncode == 0:
+        if result.returncode == 0:
             logger.info(f"Successfully completed {script_path} in {duration:.1f}s")
             return True
         else:
-            logger.error(f"Failed {script_path} with exit code {process.returncode}")
+            logger.error(f"Failed {script_path} with exit code {result.returncode}")
             return False
+            
+    except subprocess.TimeoutExpired as e:
+        logger.error(f"Timeout Exceeded! {script_path} took longer than 120 seconds and was killed.")
+        if e.stdout:
+            sys.stdout.write(e.stdout.decode('utf-8') if isinstance(e.stdout, bytes) else e.stdout)
+        return False
             
     except Exception as e:
         logger.exception(f"Exception running {script_path}: {e}")
@@ -63,6 +69,8 @@ def main():
         # 1. Scout for leads
         run_agent('agents/scout.py')
         run_agent('agents/youtube_scout.py')
+        run_agent('agents/hackernews_scout.py')
+        run_agent('agents/github_scout.py')
         
         # 2. Engage (draft replies)
         run_agent('agents/engager.py')
