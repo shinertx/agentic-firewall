@@ -15,7 +15,22 @@ A reverse-proxy that sits between AI agents and LLM providers to prevent **Vibe 
 | **ZSTD Decompression** | Handles Python SDK compressed payloads that crash standard proxies |
 | **30-Min Timeouts** | Prevents premature disconnection during long reasoning chains |
 
-## Quick Start
+## Use the CLI (NPM)
+
+The easiest way to see your waste and setup your proxy connection is the `vibe-billing` CLI tool.
+
+```bash
+# See how much your agents are wasting
+npx vibe-billing scan
+
+# Route agents through the firewall to fix it
+npx vibe-billing setup
+
+# Wrap an agent to get a receipt of your savings
+npx vibe-billing run <agent_cmd>
+```
+
+## Running the Proxy Locally
 
 ```bash
 # Proxy server

@@ -20,6 +20,8 @@ npx vibe-billing setup
 |---|---|
 | `npx vibe-billing scan` | Scan agent logs for waste — loops, retries, missed caching |
 | `npx vibe-billing setup` | Auto-configure agents to route through the firewall |
+| `npx vibe-billing run <agent_cmd>` | Wrap an agent to get a receipt of your savings |
+| `npx vibe-billing replay <1\|2>` | Re-run your last wrapped agent with cheaper routing |
 | `npx vibe-billing status` | Check live proxy stats — requests, savings, blocked loops |
 | `npx vibe-billing verify` | Test that routing is working |
 | `npx vibe-billing uninstall` | Undo everything — restore original configs |
