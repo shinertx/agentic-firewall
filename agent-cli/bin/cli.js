@@ -19,7 +19,7 @@ const os = require('os');
 const { execSync } = require('child_process');
 const readline = require('readline');
 
-const VERSION = '0.5.8';
+const VERSION = '0.5.9';
 const PROXY_URL = 'https://api.jockeyvc.com';
 const PROXY_API = `${PROXY_URL}/api/stats`;
 const HTTP_TIMEOUT_MS = 10_000;
