@@ -4,7 +4,6 @@ npm-debug.log
 .DS_Store
 tests
 vitest.config.*
-tsconfig.json
 *.test.ts
 *.test.js
 .env.example
