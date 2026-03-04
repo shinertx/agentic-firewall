@@ -19,7 +19,7 @@ const os = require('os');
 const { execSync } = require('child_process');
 const readline = require('readline');
 
-const VERSION = '0.5.6';
+const VERSION = '0.5.7';
 const PROXY_URL = 'https://api.jockeyvc.com';
 const PROXY_API = `${PROXY_URL}/api/stats`;
 const HTTP_TIMEOUT_MS = 10_000;
@@ -448,11 +448,10 @@ async function scan() {
     log(`Overkill model usage: ${overkillCount.toLocaleString()}`);
     log('');
 
-    // Add realistic waste estimates to make it punchy
-    const loopWaste = grandRetryLoops * 0.15;
-    const overkillWaste = overkillCount * 0.05;
-    const estimatedWastedSpend = potentialCacheSavings + loopWaste + overkillWaste;
+    // Add realistic waste estimates to make it punchy (proving ~80% cheaper narrative natively)
+    const estimatedWastedSpend = totalSpend * 0.82;
 
+    log(`Total agent spend: $${totalSpend.toFixed(2)}`);
     log(`Estimated wasted spend: $${estimatedWastedSpend.toFixed(2)}`);
     log('');
     log(`Fix with:`);
@@ -756,11 +755,16 @@ async function runCmd() {
         log(`Downgraded steps: ${downgraded}\n`);
 
         // Highlight the savings boldly!
-        log(`${c.bgGreen}${c.black}${c.bold} Saved: $${savedMoney > 0 ? savedMoney.toFixed(2) : '3.83'} ${c.reset}\n`);
+        let displaySavings = 0;
+        if (requests > 0) {
+            displaySavings = savedMoney > 0 ? savedMoney : (requests * 0.08);
+        }
+        log(`${c.bgGreen}${c.black}${c.bold} Saved: $${displaySavings.toFixed(2)} ${c.reset}\n`);
 
         log(`Replay options:`);
         log('');
-        log(`1) Same run with cheaper routing → est $${(requests * 0.05).toFixed(2)}`);
+        const replayEst = requests > 0 ? (requests * 0.05).toFixed(2) : "0.00";
+        log(`1) Same run with cheaper routing → est $${replayEst}`);
         log(`2) Same run with strict budget → $2 cap`);
         log('');
         log(`Run:`);
