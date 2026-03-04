@@ -8,8 +8,8 @@ services:
     restart: unless-stopped
     ports:
       - "4000:4000"
-    env_file:
-      - ./agent-proxy/.env
+    environment:
+      - PORT=4000
     volumes:
       - proxy-data:/app/data
     healthcheck:
@@ -51,8 +51,8 @@ services:
     restart: unless-stopped
     ports:
       - "4001:4000"
-    env_file:
-      - ./agent-proxy/.env
+    environment:
+      - PORT=4000
     volumes:
       - proxy-staging-data:/app/data
     healthcheck:
