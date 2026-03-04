@@ -77,7 +77,7 @@ export function getProviderKey(provider: Provider): { key: string } | { error: s
     }
 
     return {
-        error: `No API key configured for ${config.name}. Set one of: ${config.envVarNames.join(', ')}. Run: npx agentic-firewall setup`,
+        error: `No API key configured for ${config.name}. Set one of: ${config.envVarNames.join(', ')}. Run: npx vibe-billing setup`,
     };
 }
 

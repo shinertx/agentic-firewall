@@ -12,6 +12,7 @@
  *   npx vibe-billing uninstall — remove proxy routing from shell config + agent configs
  */
 
+const http = require('http');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
@@ -20,7 +21,7 @@ const { execSync } = require('child_process');
 const readline = require('readline');
 
 const VERSION = '0.5.9';
-const PROXY_URL = 'https://api.jockeyvc.com';
+const PROXY_URL = 'http://localhost:4000';
 const PROXY_API = `${PROXY_URL}/api/stats`;
 const HTTP_TIMEOUT_MS = 10_000;
 
@@ -120,7 +121,8 @@ function tokenCost(tokens, pricePerMillion) {
 // ─── HTTP Helper (with timeout) ─────────────────────────
 function httpGet(url) {
     return new Promise((resolve, reject) => {
-        const req = https.get(url, (res) => {
+        const client = url.startsWith('https') ? https : http;
+        const req = client.get(url, (res) => {
             let data = '';
             res.on('data', chunk => data += chunk);
             res.on('end', () => {
@@ -484,7 +486,8 @@ function sendRegistrationPing() {
             node: process.version,
             timestamp: new Date().toISOString(),
         });
-        const req = https.request(`${PROXY_URL}/api/register`, {
+        const client = PROXY_URL.startsWith('https') ? https : http;
+        const req = client.request(`${PROXY_URL}/api/register`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Content-Length': data.length },
             timeout: 3000,
@@ -523,7 +526,16 @@ async function setup() {
     const shell = findShellConfig();
     if (shell) {
         if (fs.existsSync(shell.path)) {
-            const content = fs.readFileSync(shell.path, 'utf-8');
+            let content = fs.readFileSync(shell.path, 'utf-8');
+
+            // Migrate old remote URLs to local proxy
+            const OLD_REMOTE = 'https://api.jockeyvc.com';
+            if (content.includes(OLD_REMOTE)) {
+                content = content.replace(new RegExp(OLD_REMOTE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), PROXY_URL);
+                fs.writeFileSync(shell.path, content);
+                ok(`Migrated shell config from remote → local proxy.`);
+            }
+
             if (content.includes(MARKER) || content.includes(LEGACY_MARKER)) {
                 ok('Shell environment already configured.');
             } else {
@@ -651,7 +663,7 @@ async function status() {
         log('');
     } catch (err) {
         s.stop(`${c.red}${icons.fail}${c.reset} Cannot reach proxy: ${err.message}`);
-        info('Is the proxy running? Check https://api.jockeyvc.com/health');
+        info('Is the proxy running? Start it with: npx vibe-billing setup');
     }
 }
 
@@ -660,8 +672,10 @@ async function verify() {
     header('Agent Firewall — Verify');
     const ov = process.env.OPENAI_BASE_URL || 'not set';
     const av = process.env.ANTHROPIC_BASE_URL || 'not set';
-    log(`  OPENAI_BASE_URL:    ${ov.includes('jockeyvc') ? c.green : c.red}${ov}${c.reset}`);
-    log(`  ANTHROPIC_BASE_URL: ${av.includes('jockeyvc') ? c.green : c.red}${av}${c.reset}\n`);
+    const ovOk = ov.includes('localhost:4000');
+    const avOk = av.includes('localhost:4000');
+    log(`  OPENAI_BASE_URL:    ${ovOk ? c.green : c.red}${ov}${c.reset}`);
+    log(`  ANTHROPIC_BASE_URL: ${avOk ? c.green : c.red}${av}${c.reset}\n`);
 
     const s = spinner('Testing proxy connection');
     try {
@@ -676,7 +690,7 @@ async function verify() {
     // OpenClaw check: it uses env vars, so checking ANTHROPIC_BASE_URL is sufficient
     const ocDir = path.join(os.homedir(), '.openclaw');
     if (fs.existsSync(ocDir)) {
-        if (av.includes('jockeyvc') || ov.includes('jockeyvc')) {
+        if (avOk || ovOk) {
             ok(`OpenClaw detected — will use proxy via env vars`);
         } else {
             warn(`OpenClaw detected but env vars not set — run ${c.bold}npx vibe-billing setup${c.reset}`);

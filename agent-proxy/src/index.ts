@@ -202,7 +202,7 @@ if (keyValidation.valid.length > 0) {
     console.log(`[FIREWALL LOCAL] Provider keys loaded: ${keyValidation.valid.join(', ')}`);
 }
 if (keyValidation.missing.length > 0) {
-    console.warn(`[FIREWALL LOCAL] No keys for: ${keyValidation.missing.join(', ')} — run: npx agentic-firewall setup`);
+    console.warn(`[FIREWALL LOCAL] No keys for: ${keyValidation.missing.join(', ')} — run: npx vibe-billing setup`);
 }
 
 // LOCAL-FIRST: Bind to 127.0.0.1 only — reject external connections at the network level

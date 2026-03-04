@@ -39,7 +39,7 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
         return res.status(403).json({
             error: {
                 type: 'localhost_only',
-                message: 'Agentic Firewall runs locally. Requests must come from localhost. Run: npx agentic-firewall setup',
+                message: 'Agentic Firewall runs locally. Requests must come from localhost. Run: npx vibe-billing setup',
             }
         });
     }
