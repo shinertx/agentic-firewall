@@ -61,7 +61,15 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
 
+            # Stop PM2 if running (legacy non-Docker setup)
+            pm2 stop all 2>/dev/null || true
+            pm2 delete all 2>/dev/null || true
+
+            # Free port 4000 if anything else is using it
+            sudo lsof -ti:4000 | xargs -r sudo kill -9 2>/dev/null || true
+
             # Rebuild and restart containers
+            docker compose down --remove-orphans 2>/dev/null || true
             docker compose up -d --build --remove-orphans
 
             # Wait for health check
