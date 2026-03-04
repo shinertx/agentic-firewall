@@ -134,6 +134,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
+      - name: Sync with remote
+        run: git pull --rebase origin main
+
       - name: Bump patch version
         working-directory: agent-cli
         run: |
@@ -152,8 +155,8 @@ jobs:
           git commit -m "chore: bump vibe-billing to $NEW_VERSION [skip ci]"
           git push
 
-      - name: Publish to npm
+      - name: Publish to npm with provenance
         working-directory: agent-cli
-        run: npm publish --access public
+        run: npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
