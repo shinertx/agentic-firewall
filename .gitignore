@@ -12,7 +12,7 @@ build/
 *.tsbuildinfo
 
 # Compiled JS from TypeScript source (run via tsx, don't commit)
-agent-proxy/src/*.js
+agent-proxy/src/**/*.js
 
 # OS
 .DS_Store

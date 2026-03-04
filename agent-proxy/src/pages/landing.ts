@@ -111,7 +111,7 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   </div>
 
   <div class="actions">
-    <div class="code"><span class="prefix">$</span> npx agent-firewall setup</div>
+    <div class="code"><span class="prefix">$</span> npx vibe-billing setup</div>
     <a href="https://github.com/shinertx/agentic-firewall" target="_blank" class="cta">View on GitHub →</a>
   </div>
 </div>
@@ -137,7 +137,7 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 
 <div class="footer">
   <p>Agent Firewall — Agent Runtime Control</p>
-  <p style="margin-top:8px;font-size:0.75rem"><a href="https://github.com/shinertx/agentic-firewall" target="_blank" style="color:var(--text-secondary);text-decoration:none;margin:0 8px">GitHub</a> • <a href="https://www.npmjs.com/package/agent-firewall" target="_blank" style="color:var(--text-secondary);text-decoration:none;margin:0 8px">npm</a></p>
+  <p style="margin-top:8px;font-size:0.75rem"><a href="https://github.com/shinertx/agentic-firewall" target="_blank" style="color:var(--text-secondary);text-decoration:none;margin:0 8px">GitHub</a> • <a href="https://www.npmjs.com/package/vibe-billing" target="_blank" style="color:var(--text-secondary);text-decoration:none;margin:0 8px">npm</a></p>
 </div>
 <script>
 setInterval(async () => {

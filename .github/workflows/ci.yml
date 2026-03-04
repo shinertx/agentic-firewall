@@ -81,3 +81,57 @@ jobs:
           sleep 5
           curl -sf https://api.jockeyvc.com/api/stats > /dev/null
           echo "✅ External endpoint verified"
+
+  # ── Publish CLI to npm (only on merge to main) ────────
+  publish:
+    name: Publish vibe-billing to npm
+    needs: [test, deploy]
+    runs-on: ubuntu-latest
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'push' &&
+      !contains(github.event.head_commit.message, '[skip ci]')
+
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump patch version
+        working-directory: agent-cli
+        run: |
+          NEW_VERSION=$(npm version patch --no-git-tag-version)
+          echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
+
+      - name: Sync VERSION const in CLI
+        working-directory: agent-cli
+        run: |
+          VER="${NEW_VERSION#v}"
+          sed -i "s/^const VERSION = '.*';$/const VERSION = '${VER}';/" bin/cli.js
+
+      - name: Commit version bump
+        run: |
+          git add agent-cli/package.json agent-cli/bin/cli.js
+          git commit -m "chore: bump vibe-billing to $NEW_VERSION [skip ci]"
+          git push
+
+      - name: Publish to npm
+        working-directory: agent-cli
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

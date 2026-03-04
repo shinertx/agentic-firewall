@@ -78,6 +78,6 @@ function renderEmpty(): string {
 <div class="none">
   <h2>No data yet</h2>
   <p>Route some traffic through the firewall to see your stats here.</p>
-  <code>$ npx agent-firewall setup</code>
+  <code>$ npx vibe-billing setup</code>
 </div>`;
 }

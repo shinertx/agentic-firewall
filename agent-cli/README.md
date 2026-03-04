@@ -1,4 +1,4 @@
-# agent-firewall
+# vibe-billing
 
 **Agent Runtime Control** — Stop AI agents from burning your money.
 
@@ -8,21 +8,21 @@ Loop detection, prompt caching, budget enforcement, and waste scanning for auton
 
 ```bash
 # See how much your agents are wasting
-npx agent-firewall scan
+npx vibe-billing scan
 
 # Route agents through the firewall to fix it
-npx agent-firewall setup
+npx vibe-billing setup
 ```
 
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `npx agent-firewall scan` | Scan agent logs for waste — loops, retries, missed caching |
-| `npx agent-firewall setup` | Auto-configure agents to route through the firewall |
-| `npx agent-firewall status` | Check live proxy stats — requests, savings, blocked loops |
-| `npx agent-firewall verify` | Test that routing is working |
-| `npx agent-firewall uninstall` | Undo everything — restore original configs |
+| `npx vibe-billing scan` | Scan agent logs for waste — loops, retries, missed caching |
+| `npx vibe-billing setup` | Auto-configure agents to route through the firewall |
+| `npx vibe-billing status` | Check live proxy stats — requests, savings, blocked loops |
+| `npx vibe-billing verify` | Test that routing is working |
+| `npx vibe-billing uninstall` | Undo everything — restore original configs |
 
 ## What It Solves
 
@@ -68,7 +68,7 @@ Works on **macOS**, **Linux**, and **Windows** (PowerShell + cmd.exe).
 
 - Auto-detects your shell config (`.zshrc`, `.bashrc`, `.bash_profile`, PowerShell `$PROFILE`)
 - Asks before modifying any files
-- Clean uninstall with `npx agent-firewall uninstall`
+- Clean uninstall with `npx vibe-billing uninstall`
 
 ## Trust & Transparency
 

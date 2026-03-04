@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 
 /**
- * agent-firewall CLI v0.5.0
+ * vibe-billing CLI v0.5.3
  * Agent Runtime Control — keep autonomous AI agents under control.
  *
  * Usage:
- *   npx agent-firewall setup     — auto-detect agents, patch configs, verify connection
- *   npx agent-firewall scan      — scan agent logs for waste (with real $ numbers)
- *   npx agent-firewall status    — check proxy stats (requests, savings, blocked loops)
- *   npx agent-firewall verify    — test that traffic is routing through the firewall
- *   npx agent-firewall uninstall — remove proxy routing from shell config + agent configs
+ *   npx vibe-billing setup     — auto-detect agents, patch configs, verify connection
+ *   npx vibe-billing scan      — scan agent logs for waste (with real $ numbers)
+ *   npx vibe-billing status    — check proxy stats (requests, savings, blocked loops)
+ *   npx vibe-billing verify    — test that traffic is routing through the firewall
+ *   npx vibe-billing uninstall — remove proxy routing from shell config + agent configs
  */
 
 const https = require('https');
@@ -167,8 +167,10 @@ function findShellConfig() {
     return { path: path.join(home, defaultName), type: 'posix', create: true };
 }
 
-const MARKER = '# agent-firewall proxy routing';
-const MARKER_END = '# /agent-firewall';
+const MARKER = '# vibe-billing proxy routing';
+const MARKER_END = '# /vibe-billing';
+const LEGACY_MARKER = '# agent-firewall proxy routing';
+const LEGACY_MARKER_END = '# /agent-firewall';
 
 function getShellBlock(type) {
     if (type === 'powershell') {
@@ -359,10 +361,10 @@ async function scan() {
                 log('');
                 showProxyWaste(stats);
             } else {
-                info('Route some traffic through the firewall first: npx agent-firewall setup\n');
+                info('Route some traffic through the firewall first: npx vibe-billing setup\n');
             }
         } catch {
-            info('Run `npx agent-firewall setup` to get started.\n');
+            info('Run `npx vibe-billing setup` to get started.\n');
         }
         return;
     }
@@ -465,12 +467,12 @@ async function scan() {
 
     log('');
     if (potentialCacheSavings > 0.01 || grandToolErrors > 0) {
-        log(`  ${c.bgGreen}${c.black}${c.bold} Fix this now → npx agent-firewall setup ${c.reset}`);
+        log(`  ${c.bgGreen}${c.black}${c.bold} Fix this now → npx vibe-billing setup ${c.reset}`);
         log(`  ${c.dim}Routes your agent through a governance proxy that caches${c.reset}`);
         log(`  ${c.dim}repeated prompts and kills stuck loops automatically.${c.reset}`);
     } else {
         ok('Your agents are running efficiently.');
-        log(`  ${c.dim}Run ${c.bold}npx agent-firewall setup${c.reset}${c.dim} to add caching and loop detection.${c.reset}`);
+        log(`  ${c.dim}Run ${c.bold}npx vibe-billing setup${c.reset}${c.dim} to add caching and loop detection.${c.reset}`);
     }
     log('');
 }
@@ -540,7 +542,7 @@ async function setup() {
     if (shell) {
         if (fs.existsSync(shell.path)) {
             const content = fs.readFileSync(shell.path, 'utf-8');
-            if (content.includes(MARKER)) {
+            if (content.includes(MARKER) || content.includes(LEGACY_MARKER)) {
                 ok('Shell environment already configured.');
             } else {
                 const fileName = path.basename(shell.path);
@@ -603,8 +605,8 @@ async function setup() {
     log(`${c.dim}• Budget control: cap spend per session${c.reset}`);
     log('');
     log(`  ${c.bold}Next:${c.reset} Launch any agent — it will route through the firewall automatically.`);
-    log(`  ${c.bold}Check:${c.reset} ${c.cyan}npx agent-firewall status${c.reset} to see live traffic.`);
-    log(`  ${c.bold}Undo:${c.reset}  ${c.cyan}npx agent-firewall uninstall${c.reset} to remove.\n`);
+    log(`  ${c.bold}Check:${c.reset} ${c.cyan}npx vibe-billing status${c.reset} to see live traffic.`);
+    log(`  ${c.bold}Undo:${c.reset}  ${c.cyan}npx vibe-billing uninstall${c.reset} to remove.\n`);
 }
 
 // ─── Uninstall Command ──────────────────────────────────
@@ -615,9 +617,12 @@ async function uninstall() {
     const shell = findShellConfig();
     if (shell && fs.existsSync(shell.path)) {
         const content = fs.readFileSync(shell.path, 'utf-8');
-        if (content.includes(MARKER)) {
+        if (content.includes(MARKER) || content.includes(LEGACY_MARKER)) {
             const regex = new RegExp(`\\n?${MARKER.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\s\\S]*?${MARKER_END.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\n?`, 'g');
-            const cleaned = content.replace(regex, '\n');
+            let cleaned = content.replace(regex, '\n');
+            // Also remove legacy markers from users who installed with agent-firewall
+            const legacyRegex = new RegExp(`\\n?${LEGACY_MARKER.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\s\\S]*?${LEGACY_MARKER_END.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\n?`, 'g');
+            cleaned = cleaned.replace(legacyRegex, '\n');
             fs.writeFileSync(shell.path, cleaned);
             ok(`Removed env vars from ${c.dim}${path.basename(shell.path)}${c.reset}`);
             if (shell.type === 'posix') {
@@ -635,7 +640,7 @@ async function uninstall() {
 
     log('');
     ok('Agent Firewall uninstalled. Your agents now connect directly to providers.');
-    log(`${c.dim}Run ${c.bold}npx agent-firewall setup${c.reset}${c.dim} to re-enable.${c.reset}\n`);
+    log(`${c.dim}Run ${c.bold}npx vibe-billing setup${c.reset}${c.dim} to re-enable.${c.reset}\n`);
 }
 
 // ─── Status Command ─────────────────────────────────────
@@ -682,7 +687,7 @@ async function verify() {
         s.stop(`${c.green}${icons.ok}${c.reset} Proxy live (${stats.totalRequests} requests)`);
     } catch (err) {
         s.stop(`${c.red}${icons.fail}${c.reset} Proxy unreachable: ${err.message}`);
-        info('Run npx agent-firewall setup to configure.');
+        info('Run npx vibe-billing setup to configure.');
         return;
     }
 
@@ -692,7 +697,7 @@ async function verify() {
         if (av.includes('jockeyvc') || ov.includes('jockeyvc')) {
             ok(`OpenClaw detected — will use proxy via env vars`);
         } else {
-            warn(`OpenClaw detected but env vars not set — run ${c.bold}npx agent-firewall setup${c.reset}`);
+            warn(`OpenClaw detected but env vars not set — run ${c.bold}npx vibe-billing setup${c.reset}`);
         }
     }
 
@@ -700,7 +705,7 @@ async function verify() {
     const shell = findShellConfig();
     if (shell && fs.existsSync(shell.path)) {
         const content = fs.readFileSync(shell.path, 'utf-8');
-        if (content.includes(MARKER)) {
+        if (content.includes(MARKER) || content.includes(LEGACY_MARKER)) {
             ok(`Shell config: ${c.green}${path.basename(shell.path)}${c.reset} has proxy vars`);
         } else {
             warn(`Shell config: ${c.yellow}${path.basename(shell.path)}${c.reset} — no proxy vars found`);
@@ -719,12 +724,12 @@ switch (command) {
     case 'verify': verify().catch(err => fail(err.message)); break;
     case 'uninstall': uninstall().catch(err => fail(err.message)); break;
     case '--version': case '-v':
-        log(`agent-firewall v${VERSION}`);
+        log(`vibe-billing v${VERSION}`);
         break;
     case '--help': case '-h':
         header('Agent Firewall');
         log('  Keep autonomous AI agents under control.\n');
-        log(`  ${c.bold}Usage:${c.reset} npx agent-firewall <command>\n`);
+        log(`  ${c.bold}Usage:${c.reset} npx vibe-billing <command>\n`);
         log(`  ${c.bold}Commands:${c.reset}`);
         log(`    ${c.green}setup${c.reset}       Auto-detect agents, patch configs, verify connection`);
         log(`    ${c.green}scan${c.reset}        Scan agent logs for waste (loops, retries, missed caching)`);
@@ -738,6 +743,6 @@ switch (command) {
         break;
     default:
         fail(`Unknown command: ${command}`);
-        log(`Run ${c.bold}npx agent-firewall --help${c.reset} to see available commands.`);
+        log(`Run ${c.bold}npx vibe-billing --help${c.reset} to see available commands.`);
         process.exitCode = 1;
 }

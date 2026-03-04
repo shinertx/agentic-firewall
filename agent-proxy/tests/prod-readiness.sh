@@ -280,10 +280,10 @@ fi
 
 # 7d. Check npm package doesn't have hardcoded secrets
 section "7b. npm Package Security"
-NPM_TARBALL=$(npm pack --dry-run agent-firewall 2>/dev/null || echo "")
+NPM_TARBALL=$(npm pack --dry-run vibe-billing 2>/dev/null || echo "")
 if command -v npx &>/dev/null; then
     # Check the published CLI for hardcoded secrets
-    CLI_PATH=$(npm root -g 2>/dev/null)/agent-firewall/bin/cli.js
+    CLI_PATH=$(npm root -g 2>/dev/null)/vibe-billing/bin/cli.js
     if [[ -f "$CLI_PATH" ]]; then
         SECRET_HITS=$(grep -cE "sk-[a-zA-Z0-9]{20,}" "$CLI_PATH" || true)
         if [[ "$SECRET_HITS" == "0" ]]; then
@@ -450,7 +450,7 @@ fi
 # ═══════════════════════════════════════════════════════════════════
 section "11. CLI Package — npm"
 
-NPM_VERSION=$(npm view agent-firewall version 2>/dev/null || echo "NOT_FOUND")
+NPM_VERSION=$(npm view vibe-billing version 2>/dev/null || echo "NOT_FOUND")
 LOCAL_VERSION=$(node -e "console.log(require('/Users/benjijmac/Documents/vibebilling/agent-cli/package.json').version)" 2>/dev/null || echo "UNKNOWN")
 
 if [[ "$NPM_VERSION" == "$LOCAL_VERSION" ]]; then
@@ -460,11 +460,11 @@ else
 fi
 
 # Check CLI runs
-CLI_VER=$(npx agent-firewall@latest --version 2>/dev/null || echo "")
+CLI_VER=$(npx vibe-billing@latest --version 2>/dev/null || echo "")
 if [[ -n "$CLI_VER" ]]; then
-    pass "npx agent-firewall@latest runs (v$CLI_VER)"
+    pass "npx vibe-billing@latest runs (v$CLI_VER)"
 else
-    warn "CLI execution" "Could not run npx agent-firewall@latest"
+    warn "CLI execution" "Could not run npx vibe-billing@latest"
 fi
 
 # ═══════════════════════════════════════════════════════════════════
