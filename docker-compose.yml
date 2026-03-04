@@ -10,6 +10,7 @@ services:
       - "4000:4000"
     environment:
       - PORT=4000
+      - BIND_HOST=0.0.0.0
     volumes:
       - proxy-data:/app/data
     healthcheck:
@@ -53,6 +54,7 @@ services:
       - "4001:4000"
     environment:
       - PORT=4000
+      - BIND_HOST=0.0.0.0
     volumes:
       - proxy-staging-data:/app/data
     healthcheck:
