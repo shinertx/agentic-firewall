@@ -57,8 +57,9 @@ jobs:
             set -euo pipefail
             cd ~/agentic-firewall
 
-            # Pull latest code
-            git pull origin main 2>/dev/null || true
+            # Force-sync with remote (handles dirty working tree)
+            git fetch origin main
+            git reset --hard origin/main
 
             # Rebuild and restart containers
             docker compose up -d --build --remove-orphans
