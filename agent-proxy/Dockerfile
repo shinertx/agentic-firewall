@@ -28,6 +28,6 @@ VOLUME ["/app/data"]
 EXPOSE 4000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:4000/api/stats || exit 1
+  CMD wget -q -O /dev/null http://localhost:4000/api/stats || exit 1
 
 CMD ["npx", "tsx", "src/index.ts"]
