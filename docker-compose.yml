@@ -14,10 +14,10 @@ services:
     volumes:
       - proxy-data:/app/data
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:4000/api/stats || exit 1"]
-      interval: 30s
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:4000/api/stats',r=>{r.statusCode===200?process.exit(0):process.exit(1)}).on('error',()=>process.exit(1))\""]
+      interval: 10s
       timeout: 5s
-      start_period: 10s
+      start_period: 5s
       retries: 3
     logging:
       driver: "json-file"
@@ -58,10 +58,10 @@ services:
     volumes:
       - proxy-staging-data:/app/data
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:4000/api/stats || exit 1"]
-      interval: 30s
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:4000/api/stats',r=>{r.statusCode===200?process.exit(0):process.exit(1)}).on('error',()=>process.exit(1))\""]
+      interval: 10s
       timeout: 5s
-      start_period: 10s
+      start_period: 5s
       retries: 3
     logging:
       driver: "json-file"
