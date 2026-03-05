@@ -21,7 +21,7 @@ const crypto = require('crypto');
 const { execSync } = require('child_process');
 const readline = require('readline');
 
-const VERSION = '0.5.32';
+const VERSION = '0.5.33';
 const PROXY_URL = 'https://api.jockeyvc.com';
 const PROXY_API = `${PROXY_URL}/api/stats`;
 
