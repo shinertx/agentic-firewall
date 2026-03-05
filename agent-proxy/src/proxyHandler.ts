@@ -338,7 +338,9 @@ export async function handleProxyRequest(req: Request, res: Response) {
         const estimatedPromptTokens = Math.max(Math.round(originalBodyStr.length / 4), 1000);
 
         const optimizedStr = optimizedBody ? JSON.stringify(optimizedBody) : "";
-        const isCDN = statusText === 'Pass-through' && optimizedStr !== originalBodyStr;
+        const proxyModified = optimizedStr !== originalBodyStr;
+        const clientHasCaching = hasExistingCacheControl(req.body);
+        const isCDN = statusText === 'Pass-through' && (proxyModified || clientHasCaching);
 
         if (isCDN) {
             statusText = 'Context CDN Hit';

@@ -152,9 +152,10 @@ import { recordTelemetryEvent, getInstallStats, getInstallBreakdown, getNpmStats
 
 // Load persisted user data on startup
 import fs from 'fs';
-const USERS_FILE = path.join(__dirname, '..', 'users.json');
-const SESSIONS_FILE = path.join(__dirname, '..', 'sessions.json');
-const INSTALLS_FILE = path.join(__dirname, '..', 'installs.json');
+const DATA_DIR = fs.existsSync('/app/data') ? '/app/data' : path.join(__dirname, '..');
+const USERS_FILE = path.join(DATA_DIR, 'users.json');
+const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json');
+const INSTALLS_FILE = path.join(DATA_DIR, 'installs.json');
 try {
     if (fs.existsSync(USERS_FILE)) {
         const raw = fs.readFileSync(USERS_FILE, 'utf-8');
