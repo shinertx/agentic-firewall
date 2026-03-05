@@ -7,6 +7,7 @@ import { getUserId, checkBudget, recordUserSpend, recordUserLoop, getOrCreateUse
 import { checkNoProgress } from './noProgress';
 import { smartRoute } from './smartRouter';
 import { trimContext } from './contextTrimmer';
+import { compressPrompt } from './promptCompressor';
 import { getCachedResponse, setCachedResponse } from './responseCache';
 import { parseUsageFromChunks } from './usageParser';
 import { globalStats, recordActivity } from './stats';
@@ -268,6 +269,7 @@ export async function handleProxyRequest(req: Request, res: Response) {
     const apiKey = (req.headers['x-api-key'] || req.headers['authorization'] || '') as string;
     const userId = getUserId(apiKey);
     let requestHash = '';
+    let compResult = { compressed: false, savedTokens: 0, compressionRatio: 1, cacheHit: false, ollamaLatencyMs: 0 };
 
     if (req.method !== 'GET' && req.method !== 'HEAD' && req.body && Object.keys(req.body).length > 0) {
         const ip = req.ip || '127.0.0.1';
@@ -430,6 +432,16 @@ export async function handleProxyRequest(req: Request, res: Response) {
             console.log(`[CONTEXT TRIMMER] Trimmed ${trimResult.removedMessages} msgs, saved ~${trimResult.trimmedTokens} tokens`);
         }
 
+        // Prompt Compressor — compress oversized system prompts and long histories via Ollama
+        compResult = await compressPrompt(optimizedBody, isGemini, !!isOpenAI, optimizedBody?.model || '');
+        if (compResult.compressed) {
+            optimizedBody = compResult.body;
+            globalStats.compressionCalls++;
+            globalStats.compressedTokensSaved += compResult.savedTokens;
+            if (compResult.cacheHit) globalStats.compressionCacheHits++;
+            console.log(`[PROMPT COMPRESSOR] Saved ~${compResult.savedTokens} tokens (${(compResult.compressionRatio * 100).toFixed(0)}% of original, ${compResult.ollamaLatencyMs}ms${compResult.cacheHit ? ', cache hit' : ''})`);
+        }
+
         // Apply Context CDN (cache headers) on the optimized body
         const result = applyContextCDN(JSON.parse(JSON.stringify(optimizedBody)), isGemini, req.originalUrl);
         optimizedBody = result.body;
@@ -567,7 +579,7 @@ export async function handleProxyRequest(req: Request, res: Response) {
         const isCDN = statusText === 'Pass-through' && (proxyModified || clientHasCaching);
 
         if (isCDN) {
-            statusText = 'Context CDN Hit';
+            statusText = compResult.compressed ? 'CDN + Compressed' : 'Context CDN Hit';
             statusColor = 'text-emerald-400 bg-emerald-400/10';
 
             const inputCostPerMillionTokens = getInputCost(displayModel);
@@ -577,6 +589,9 @@ export async function handleProxyRequest(req: Request, res: Response) {
 
             globalStats.savedTokens += savedTokens;
             globalStats.savedMoney += savingsCost;
+        } else if (compResult.compressed) {
+            statusText = 'Compressed';
+            statusColor = 'text-cyan-400 bg-cyan-400/10';
         }
 
         recordUserSpend(userId, displayModel, estimatedPromptTokens, isCDN);
