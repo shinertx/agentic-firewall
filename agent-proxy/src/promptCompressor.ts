@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { isOllamaAvailable, ollamaGenerate } from './ollamaClient';
 import { globalStats } from './stats';
+import { COMP_SYSTEM_PROMPT_THRESHOLD, COMP_HISTORY_THRESHOLD, COMP_MIN_CONTENT_LENGTH, COMP_CACHE_TTL_MS, COMP_MAX_OLLAMA_INPUT, OLLAMA_SUMMARIZE_TIMEOUT_MS } from './config';
 
 export interface CompressionResult {
     compressed: boolean;
@@ -13,12 +14,12 @@ export interface CompressionResult {
     ollamaLatencyMs: number;
 }
 
-const SYSTEM_PROMPT_THRESHOLD = 10_000;
-const HISTORY_THRESHOLD = 50;
-const MIN_CONTENT_LENGTH = 400;
-const CACHE_TTL_MS = 60 * 60 * 1000;
-const MAX_OLLAMA_INPUT = 8000;
-const COMPRESSION_TIMEOUT = 5000;
+const SYSTEM_PROMPT_THRESHOLD = COMP_SYSTEM_PROMPT_THRESHOLD;
+const HISTORY_THRESHOLD = COMP_HISTORY_THRESHOLD;
+const MIN_CONTENT_LENGTH = COMP_MIN_CONTENT_LENGTH;
+const CACHE_TTL_MS = COMP_CACHE_TTL_MS;
+const MAX_OLLAMA_INPUT = COMP_MAX_OLLAMA_INPUT;
+const COMPRESSION_TIMEOUT = OLLAMA_SUMMARIZE_TIMEOUT_MS;
 
 const compressionCache = new Map<string, { compressed: string; tokens: number; createdAt: number }>();
 

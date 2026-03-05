@@ -6,11 +6,13 @@
  * short-circuits immediately (zero overhead).
  */
 
+import { OLLAMA_HEALTH_CACHE_TTL_MS, OLLAMA_CLASSIFY_TIMEOUT_MS, OLLAMA_SUMMARIZE_TIMEOUT_MS, OLLAMA_HEALTH_TIMEOUT_MS, OLLAMA_MAX_RETRIES } from './config';
+
 const OLLAMA_BASE_URL = 'http://localhost:11434';
-const HEALTH_CACHE_TTL_MS = 30_000;
-const CLASSIFY_TIMEOUT_MS = 2_000;
-const SUMMARIZE_TIMEOUT_MS = 5_000;
-const HEALTH_TIMEOUT_MS = 500;
+const HEALTH_CACHE_TTL_MS = OLLAMA_HEALTH_CACHE_TTL_MS;
+const CLASSIFY_TIMEOUT_MS = OLLAMA_CLASSIFY_TIMEOUT_MS;
+const SUMMARIZE_TIMEOUT_MS = OLLAMA_SUMMARIZE_TIMEOUT_MS;
+const HEALTH_TIMEOUT_MS = OLLAMA_HEALTH_TIMEOUT_MS;
 
 // Cached health check result
 let cachedAvailable: boolean | null = null;
@@ -53,34 +55,46 @@ export async function isOllamaAvailable(): Promise<boolean> {
 
 /**
  * Generate text from Ollama. Returns empty string on any failure.
+ * Retries once on timeout/network error with exponential backoff.
  */
 export async function ollamaGenerate(
     prompt: string,
-    options?: { model?: string; timeout?: number }
+    options?: { model?: string; timeout?: number; retries?: number }
 ): Promise<string> {
     if (!isEnabled()) return '';
 
     const model = options?.model || getModel();
     const timeoutMs = options?.timeout || SUMMARIZE_TIMEOUT_MS;
+    const maxRetries = options?.retries ?? OLLAMA_MAX_RETRIES;
 
-    try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), timeoutMs);
-        const res = await fetch(`${OLLAMA_BASE_URL}/api/generate`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ model, prompt, stream: false }),
-            signal: controller.signal,
-        });
-        clearTimeout(timeout);
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), timeoutMs);
+            const res = await fetch(`${OLLAMA_BASE_URL}/api/generate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model, prompt, stream: false }),
+                signal: controller.signal,
+            });
+            clearTimeout(timeout);
 
-        if (!res.ok) return '';
+            if (!res.ok) return '';
 
-        const data = await res.json() as { response?: string };
-        return data.response?.trim() || '';
-    } catch {
-        return '';
+            const data = await res.json() as { response?: string };
+            return data.response?.trim() || '';
+        } catch {
+            if (attempt < maxRetries) {
+                // Brief backoff before retry (200ms, 400ms, ...)
+                await new Promise(r => setTimeout(r, 200 * (attempt + 1)));
+                // Invalidate health cache so next check re-probes
+                cachedAvailable = null;
+                continue;
+            }
+            return '';
+        }
     }
+    return '';
 }
 
 /**

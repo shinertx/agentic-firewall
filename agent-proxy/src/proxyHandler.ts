@@ -10,7 +10,9 @@ import { trimContext } from './contextTrimmer';
 import { compressPrompt } from './promptCompressor';
 import { getCachedResponse, setCachedResponse } from './responseCache';
 import { parseUsageFromChunks } from './usageParser';
+import { acquireSlot, releaseSlot, autoTuneFromHeaders, QueueFullError, QueueTimeoutError } from './requestQueue';
 import { globalStats, recordActivity } from './stats';
+import { CDN_MIN_CHARS_ANTHROPIC, CDN_MIN_TOKENS_OPENAI } from './config';
 
 // Explicit Interfaces for Edge Case Handling
 export interface LLMRequest {
@@ -31,17 +33,17 @@ const OPENAI_BASE_URL = 'https://api.openai.com';
 const NVIDIA_BASE_URL = 'https://integrate.api.nvidia.com';
 
 // DRY Helper for Anthropic Cache Injection
-// Threshold: 4096 chars ≈ 1024 tokens — Anthropic's minimum for prompt caching.
+// Threshold: CDN_MIN_CHARS_ANTHROPIC chars ≈ 1024 tokens — Anthropic's minimum for prompt caching.
 // Below this, cache_control is silently ignored but we'd pay the 25% write surcharge.
 function injectEphemeralCache(block: any): { modified: boolean, content: any } {
-    if (typeof block === 'string' && block.length > 4096) {
+    if (typeof block === 'string' && block.length > CDN_MIN_CHARS_ANTHROPIC) {
         return {
             modified: true,
             content: [{ type: 'text', text: block, cache_control: { type: 'ephemeral' } }]
         };
     } else if (Array.isArray(block) && block.length > 0) {
         const last = block[block.length - 1];
-        if (last.type === 'text' && !last.cache_control && last.text.length > 4096) {
+        if (last.type === 'text' && !last.cache_control && last.text.length > CDN_MIN_CHARS_ANTHROPIC) {
             last.cache_control = { type: 'ephemeral' };
             return { modified: true, content: block };
         }
@@ -133,7 +135,7 @@ export function applyContextCDN(body: LLMRequest, isGemini: boolean, reqUrl: str
             const totalText = JSON.stringify(body.contents);
             const estimatedTokens = Math.round(totalText.length / 4);
 
-            if (estimatedTokens >= 1024) {
+            if (estimatedTokens >= CDN_MIN_TOKENS_OPENAI) {
                 // systemInstruction is always sent first by Gemini, making it the
                 // most stable prefix for implicit cache hits
                 if (body.systemInstruction && body.systemInstruction.parts) {
@@ -148,7 +150,7 @@ export function applyContextCDN(body: LLMRequest, isGemini: boolean, reqUrl: str
         // (3) setting prompt_cache_retention to 24h for extended TTL.
         const bodyStr = JSON.stringify(body);
         const estimatedTokens = Math.round(bodyStr.length / 4);
-        if (estimatedTokens >= 1024 && body.messages && Array.isArray(body.messages)) {
+        if (estimatedTokens >= CDN_MIN_TOKENS_OPENAI && body.messages && Array.isArray(body.messages)) {
             // Move system messages to front for stable prefix matching
             const systemMsgs = body.messages.filter((m: any) => m.role === 'system');
             const otherMsgs = body.messages.filter((m: any) => m.role !== 'system');
@@ -273,7 +275,7 @@ export async function handleProxyRequest(req: Request, res: Response) {
 
     if (req.method !== 'GET' && req.method !== 'HEAD' && req.body && Object.keys(req.body).length > 0) {
         const ip = req.ip || '127.0.0.1';
-        const cb = checkCircuitBreaker(ip, req.body, apiKey || undefined);
+        const cb = await checkCircuitBreaker(ip, req.body, apiKey || undefined);
         if (cb.blocked) {
             recordUserLoop(userId);
             const model = req.body?.model || 'unknown';
@@ -447,6 +449,12 @@ export async function handleProxyRequest(req: Request, res: Response) {
             console.log(`[PROMPT COMPRESSOR] Saved ~${compResult.savedTokens} tokens (${(compResult.compressionRatio * 100).toFixed(0)}% of original, ${compResult.ollamaLatencyMs}ms${compResult.cacheHit ? ', cache hit' : ''})`);
         }
 
+        // Inject stream_options.include_usage for OpenAI so we get real token counts in SSE
+        if (isOpenAI && optimizedBody?.stream !== false) {
+            if (!optimizedBody.stream_options) optimizedBody.stream_options = {};
+            optimizedBody.stream_options.include_usage = true;
+        }
+
         // Apply Context CDN (cache headers) on the optimized body
         const result = applyContextCDN(JSON.parse(JSON.stringify(optimizedBody)), isGemini, req.originalUrl);
         optimizedBody = result.body;
@@ -472,8 +480,33 @@ export async function handleProxyRequest(req: Request, res: Response) {
 
     console.log(`[PROXY] => ${req.method} ${url}`);
 
+    // Request queue — acquire a concurrency slot for this provider
+    const provider = isGemini ? 'gemini' : isOpenAI ? 'openai' : isNvidia ? 'nvidia' : 'anthropic';
+    try {
+        await acquireSlot(provider);
+        globalStats.queuedRequests++;
+    } catch (err) {
+        if (err instanceof QueueFullError) {
+            globalStats.queueFullRejections++;
+            res.status(429).json({ error: { message: `Agentic Firewall: Request queue full for ${provider}. Try again shortly.` } });
+            return;
+        }
+        if (err instanceof QueueTimeoutError) {
+            globalStats.queueTimeouts++;
+            res.status(429).json({ error: { message: `Agentic Firewall: Request queue timeout for ${provider}. Provider may be overloaded.` } });
+            return;
+        }
+        throw err;
+    }
+
     const fetchStartMs = Date.now();
-    let response = await fetch(url, init);
+    let response: Response;
+    try {
+        response = await fetch(url, init);
+    } catch (fetchErr) {
+        releaseSlot(provider);
+        throw fetchErr;
+    }
 
     let statusText = 'Pass-through';
     let statusColor = 'text-gray-400 bg-gray-400/10';
@@ -487,7 +520,6 @@ export async function handleProxyRequest(req: Request, res: Response) {
             statusColor = 'text-yellow-400 bg-yellow-400/10';
         } else {
             // Cross-provider failover as second-stage fallback
-            const provider = isGemini ? 'gemini' : isOpenAI ? 'openai' : 'anthropic';
             const originalModel = optimizedBody?.model || '';
             const crossRes = await attemptCrossProviderFailover(optimizedBody, originalModel, provider);
             if (crossRes) {
@@ -525,23 +557,45 @@ export async function handleProxyRequest(req: Request, res: Response) {
     const reader = response.body.getReader();
     const chunks: Buffer[] = [];
     let ttftMs = 0;
+    let streamError = false;
     try {
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
             if (ttftMs === 0) ttftMs = Date.now() - fetchStartMs;
             chunks.push(Buffer.from(value));
-            res.write(value);
+            // Check if client is still connected before writing
+            if (res.destroyed || res.writableEnded) {
+                console.warn('[PROXY] Client disconnected mid-stream, aborting read');
+                reader.cancel();
+                streamError = true;
+                break;
+            }
+            const writeOk = res.write(value);
+            if (!writeOk) {
+                // Backpressure — wait for drain before continuing
+                await new Promise<void>(resolve => res.once('drain', resolve));
+            }
         }
     } catch (err) {
+        streamError = true;
         console.error('[PROXY STREAM ERROR]', err);
+        // Send SSE error event if streaming and headers already sent
+        if (isSSE && !res.writableEnded && !res.destroyed) {
+            try {
+                res.write(`data: ${JSON.stringify({ error: { message: 'Stream interrupted', type: 'stream_error' } })}\n\n`);
+            } catch { /* client gone */ }
+        }
     } finally {
-        res.end();
+        if (!res.writableEnded) res.end();
+        releaseSlot(provider);
     }
     const totalResponseMs = Date.now() - fetchStartMs;
 
+    // Auto-tune rate limits from provider response headers
+    autoTuneFromHeaders(provider, response.headers);
+
     // Parse real token usage from the response stream
-    const provider = isGemini ? 'gemini' : isOpenAI ? 'openai' : 'anthropic';
     const usage = parseUsageFromChunks(chunks, provider);
     if (usage) {
         globalStats.realInputTokens += usage.inputTokens;

@@ -6,14 +6,36 @@
  */
 
 import crypto from 'crypto';
+import { NP_FAILURE_STATE_TTL_MS, NP_MAX_FAILURE_ENTRIES, NP_WARN_AT, NP_BLOCK_AT } from './config';
 
 interface ToolFailureState {
     lastErrorHash: string;
     consecutiveCount: number;
     totalFailures: number;
+    lastSeenAt: number;
 }
 
 const failureStates = new Map<string, ToolFailureState>();
+
+const FAILURE_STATE_TTL_MS = NP_FAILURE_STATE_TTL_MS;
+const MAX_FAILURE_ENTRIES = NP_MAX_FAILURE_ENTRIES;
+
+setInterval(() => {
+    const now = Date.now();
+    for (const [key, state] of failureStates) {
+        if (now - state.lastSeenAt > FAILURE_STATE_TTL_MS) {
+            failureStates.delete(key);
+        }
+    }
+    // Hard cap: if still too many, evict oldest
+    if (failureStates.size > MAX_FAILURE_ENTRIES) {
+        const entries = [...failureStates.entries()].sort((a, b) => a[1].lastSeenAt - b[1].lastSeenAt);
+        const toRemove = entries.slice(0, entries.length - MAX_FAILURE_ENTRIES);
+        for (const [key] of toRemove) {
+            failureStates.delete(key);
+        }
+    }
+}, 60_000).unref();
 
 /**
  * Hash the content of tool-related messages to fingerprint errors.
@@ -50,11 +72,12 @@ export function checkNoProgress(identifier: string, body: any): {
                     let state = failureStates.get(identifier);
 
                     if (!state) {
-                        state = { lastErrorHash: '', consecutiveCount: 0, totalFailures: 0 };
+                        state = { lastErrorHash: '', consecutiveCount: 0, totalFailures: 0, lastSeenAt: Date.now() };
                         failureStates.set(identifier, state);
                     }
 
                     state.totalFailures++;
+                    state.lastSeenAt = Date.now();
 
                     if (errorHash === state.lastErrorHash) {
                         state.consecutiveCount++;
@@ -63,8 +86,8 @@ export function checkNoProgress(identifier: string, body: any): {
                         state.lastErrorHash = errorHash;
                     }
 
-                    // Warn at 3, block at 5
-                    if (state.consecutiveCount >= 5) {
+                    // Warn at NP_WARN_AT, block at NP_BLOCK_AT
+                    if (state.consecutiveCount >= NP_BLOCK_AT) {
                         return {
                             noProgress: true,
                             reason: `Agent stuck: same tool error repeated ${state.consecutiveCount} times. Stopping to prevent waste.`,
@@ -72,7 +95,7 @@ export function checkNoProgress(identifier: string, body: any): {
                         };
                     }
 
-                    if (state.consecutiveCount >= 3) {
+                    if (state.consecutiveCount >= NP_WARN_AT) {
                         return {
                             noProgress: false,
                             warning: `Warning: same tool error repeated ${state.consecutiveCount} times. Agent may be stuck.`,

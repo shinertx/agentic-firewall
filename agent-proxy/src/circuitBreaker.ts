@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { globalStats } from './stats';
 import { isRedisAvailable, getRedisClient } from './redis';
+import { CB_TTL_MS, CB_WINDOW_SIZE, CB_THRESHOLD } from './config';
 
 interface SessionEntry {
     hash: string;
@@ -13,12 +14,9 @@ interface Session {
 
 const memoryStore = new Map<string, Session>();
 
-// Entries older than 5 minutes are expired (prevents false positives across sessions)
-const TTL_MS = 5 * 60 * 1000;
-// Sliding window size
-const WINDOW_SIZE = 5;
-// Number of identical requests before triggering
-const THRESHOLD = 4;
+const TTL_MS = CB_TTL_MS;
+const WINDOW_SIZE = CB_WINDOW_SIZE;
+const THRESHOLD = CB_THRESHOLD;
 
 // Periodic cleanup of stale sessions to prevent unbounded memory growth
 setInterval(() => {
@@ -113,7 +111,7 @@ async function checkCircuitBreakerRedis(sessionKey: string, hash: string): Promi
  * - Entries expire after 5 minutes TTL
  * - Uses Redis with Lua for atomicity when available, falls back to in-memory
  */
-export function checkCircuitBreaker(ip: string, body: any, apiKey?: string, sessionId?: string): { blocked: boolean; reason?: string; hash: string; identicalCount: number } {
+export async function checkCircuitBreaker(ip: string, body: any, apiKey?: string, sessionId?: string): Promise<{ blocked: boolean; reason?: string; hash: string; identicalCount: number }> {
     if (!body || !body.messages || !Array.isArray(body.messages)) {
         return { blocked: false, hash: '', identicalCount: 0 };
     }
@@ -130,20 +128,21 @@ export function checkCircuitBreaker(ip: string, body: any, apiKey?: string, sess
     const hash = crypto.createHash('sha256').update(payloadToHash).digest('hex');
     const now = Date.now();
 
-    // Try Redis (async, but we fire-and-forget since the function is sync)
-    // For Redis-backed check, we use a deferred approach
+    // Try Redis first for atomic check (no race condition)
     if (isRedisAvailable()) {
-        // For the sync API compatibility, we still do the in-memory check
-        // but also update Redis atomically in the background
-        checkCircuitBreakerRedis(sessionKey, hash).then(result => {
-            if (result && result.blocked) {
+        const redisResult = await checkCircuitBreakerRedis(sessionKey, hash);
+        if (redisResult) {
+            if (redisResult.blocked) {
                 console.log(`[FIREWALL] Circuit Breaker triggered via Redis for session ${sessionKey}! Agent stuck in loop.`);
                 globalStats.blockedLoops++;
+                return { blocked: true, reason: 'Agentic Firewall: Loop detected. Terminating connection to prevent wasted tokens.', hash, identicalCount: redisResult.identicalCount };
             }
-        });
+            return { blocked: false, hash, identicalCount: redisResult.identicalCount };
+        }
+        // Redis call failed — fall through to in-memory
     }
 
-    // In-memory check (always runs — provides sync response)
+    // In-memory check (fallback when Redis unavailable)
     if (!memoryStore.has(sessionKey)) {
         memoryStore.set(sessionKey, { entries: [] });
     }

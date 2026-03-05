@@ -65,7 +65,35 @@ function requireAdmin(req: Request, res: Response, next: express.NextFunction) {
     res.status(401).json({ error: 'Unauthorized — set Authorization: Bearer <ADMIN_TOKEN>' });
 }
 
-app.get('/api/stats', (req: Request, res: Response) => {
+// Simple per-IP rate limiter for public endpoints (no external deps)
+import { RATE_LIMIT_WINDOW_MS, RATE_LIMIT_MAX } from './config';
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+
+function rateLimitPublic(req: Request, res: Response, next: express.NextFunction) {
+    const ip = req.ip || '127.0.0.1';
+    const now = Date.now();
+    let entry = rateLimitMap.get(ip);
+    if (!entry || now >= entry.resetAt) {
+        entry = { count: 0, resetAt: now + RATE_LIMIT_WINDOW_MS };
+        rateLimitMap.set(ip, entry);
+    }
+    entry.count++;
+    if (entry.count > RATE_LIMIT_MAX) {
+        res.status(429).json({ error: { message: 'Rate limit exceeded. Try again in a minute.' } });
+        return;
+    }
+    next();
+}
+
+// Cleanup stale rate limit entries every 2 minutes
+setInterval(() => {
+    const now = Date.now();
+    for (const [key, entry] of rateLimitMap) {
+        if (now >= entry.resetAt) rateLimitMap.delete(key);
+    }
+}, 120_000).unref();
+
+app.get('/api/stats', rateLimitPublic, (req: Request, res: Response) => {
     res.json(globalStats);
 });
 
@@ -114,12 +142,12 @@ app.get('/api/installs', requireAdmin, (req: Request, res: Response) => {
 });
 
 // Install breakdown (public — aggregated only, no individual records)
-app.get('/api/install-breakdown', (req: Request, res: Response) => {
+app.get('/api/install-breakdown', rateLimitPublic, (req: Request, res: Response) => {
     res.json(getInstallBreakdown());
 });
 
 // Public-safe aggregate stats for landing page (no admin auth required)
-app.get('/api/public-stats', async (req: Request, res: Response) => {
+app.get('/api/public-stats', rateLimitPublic, async (req: Request, res: Response) => {
     const agg = getAggregateStats();
     const uniqueInstalls = getUniqueInstallCount();
 
@@ -144,6 +172,9 @@ app.get('/api/public-stats', async (req: Request, res: Response) => {
     }));
 
     const avgTtftMs = globalStats.timedRequests > 0 ? Math.round(globalStats.totalTtftMs / globalStats.timedRequests) : 0;
+    const avgEstimationError = globalStats.estimationSamples > 0
+        ? Math.round((globalStats.estimationErrorSum / globalStats.estimationSamples) * 1000) / 10
+        : 0;
 
     res.json({
         totalUsers: totalUsers,
@@ -153,12 +184,14 @@ app.get('/api/public-stats', async (req: Request, res: Response) => {
         avgTtftMs,
         smartRouteDowngrades: globalStats.smartRouteDowngrades,
         compressionCalls: globalStats.compressionCalls,
+        avgEstimationErrorPct: avgEstimationError,
+        estimationSamples: globalStats.estimationSamples,
         recentFeed,
     });
 });
 
 // npm download stats (public — cached, querying public npm API)
-app.get('/api/npm-stats', async (req: Request, res: Response) => {
+app.get('/api/npm-stats', rateLimitPublic, async (req: Request, res: Response) => {
     try {
         const stats = await getNpmStats();
         res.json(stats);
@@ -263,7 +296,10 @@ app.get('/api/aggregate', requireAdmin, (req: Request, res: Response) => {
     const queueStats = getQueueStats();
     const cacheStats = getCacheStats();
     const compressionStats = getCompressionStats();
-    res.json({ ...agg, ...np, ...globalStats, uniqueInstalls: getUniqueInstallCount(), queue: queueStats, cache: cacheStats, compression: compressionStats });
+    const avgEstErr = globalStats.estimationSamples > 0
+        ? Math.round((globalStats.estimationErrorSum / globalStats.estimationSamples) * 1000) / 10
+        : 0;
+    res.json({ ...agg, ...np, ...globalStats, uniqueInstalls: getUniqueInstallCount(), queue: queueStats, cache: cacheStats, compression: compressionStats, avgEstimationErrorPct: avgEstErr });
 });
 
 // Session tracking API
@@ -294,7 +330,7 @@ app.get('/dashboard/:userId', (req: Request, res: Response) => {
 });
 
 // Public per-user stats API (for dashboard live polling)
-app.get('/api/dashboard/:userId', (req: Request, res: Response) => {
+app.get('/api/dashboard/:userId', rateLimitPublic, (req: Request, res: Response) => {
     const stats = getUserStats(req.params.userId as string);
     if (!stats) return res.json({ stats: null, sessions: [] });
     const sessions = getUserSessions(req.params.userId as string)
