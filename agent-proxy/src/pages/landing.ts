@@ -78,24 +78,34 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .feature h3{color:var(--text);font-size:0.9rem;font-weight:600;margin-bottom:4px;letter-spacing:-0.01em}
 .feature p{color:var(--text-secondary);font-size:0.8rem;line-height:1.55}
 
-/* Live Feed */
-.feed{max-width:560px;margin:0 auto 32px;border:1px solid var(--border);border-radius:12px;overflow:hidden}
-.feed-header{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;font-size:0.8rem;font-weight:600;color:var(--text-secondary)}
-.feed-header .pulse{width:6px;height:6px;border-radius:50%;background:#22c55e;animation:pulse 2s infinite}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
-.feed-list{list-style:none}
-.feed-item{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:1px solid var(--border);font-size:0.8rem;opacity:0;transform:translateY(-8px);transition:opacity 0.4s,transform 0.4s}
-.feed-item:last-child{border-bottom:none}
-.feed-item:hover{background:var(--bg-secondary)}
-.feed-item.visible{opacity:1;transform:translateY(0)}
-.feed-model{font-weight:600;color:var(--text);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.feed-tokens{color:var(--text-secondary);margin:0 12px;font-variant-numeric:tabular-nums;white-space:nowrap}
-.feed-status{font-weight:500;font-size:0.75rem;padding:2px 8px;border-radius:100px;white-space:nowrap}
-.feed-status.cdn{color:#059669;background:#ecfdf5}
-.feed-status.pass{color:var(--text-secondary);background:var(--bg-secondary)}
-.feed-status.blocked{color:#dc2626;background:#fef2f2}
-.feed-status.failover{color:#d97706;background:#fffbeb}
-@media(max-width:640px){.feed-model{font-size:0.75rem}.feed-tokens{font-size:0.75rem}}
+/* Terminal Feed */
+.terminal{max-width:600px;margin:0 auto 36px;border-radius:10px;overflow:hidden;background:#0d1117;border:1px solid #30363d;box-shadow:0 4px 24px rgba(0,0,0,0.12)}
+.terminal-bar{display:flex;align-items:center;gap:8px;padding:10px 14px;background:#161b22;border-bottom:1px solid #30363d}
+.terminal-dots{display:flex;gap:6px}
+.terminal-dots span{width:10px;height:10px;border-radius:50%}
+.terminal-dots span:nth-child(1){background:#ff5f57}
+.terminal-dots span:nth-child(2){background:#febc2e}
+.terminal-dots span:nth-child(3){background:#28c840}
+.terminal-title{color:#8b949e;font-size:0.72rem;font-family:'SF Mono','Fira Code',Consolas,monospace;margin-left:8px;display:flex;align-items:center;gap:6px}
+.terminal-title .pulse{width:5px;height:5px;border-radius:50%;background:#3fb950;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+.terminal-body{padding:12px 0;font-family:'SF Mono','Fira Code',Consolas,monospace;font-size:0.78rem;line-height:1;overflow:hidden;position:relative;height:224px}
+.terminal-line{display:flex;align-items:center;padding:4px 14px;height:28px;white-space:nowrap;opacity:0;transform:translateY(28px);animation:none}
+.terminal-line.enter{animation:lineEnter 0.35s ease-out forwards}
+.terminal-line.shift{animation:lineShift 0.35s ease-out forwards}
+.terminal-line.exit{animation:lineExit 0.35s ease-out forwards}
+@keyframes lineEnter{from{opacity:0;transform:translateY(28px)}to{opacity:1;transform:translateY(0)}}
+@keyframes lineShift{from{transform:translateY(28px)}to{transform:translateY(0)}}
+@keyframes lineExit{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(-28px)}}
+.t-prompt{color:#8b949e;margin-right:8px;flex-shrink:0}
+.t-model{color:#d2a8ff;flex-shrink:0}
+.t-sep{color:#30363d;margin:0 8px;flex-shrink:0}
+.t-tokens{color:#79c0ff;flex-shrink:0;min-width:56px;text-align:right}
+.t-status{margin-left:auto;padding-left:12px;font-weight:500;flex-shrink:0}
+.t-status.cdn{color:#3fb950}
+.t-status.pass{color:#8b949e}
+.t-status.blocked{color:#f85149}
+.t-status.failover{color:#d29922}
 
 /* Footer */
 .footer{text-align:center;padding:40px 24px;color:var(--text-muted);font-size:0.8rem;border-top:1px solid var(--border)}
@@ -129,9 +139,12 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     <div class="stat"><div class="num" id="loops">${globalStats.blockedLoops}</div><div class="label">Loops Killed</div></div>
   </div>
 
-  <div class="feed">
-    <div class="feed-header"><span class="pulse"></span> Live Traffic</div>
-    <ul class="feed-list" id="feedList"></ul>
+  <div class="terminal">
+    <div class="terminal-bar">
+      <div class="terminal-dots"><span></span><span></span><span></span></div>
+      <div class="terminal-title"><span class="pulse"></span> live traffic — agent-firewall</div>
+    </div>
+    <div class="terminal-body" id="termBody"></div>
   </div>
 
   <div class="actions">
@@ -189,7 +202,11 @@ let prev = {
   loops: ${globalStats.blockedLoops}
 };
 
-// Map status text to CSS class for feed pills
+// Terminal feed state
+const MAX_LINES = 8;
+let termLines = [];
+let lastFeedJSON = '';
+
 function statusClass(s) {
   if (s.includes('CDN')) return 'cdn';
   if (s.includes('Blocked') || s.includes('Loop') || s.includes('Budget') || s.includes('No Progress')) return 'blocked';
@@ -197,22 +214,79 @@ function statusClass(s) {
   return 'pass';
 }
 
+function makeLine(item) {
+  return '<div class="terminal-line">' +
+    '<span class="t-prompt">$</span>' +
+    '<span class="t-model">' + item.model + '</span>' +
+    '<span class="t-sep">|</span>' +
+    '<span class="t-tokens">' + item.tokens + '</span>' +
+    '<span class="t-status ' + statusClass(item.status) + '">' + item.status + '</span>' +
+  '</div>';
+}
+
 function renderFeed(feed) {
-  const list = document.getElementById('feedList');
-  if (!list || !feed || feed.length === 0) return;
-  list.innerHTML = feed.map((item, i) =>
-    '<li class="feed-item" style="transition-delay:' + (i * 60) + 'ms">' +
-      '<span class="feed-model">' + item.model + '</span>' +
-      '<span class="feed-tokens">' + item.tokens + '</span>' +
-      '<span class="feed-status ' + statusClass(item.status) + '">' + item.status + '</span>' +
-    '</li>'
-  ).join('');
-  // Trigger staggered enter animation
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      list.querySelectorAll('.feed-item').forEach(el => el.classList.add('visible'));
+  const body = document.getElementById('termBody');
+  if (!body || !feed || feed.length === 0) return;
+
+  const feedJSON = JSON.stringify(feed);
+  const isFirstRender = lastFeedJSON === '';
+
+  // Detect new items by comparing to previous feed
+  let newItems = [];
+  if (isFirstRender) {
+    // First load: show all items, animate them in staggered
+    newItems = feed.slice().reverse(); // oldest first
+  } else if (feedJSON !== lastFeedJSON) {
+    // Find items not in previous feed (compare by model+tokens+status+time)
+    const prevSet = new Set(JSON.parse(lastFeedJSON).map(i => i.model + i.tokens + i.status + i.time));
+    for (let i = feed.length - 1; i >= 0; i--) {
+      const key = feed[i].model + feed[i].tokens + feed[i].status + feed[i].time;
+      if (!prevSet.has(key)) newItems.push(feed[i]);
+    }
+  }
+  lastFeedJSON = feedJSON;
+  if (newItems.length === 0) return;
+
+  if (isFirstRender) {
+    // Stagger all lines in on first load
+    body.innerHTML = '';
+    newItems.forEach((item, i) => {
+      setTimeout(() => {
+        pushLine(body, item);
+      }, i * 120);
     });
+  } else {
+    // Push new lines one by one with small delay between
+    newItems.forEach((item, i) => {
+      setTimeout(() => pushLine(body, item), i * 400);
+    });
+  }
+}
+
+function pushLine(body, item) {
+  const lines = body.querySelectorAll('.terminal-line');
+
+  // If at capacity, animate the top line out
+  if (lines.length >= MAX_LINES) {
+    const top = lines[0];
+    top.classList.remove('enter', 'shift');
+    top.classList.add('exit');
+    top.addEventListener('animationend', () => top.remove(), { once: true });
+  }
+
+  // Shift existing lines up (re-trigger shift animation)
+  body.querySelectorAll('.terminal-line:not(.exit)').forEach(el => {
+    el.classList.remove('enter', 'shift');
+    void el.offsetWidth; // force reflow
+    el.classList.add('shift');
   });
+
+  // Add new line at the bottom with enter animation
+  const div = document.createElement('div');
+  div.innerHTML = makeLine(item);
+  const newLine = div.firstChild;
+  body.appendChild(newLine);
+  requestAnimationFrame(() => newLine.classList.add('enter'));
 }
 
 async function pollStats() {
