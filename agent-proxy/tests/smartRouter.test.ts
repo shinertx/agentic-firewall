@@ -45,7 +45,7 @@ describe('Smart Router', () => {
             expect(result.complexity).toBe('LOW');
         });
 
-        it('should classify conversation with tool_use as HIGH', () => {
+        it('should classify light tool use as LOW (not HIGH) — agentic workflows are normal', () => {
             const body = {
                 model: 'claude-opus-4-6',
                 messages: [
@@ -55,11 +55,38 @@ describe('Smart Router', () => {
                 ],
             };
             const result = classifyHeuristic(body, false);
+            // 2 tool calls (1 tool_use + 1 tool_result) in 3 messages = LOW density
+            expect(result.complexity).toBe('LOW');
+        });
+
+        it('should classify heavy tool use (5+ calls) as HIGH', () => {
+            const body = {
+                model: 'claude-opus-4-6',
+                messages: [
+                    { role: 'user', content: 'Refactor auth' },
+                    { role: 'assistant', content: [
+                        { type: 'tool_use', id: 'a', name: 'read', input: {} },
+                        { type: 'tool_use', id: 'b', name: 'read', input: {} },
+                    ] },
+                    { role: 'user', content: [
+                        { type: 'tool_result', tool_use_id: 'a', content: 'data' },
+                        { type: 'tool_result', tool_use_id: 'b', content: 'data' },
+                    ] },
+                    { role: 'assistant', content: [
+                        { type: 'tool_use', id: 'c', name: 'edit', input: {} },
+                    ] },
+                    { role: 'user', content: [
+                        { type: 'tool_result', tool_use_id: 'c', content: 'done' },
+                    ] },
+                ],
+            };
+            const result = classifyHeuristic(body, false);
+            // 5 tool calls in last 5 messages = HIGH density
             expect(result.complexity).toBe('HIGH');
         });
 
-        it('should classify long conversation as HIGH', () => {
-            const messages = Array.from({ length: 25 }, (_, i) => ({
+        it('should classify very long conversation as HIGH', () => {
+            const messages = Array.from({ length: 35 }, (_, i) => ({
                 role: i % 2 === 0 ? 'user' : 'assistant',
                 content: `Message ${i}`,
             }));
@@ -115,7 +142,7 @@ describe('Smart Router', () => {
             expect(result.complexity).toBe('LOW');
         });
 
-        it('should classify Gemini request with functionCall as HIGH', () => {
+        it('should classify Gemini request with light functionCall as LOW (not HIGH)', () => {
             const body = {
                 contents: [
                     { role: 'user', parts: [{ text: 'Search for files' }] },
@@ -124,12 +151,13 @@ describe('Smart Router', () => {
                 ],
             };
             const result = classifyHeuristic(body, true);
-            expect(result.complexity).toBe('HIGH');
+            // 2 tool calls in 3 messages = LOW density
+            expect(result.complexity).toBe('LOW');
         });
     });
 
     describe('classifyHeuristic — OpenAI tool_calls format', () => {
-        it('should classify request with tool_calls as HIGH', () => {
+        it('should classify request with light tool_calls as LOW (not HIGH)', () => {
             const body = {
                 model: 'gpt-4o',
                 messages: [
@@ -139,7 +167,8 @@ describe('Smart Router', () => {
                 ],
             };
             const result = classifyHeuristic(body, false);
-            expect(result.complexity).toBe('HIGH');
+            // 2 tool calls in 3 messages = LOW density
+            expect(result.complexity).toBe('LOW');
         });
     });
 
@@ -196,7 +225,7 @@ describe('Smart Router', () => {
         });
 
         it('should NOT downgrade for HIGH complexity', async () => {
-            const messages = Array.from({ length: 25 }, (_, i) => ({
+            const messages = Array.from({ length: 35 }, (_, i) => ({
                 role: i % 2 === 0 ? 'user' : 'assistant',
                 content: `Detailed discussion message ${i}`,
             }));

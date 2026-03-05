@@ -155,54 +155,62 @@ function getMessageCount(body: any, isGemini: boolean): number {
 }
 
 /**
- * Check if recent messages contain tool usage.
+ * Count tool calls in the last N messages.
+ * Returns a density count — higher means more active multi-step tool use.
  */
-function hasRecentToolUse(body: any, isGemini: boolean): boolean {
+function countRecentToolCalls(body: any, isGemini: boolean): number {
     const messages = isGemini ? body.contents : body.messages;
-    if (!messages || !Array.isArray(messages)) return false;
+    if (!messages || !Array.isArray(messages)) return 0;
 
-    // Check last 5 messages for tool usage
-    const recent = messages.slice(-5);
+    let count = 0;
+    const recent = messages.slice(-6);
     for (const m of recent) {
         // Anthropic: tool_use in content blocks
         if (Array.isArray(m.content)) {
-            if (m.content.some((b: any) => b.type === 'tool_use' || b.type === 'tool_result')) return true;
+            count += m.content.filter((b: any) => b.type === 'tool_use' || b.type === 'tool_result').length;
         }
         // OpenAI: tool_calls on assistant, role=tool for results
-        if (m.tool_calls) return true;
-        if (m.role === 'tool') return true;
+        if (m.tool_calls) count += m.tool_calls.length;
+        if (m.role === 'tool') count++;
         // Gemini: functionCall / functionResponse in parts
         if (m.parts && Array.isArray(m.parts)) {
-            if (m.parts.some((p: any) => p.functionCall || p.functionResponse)) return true;
+            count += m.parts.filter((p: any) => p.functionCall || p.functionResponse).length;
         }
     }
-    return false;
+    return count;
 }
 
 /**
  * Tier 1: Fast heuristic classification.
  * Returns a definitive LOW/HIGH or null for MEDIUM (ambiguous).
+ *
+ * Tool use alone does NOT force HIGH — agentic workflows (Claude Code, etc.)
+ * always have tool calls, but a simple "fix this typo" is still LOW complexity.
+ * Only heavy tool density (5+ calls in last 6 messages) indicates an active
+ * multi-step operation that warrants HIGH.
  */
 export function classifyHeuristic(body: any, isGemini: boolean): { complexity: Complexity | null; reason: string } {
     const msgCount = getMessageCount(body, isGemini);
     const lastMsg = getLastUserMessage(body, isGemini);
-    const hasTools = hasRecentToolUse(body, isGemini);
+    const toolDensity = countRecentToolCalls(body, isGemini);
 
-    // HIGH: lots of context or active tool use
-    if (hasTools) {
-        return { complexity: 'HIGH', reason: 'Active tool use in recent messages' };
+    // HIGH: heavy tool density — active multi-step operation in progress
+    if (toolDensity >= 5) {
+        return { complexity: 'HIGH', reason: `Heavy tool use (${toolDensity} recent tool calls)` };
     }
-    if (msgCount > 20) {
-        return { complexity: 'HIGH', reason: `Large conversation (${msgCount} messages)` };
+
+    // HIGH: very large conversation (deep task)
+    if (msgCount > 30) {
+        return { complexity: 'HIGH', reason: `Very large conversation (${msgCount} messages)` };
     }
 
     // LOW: short conversation with simple last message
-    if (msgCount <= 3 && lastMsg.length < 200 && !lastMsg.includes('```')) {
+    if (msgCount <= 4 && lastMsg.length < 200 && !lastMsg.includes('```')) {
         return { complexity: 'LOW', reason: 'Short conversation, simple message' };
     }
 
-    // LOW: very short last message with no code
-    if (lastMsg.length < 100 && !lastMsg.includes('```') && msgCount <= 6) {
+    // LOW: very brief last message, moderate conversation
+    if (lastMsg.length < 100 && !lastMsg.includes('```') && msgCount <= 8) {
         return { complexity: 'LOW', reason: 'Brief message, no code' };
     }
 
