@@ -458,12 +458,20 @@ export async function handleProxyRequest(req: Request, res: Response) {
 
         recordUserSpend(userId, displayModel, estimatedPromptTokens, isCDN);
 
+        // Compute per-request savings for the live feed
+        let savedAmount = '';
+        if (isCDN && estimatedPromptTokens) {
+            const cost = (estimatedPromptTokens / 1_000_000) * getInputCost(displayModel) * CACHE_SAVINGS_RATE;
+            savedAmount = cost >= 0.01 ? cost.toFixed(2) : cost.toFixed(4);
+        }
+
         recordActivity({
             time: new Date().toLocaleTimeString(),
             model: displayModel,
             tokens: estimatedPromptTokens ? `${Math.round(estimatedPromptTokens / 1000)}k` : 'auto',
             status: statusText,
-            statusColor
+            statusColor,
+            saved: savedAmount,
         });
     }
 }

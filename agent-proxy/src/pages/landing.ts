@@ -78,30 +78,32 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .feature h3{color:var(--text);font-size:0.9rem;font-weight:600;margin-bottom:4px;letter-spacing:-0.01em}
 .feature p{color:var(--text-secondary);font-size:0.8rem;line-height:1.55}
 
-/* Terminal Feed */
-.terminal{max-width:600px;margin:0 auto 36px;border-radius:10px;overflow:hidden;background:#0d1117;border:1px solid #30363d;box-shadow:0 4px 24px rgba(0,0,0,0.12)}
-.terminal-bar{display:flex;align-items:center;gap:8px;padding:10px 14px;background:#161b22;border-bottom:1px solid #30363d}
+/* Terminal Section */
+.terminal-section{background:#0d1117;min-height:50vh;display:flex;flex-direction:column}
+.terminal{flex:1;display:flex;flex-direction:column;max-width:900px;width:100%;margin:0 auto}
+.terminal-bar{display:flex;align-items:center;gap:8px;padding:12px 20px;background:#161b22;border-bottom:1px solid #30363d}
 .terminal-dots{display:flex;gap:6px}
 .terminal-dots span{width:10px;height:10px;border-radius:50%}
 .terminal-dots span:nth-child(1){background:#ff5f57}
 .terminal-dots span:nth-child(2){background:#febc2e}
 .terminal-dots span:nth-child(3){background:#28c840}
-.terminal-title{color:#8b949e;font-size:0.72rem;font-family:'SF Mono','Fira Code',Consolas,monospace;margin-left:8px;display:flex;align-items:center;gap:6px}
-.terminal-title .pulse{width:5px;height:5px;border-radius:50%;background:#3fb950;animation:pulse 2s infinite}
+.terminal-title{color:#8b949e;font-size:0.75rem;font-family:'SF Mono','Fira Code',Consolas,monospace;margin-left:10px;display:flex;align-items:center;gap:8px}
+.terminal-title .pulse{width:6px;height:6px;border-radius:50%;background:#3fb950;animation:pulse 2s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
-.terminal-body{padding:12px 0;font-family:'SF Mono','Fira Code',Consolas,monospace;font-size:0.78rem;line-height:1;overflow:hidden;position:relative;height:224px}
-.terminal-line{display:flex;align-items:center;padding:4px 14px;height:28px;white-space:nowrap;opacity:0;transform:translateY(28px);animation:none}
+.terminal-body{flex:1;padding:16px 0;font-family:'SF Mono','Fira Code',Consolas,monospace;font-size:0.82rem;line-height:1;overflow:hidden;position:relative;display:flex;flex-direction:column;justify-content:flex-end}
+.terminal-line{display:flex;align-items:center;padding:5px 20px;height:30px;white-space:nowrap;opacity:0;transform:translateY(30px);animation:none}
 .terminal-line.enter{animation:lineEnter 0.35s ease-out forwards}
 .terminal-line.shift{animation:lineShift 0.35s ease-out forwards}
 .terminal-line.exit{animation:lineExit 0.35s ease-out forwards}
-@keyframes lineEnter{from{opacity:0;transform:translateY(28px)}to{opacity:1;transform:translateY(0)}}
-@keyframes lineShift{from{transform:translateY(28px)}to{transform:translateY(0)}}
-@keyframes lineExit{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(-28px)}}
-.t-prompt{color:#8b949e;margin-right:8px;flex-shrink:0}
+@keyframes lineEnter{from{opacity:0;transform:translateY(30px)}to{opacity:1;transform:translateY(0)}}
+@keyframes lineShift{from{transform:translateY(30px)}to{transform:translateY(0)}}
+@keyframes lineExit{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(-30px)}}
+.t-prompt{color:#8b949e;margin-right:10px;flex-shrink:0}
 .t-model{color:#d2a8ff;flex-shrink:0}
-.t-sep{color:#30363d;margin:0 8px;flex-shrink:0}
-.t-tokens{color:#79c0ff;flex-shrink:0;min-width:56px;text-align:right}
-.t-status{margin-left:auto;padding-left:12px;font-weight:500;flex-shrink:0}
+.t-sep{color:#30363d;margin:0 10px;flex-shrink:0}
+.t-tokens{color:#79c0ff;flex-shrink:0;min-width:64px;text-align:right}
+.t-saved{color:#3fb950;margin-left:12px;flex-shrink:0;font-size:0.75rem;opacity:0.8}
+.t-status{margin-left:auto;padding-left:16px;font-weight:500;flex-shrink:0}
 .t-status.cdn{color:#3fb950}
 .t-status.pass{color:#8b949e}
 .t-status.blocked{color:#f85149}
@@ -139,17 +141,19 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     <div class="stat"><div class="num" id="loops">${globalStats.blockedLoops}</div><div class="label">Loops Killed</div></div>
   </div>
 
+  <div class="actions">
+    <div class="code"><span class="prefix">$</span> npx vibe-billing setup</div>
+    <a href="https://github.com/shinertx/agentic-firewall" target="_blank" class="cta">View on GitHub →</a>
+  </div>
+</div>
+
+<div class="terminal-section">
   <div class="terminal">
     <div class="terminal-bar">
       <div class="terminal-dots"><span></span><span></span><span></span></div>
       <div class="terminal-title"><span class="pulse"></span> live traffic — agent-firewall</div>
     </div>
     <div class="terminal-body" id="termBody"></div>
-  </div>
-
-  <div class="actions">
-    <div class="code"><span class="prefix">$</span> npx vibe-billing setup</div>
-    <a href="https://github.com/shinertx/agentic-firewall" target="_blank" class="cta">View on GitHub →</a>
   </div>
 </div>
 
@@ -203,7 +207,7 @@ let prev = {
 };
 
 // Terminal feed state
-const MAX_LINES = 8;
+const MAX_LINES = 14;
 let termLines = [];
 let lastFeedJSON = '';
 
@@ -215,11 +219,13 @@ function statusClass(s) {
 }
 
 function makeLine(item) {
+  var saved = item.saved ? '<span class="t-saved">-$' + item.saved + '</span>' : '';
   return '<div class="terminal-line">' +
     '<span class="t-prompt">$</span>' +
     '<span class="t-model">' + item.model + '</span>' +
     '<span class="t-sep">|</span>' +
     '<span class="t-tokens">' + item.tokens + '</span>' +
+    saved +
     '<span class="t-status ' + statusClass(item.status) + '">' + item.status + '</span>' +
   '</div>';
 }

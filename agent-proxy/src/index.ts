@@ -133,12 +133,13 @@ app.get('/api/public-stats', async (req: Request, res: Response) => {
 
     const totalUsers = Math.max(agg.totalUsers, uniqueInstalls + npmTotal) + 612; // +612 baseline to account for historical NPM installs that were wiped prior to volume persistence
 
-    // Slice the 8 most recent activities for the public feed (already anonymized: model, tokens, status only)
-    const recentFeed = globalStats.recentActivity.slice(0, 8).map((a: any) => ({
+    // Slice the 14 most recent activities for the public feed (anonymized: model, tokens, status, saved)
+    const recentFeed = globalStats.recentActivity.slice(0, 14).map((a: any) => ({
         time: a.time,
         model: a.model,
         tokens: a.tokens,
         status: a.status,
+        saved: a.saved || '',
     }));
 
     res.json({
