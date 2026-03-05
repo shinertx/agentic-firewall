@@ -118,6 +118,17 @@ app.get('/api/install-breakdown', (req: Request, res: Response) => {
     res.json(getInstallBreakdown());
 });
 
+// Public-safe aggregate stats for landing page (no admin auth required)
+app.get('/api/public-stats', (req: Request, res: Response) => {
+    const agg = getAggregateStats();
+    res.json({
+        totalUsers: agg.totalUsers,
+        totalSaved: agg.totalSaved,
+        totalRequests: globalStats.totalRequests,
+        blockedLoops: globalStats.blockedLoops,
+    });
+});
+
 // npm download stats (public — cached, querying public npm API)
 app.get('/api/npm-stats', async (req: Request, res: Response) => {
     try {

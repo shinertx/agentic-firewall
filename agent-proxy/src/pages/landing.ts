@@ -142,7 +142,8 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 <script>
 setInterval(async () => {
   try {
-    const r = await fetch('/api/aggregate');
+    const r = await fetch('/api/public-stats');
+    if (!r.ok) return;
     const d = await r.json();
     document.getElementById('users').textContent = d.totalUsers;
     document.getElementById('saved').textContent = '$' + d.totalSaved.toFixed(2);
