@@ -119,10 +119,22 @@ app.get('/api/install-breakdown', (req: Request, res: Response) => {
 });
 
 // Public-safe aggregate stats for landing page (no admin auth required)
-app.get('/api/public-stats', (req: Request, res: Response) => {
+app.get('/api/public-stats', async (req: Request, res: Response) => {
     const agg = getAggregateStats();
+    const uniqueInstalls = getUniqueInstallCount();
+
+    let npmTotal = 0;
+    try {
+        const npmStats = await getNpmStats();
+        npmTotal = npmStats ? npmStats.weekly : 0;
+    } catch {
+        npmTotal = 0;
+    }
+
+    const totalUsers = Math.max(agg.totalUsers, uniqueInstalls + npmTotal);
+
     res.json({
-        totalUsers: agg.totalUsers,
+        totalUsers: totalUsers,
         totalSaved: agg.totalSaved,
         totalRequests: globalStats.totalRequests,
         blockedLoops: globalStats.blockedLoops,
