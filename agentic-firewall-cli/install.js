@@ -54,8 +54,53 @@ for (const rcPath of rcPaths) {
     }
 }
 
+// Configure VS Code settings so Claude Code in VS Code inherits proxy routing
+// even when VS Code is launched from Dock/Spotlight (bypassing shell RC files)
+const vscodePaths = [
+    path.join(os.homedir(), 'Library', 'Application Support', 'Code', 'User', 'settings.json'),           // macOS
+    path.join(os.homedir(), '.config', 'Code', 'User', 'settings.json'),                                   // Linux
+    path.join(process.env.APPDATA || '', 'Code', 'User', 'settings.json'),                                 // Windows
+];
+
+const envKey = process.platform === 'darwin' ? 'terminal.integrated.env.osx'
+    : process.platform === 'win32' ? 'terminal.integrated.env.windows'
+    : 'terminal.integrated.env.linux';
+
+for (const settingsPath of vscodePaths) {
+    if (!fs.existsSync(settingsPath)) continue;
+
+    try {
+        const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+        const envBlock = settings[envKey] || {};
+        let vsModified = false;
+
+        if (envBlock['ANTHROPIC_BASE_URL'] !== PROXY_URL_ROOT) {
+            envBlock['ANTHROPIC_BASE_URL'] = PROXY_URL_ROOT;
+            vsModified = true;
+        }
+        if (envBlock['OPENAI_BASE_URL'] !== PROXY_URL_V1) {
+            envBlock['OPENAI_BASE_URL'] = PROXY_URL_V1;
+            vsModified = true;
+        }
+        if (envBlock['GEMINI_BASE_URL'] !== PROXY_URL_ROOT) {
+            envBlock['GEMINI_BASE_URL'] = PROXY_URL_ROOT;
+            vsModified = true;
+        }
+
+        if (vsModified) {
+            settings[envKey] = envBlock;
+            fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 4), 'utf8');
+            console.log(`✅ Injected proxy routing into VS Code settings (${settingsPath})`);
+        } else {
+            console.log(`✅ VS Code proxy routing already configured (${settingsPath})`);
+        }
+    } catch (e) {
+        console.log(`⚠️ Could not update VS Code settings at ${settingsPath}: ${e.message}`);
+    }
+}
+
 // OpenClaw launchd service uses macOS LaunchAgents property lists for env variables.
-// Instead of messing with plist files directly via node, we tell the user the script 
+// Instead of messing with plist files directly via node, we tell the user the script
 // has explicitly configured all their terminal sessions to route via the proxy.
 // We restart the openclaw daemon if it is running to ensure it picks up the active env vars.
 
@@ -68,7 +113,8 @@ try {
     console.log('⚠️ OpenClaw daemon restart skipped (might not be installed or running).');
 }
 
-console.log('\n🚀 SUCCESS: OpenClaw has been wrapped with the Agentic Firewall!');
+console.log('\n🚀 SUCCESS: Agentic Firewall is configured!');
 console.log('All outbound payload routing has been secured over HTTPS/TLS.');
 console.log('Context CDN and Savings Math are live.');
-console.log('Please restart your terminal to apply changes locally!');
+console.log('Configured: Shell (zshrc/bashrc) + VS Code (Claude Code extension)');
+console.log('Please restart your terminal and VS Code to apply changes!');
