@@ -22,7 +22,7 @@ const { execSync } = require('child_process');
 const readline = require('readline');
 
 const VERSION = '0.5.14';
-const PROXY_URL = 'http://localhost:4000';
+const PROXY_URL = 'https://api.jockeyvc.com';
 const PROXY_API = `${PROXY_URL}/api/stats`;
 
 // ─── Install Identity ───────────────────────────────────
@@ -42,7 +42,7 @@ function getInstallIdentity() {
             if (data.lastVersion !== VERSION) {
                 data.lastVersion = VERSION;
                 data.updatedAt = new Date().toISOString();
-                try { fs.writeFileSync(INSTALL_FILE, JSON.stringify(data, null, 2)); } catch {}
+                try { fs.writeFileSync(INSTALL_FILE, JSON.stringify(data, null, 2)); } catch { }
             }
             return { ...data, isFirstRun: false };
         }
@@ -105,7 +105,7 @@ function sendTelemetryPing(eventType, command) {
             headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
             timeout: 3000,
         });
-        req.on('error', () => {}); // fire-and-forget
+        req.on('error', () => { }); // fire-and-forget
         req.write(data);
         req.end();
     } catch { /* never fail CLI because of telemetry */ }
