@@ -612,97 +612,88 @@ async function setupOllama() {
     log('');
     info(`${c.bold}Smart Router${c.reset} — uses a local AI model to intelligently route requests.`);
 
-    if (!isOllamaInstalled()) {
-        const platform = process.platform;
-        info('Ollama is not installed. It powers the Smart Router for intelligent model selection.');
+    const needsInstall = !isOllamaInstalled();
+    const needsPull = !needsInstall && !isOllamaModelPulled(OLLAMA_MODEL);
+    const alreadyReady = !needsInstall && !needsPull;
 
-        // Pick the best install method for the platform
-        let installCmd = null;
-        let installLabel = '';
+    if (alreadyReady) {
+        ok('Ollama is installed.');
+        if (!(await isOllamaRunning())) {
+            try {
+                const { spawn } = require('child_process');
+                const child = spawn('ollama', ['serve'], { stdio: 'ignore', detached: true });
+                child.unref();
+                await new Promise(r => setTimeout(r, 3000));
+            } catch {}
+        }
+        ok(`Model ${c.bold}${OLLAMA_MODEL}${c.reset} is ready.`);
+    } else {
+        // Single prompt for the entire Ollama setup
+        const yes = await confirm(`Enable Smart Router? (installs Ollama + ${OLLAMA_MODEL} model, ~1.5GB)`);
+        if (!yes) {
+            info('Skipped. Smart Router will use heuristics only (no AI classification).');
+            return;
+        }
 
-        if (platform === 'darwin' || platform === 'linux') {
-            if (platform === 'darwin' && commandExists('brew')) {
-                installCmd = 'brew install ollama';
-                installLabel = installCmd;
-            } else if (commandExists('curl')) {
-                installCmd = 'curl -fsSL https://ollama.com/install.sh | sh';
-                installLabel = 'curl installer from ollama.com';
-            } else {
-                // No brew, no curl — guide them manually
-                info(`Install Ollama manually from ${c.cyan}https://ollama.com/download${c.reset} then re-run setup.`);
-                if (platform === 'darwin') {
-                    info(`Or install Homebrew first: ${c.dim}/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"${c.reset}`);
+        if (needsInstall) {
+            const platform = process.platform;
+
+            let installCmd = null;
+            if (platform === 'darwin' || platform === 'linux') {
+                if (platform === 'darwin' && commandExists('brew')) {
+                    installCmd = 'brew install ollama';
+                } else if (commandExists('curl')) {
+                    installCmd = 'curl -fsSL https://ollama.com/install.sh | sh';
+                } else {
+                    info(`Install Ollama manually from ${c.cyan}https://ollama.com/download${c.reset} then re-run setup.`);
+                    return;
                 }
+            } else if (platform === 'win32') {
+                info(`Download Ollama from ${c.cyan}https://ollama.com/download/windows${c.reset} then re-run setup.`);
+                return;
+            } else {
+                info(`Install Ollama manually from ${c.cyan}https://ollama.com/download${c.reset} then re-run setup.`);
                 return;
             }
-        } else if (platform === 'win32') {
-            info(`Download Ollama from ${c.cyan}https://ollama.com/download/windows${c.reset} then re-run setup.`);
-            return;
-        } else {
-            info(`Install Ollama manually from ${c.cyan}https://ollama.com/download${c.reset} then re-run setup.`);
-            return;
-        }
 
-        const yes = await confirm(`Install Ollama? (${c.dim}${installLabel}${c.reset})`);
-        if (!yes) {
-            info('Skipped Ollama. Smart Router will use heuristics only (no AI classification).');
-            return;
-        }
-
-        const sp = spinner('Installing Ollama');
-        try {
-            execSync(installCmd, { stdio: 'ignore', timeout: 180000 });
-            sp.stop(`${c.green}${icons.ok}${c.reset} Ollama installed.`);
-        } catch (err) {
-            sp.stop(`${c.red}${icons.fail}${c.reset} Ollama install failed: ${err.message}`);
-            info(`Install manually from ${c.cyan}https://ollama.com/download${c.reset}`);
-            return;
-        }
-    } else {
-        ok('Ollama is installed.');
-    }
-
-    // Start Ollama if not running
-    if (!(await isOllamaRunning())) {
-        info('Starting Ollama...');
-        try {
-            // Use spawn so it doesn't block — ollama serve runs as a daemon
-            const { spawn } = require('child_process');
-            const child = spawn('ollama', ['serve'], { stdio: 'ignore', detached: true });
-            child.unref();
-            // Give it a moment to start
-            await new Promise(r => setTimeout(r, 3000));
-            if (await isOllamaRunning()) {
-                ok('Ollama is running.');
-            } else {
-                warn('Ollama may still be starting. If Smart Router does not work, run: ollama serve');
-            }
-        } catch {
-            warn('Could not auto-start Ollama. Run manually: ollama serve');
-        }
-    } else {
-        ok('Ollama is running.');
-    }
-
-    // Pull the model if needed
-    if (!isOllamaModelPulled(OLLAMA_MODEL)) {
-        const yes = await confirm(`Pull the ${c.bold}${OLLAMA_MODEL}${c.reset} model? (~1.5GB, used for request classification)`);
-        if (yes) {
-            const sp = spinner(`Pulling ${OLLAMA_MODEL}`);
+            info('Installing Ollama...');
             try {
-                execSync(`ollama pull ${OLLAMA_MODEL}`, { stdio: 'ignore', timeout: 300000 });
-                sp.stop(`${c.green}${icons.ok}${c.reset} Model ${OLLAMA_MODEL} ready.`);
+                execSync(installCmd, { stdio: 'inherit', timeout: 180000 });
+                ok('Ollama installed.');
             } catch (err) {
-                sp.stop(`${c.red}${icons.fail}${c.reset} Pull failed: ${err.message}`);
+                fail(`Ollama install failed: ${err.message}`);
+                info(`Install manually from ${c.cyan}https://ollama.com/download${c.reset}`);
+                return;
+            }
+        }
+
+        // Start Ollama if not running
+        if (!(await isOllamaRunning())) {
+            try {
+                const { spawn } = require('child_process');
+                const child = spawn('ollama', ['serve'], { stdio: 'ignore', detached: true });
+                child.unref();
+                await new Promise(r => setTimeout(r, 3000));
+                if (!(await isOllamaRunning())) {
+                    warn('Ollama may still be starting. If Smart Router does not work, run: ollama serve');
+                }
+            } catch {
+                warn('Could not auto-start Ollama. Run manually: ollama serve');
+            }
+        }
+
+        // Pull the model
+        if (!isOllamaModelPulled(OLLAMA_MODEL)) {
+            info(`Pulling ${OLLAMA_MODEL} (~1.5GB)...`);
+            try {
+                execSync(`ollama pull ${OLLAMA_MODEL}`, { stdio: 'inherit', timeout: 300000 });
+                ok(`Model ${OLLAMA_MODEL} ready.`);
+            } catch (err) {
+                fail(`Pull failed: ${err.message}`);
                 info(`Run manually: ${c.cyan}ollama pull ${OLLAMA_MODEL}${c.reset}`);
                 return;
             }
-        } else {
-            info('Skipped model pull. Smart Router will use heuristics only.');
-            return;
         }
-    } else {
-        ok(`Model ${c.bold}${OLLAMA_MODEL}${c.reset} is ready.`);
     }
 
     // Set OLLAMA_ENABLED in the shell config
@@ -784,31 +775,14 @@ async function setup() {
                 ok('Shell environment already configured.');
             } else {
                 const fileName = path.basename(shell.path);
-                const yes = await confirm(`Add proxy env vars to ${fileName}?`);
-                if (yes) {
-                    fs.appendFileSync(shell.path, `\n${getShellBlock(shell.type)}\n`);
-                    ok(`Added to ${c.dim}${fileName}${c.reset}.`);
-                    ok(`Env vars activated for this terminal session.`);
-                    info(`${c.dim}Future terminals will also use the proxy automatically.${c.reset}`);
-                } else {
-                    info('Skipped shell config.');
-                    info(`You can manually set:`);
-                    if (shell.type === 'powershell') {
-                        log(`  ${c.dim}$env:OPENAI_BASE_URL = "${PROXY_URL}/v1"${c.reset}`);
-                        log(`  ${c.dim}$env:ANTHROPIC_BASE_URL = "${PROXY_URL}"${c.reset}`);
-                    } else {
-                        log(`  ${c.dim}export OPENAI_BASE_URL="${PROXY_URL}/v1"${c.reset}`);
-                        log(`  ${c.dim}export ANTHROPIC_BASE_URL="${PROXY_URL}"${c.reset}`);
-                    }
-                }
+                fs.appendFileSync(shell.path, `\n${getShellBlock(shell.type)}\n`);
+                ok(`Added proxy env vars to ${c.dim}${fileName}${c.reset}.`);
+                info(`${c.dim}Future terminals will also use the proxy automatically.${c.reset}`);
             }
         } else if (shell.create) {
-            const yes = await confirm(`Create ${path.basename(shell.path)} with proxy env vars?`);
-            if (yes) {
-                fs.mkdirSync(path.dirname(shell.path), { recursive: true });
-                fs.writeFileSync(shell.path, `${getShellBlock(shell.type)}\n`);
-                ok(`Created ${c.dim}${path.basename(shell.path)}${c.reset} with proxy config.`);
-            }
+            fs.mkdirSync(path.dirname(shell.path), { recursive: true });
+            fs.writeFileSync(shell.path, `${getShellBlock(shell.type)}\n`);
+            ok(`Created ${c.dim}${path.basename(shell.path)}${c.reset} with proxy config.`);
         }
     } else {
         warn('Could not detect shell config file.');
