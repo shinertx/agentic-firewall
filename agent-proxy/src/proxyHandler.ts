@@ -6,6 +6,7 @@ import { generateCacheKey } from './tokenCounter';
 import { getUserId, checkBudget, recordUserSpend, recordUserLoop, reconcileUserSpend } from './budgetGovernor';
 import { checkNoProgress } from './noProgress';
 import { smartRoute } from './smartRouter';
+import { optimizeToolResults } from './toolResultOptimizer';
 import { trimContext } from './contextTrimmer';
 import { compressPrompt } from './promptCompressor';
 import { getCachedResponse, setCachedResponse } from './responseCache';
@@ -432,6 +433,16 @@ export async function handleProxyRequest(req: Request, res: Response) {
             const estTokens = Math.round(originalBodyStr.length / 4);
             globalStats.smartRouteSavings += (estTokens / 1_000_000) * (origCost - newCost);
             console.log(`[SMART ROUTER] ${smartResult.originalModel} → ${smartResult.newModel} (${smartResult.complexity}: ${smartResult.reason})`);
+        }
+
+        // Tool Result Optimizer — dedup + compress stale tool results to reduce token waste
+        const troResult = optimizeToolResults(optimizedBody, isGemini, !!isOpenAI);
+        if (troResult.optimized) {
+            optimizedBody = troResult.body;
+            globalStats.toolResultDeduped += troResult.dedupedCount;
+            globalStats.toolResultCompressed += troResult.compressedCount;
+            globalStats.toolResultSavedChars += troResult.savedChars;
+            console.log(`[TOOL RESULT OPTIMIZER] Deduped ${troResult.dedupedCount}, compressed ${troResult.compressedCount}, saved ~${Math.round(troResult.savedChars / 4)} tokens`);
         }
 
         // Context Trimmer — reduce oversized payloads before upstream dispatch

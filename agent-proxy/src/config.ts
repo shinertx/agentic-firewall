@@ -42,6 +42,12 @@ export const OLLAMA_MAX_RETRIES = 1;                 // Retry count for generate
 export const STATS_FLUSH_INTERVAL_MS = 30_000;       // Flush stats to disk every 30s
 export const ACTIVITY_BUFFER_SIZE = 50;              // Circular buffer for recent activity
 
+// ─── Tool Result Optimizer ──────────────────────────────
+export const TRO_RECENT_WINDOW = 10;                 // Keep last N messages fully intact
+export const TRO_SIZE_THRESHOLD = 2_000;             // Only compress results > 2k chars (~500 tokens)
+export const TRO_HEAD_LINES = 5;                     // Keep first N lines in summary
+export const TRO_TAIL_LINES = 5;                     // Keep last N lines in summary
+
 // ─── Context CDN ────────────────────────────────────────
 export const CDN_MIN_CHARS_ANTHROPIC = 4_096;        // Min chars for Anthropic cache injection (~1024 tokens)
 export const CDN_MIN_TOKENS_OPENAI = 1_024;          // Min tokens for OpenAI prefix caching

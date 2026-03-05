@@ -182,6 +182,10 @@ export const globalStats = {
     compressedTokensSaved: 0,
     compressionCalls: 0,
     compressionCacheHits: 0,
+    // Tool Result Optimizer
+    toolResultDeduped: 0,
+    toolResultCompressed: 0,
+    toolResultSavedChars: 0,
     // Response timing
     totalTtftMs: 0,
     totalResponseMs: 0,
