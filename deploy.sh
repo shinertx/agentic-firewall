@@ -16,6 +16,9 @@ rsync -avz --delete \
   --exclude 'dist' \
   --exclude '.env' \
   --exclude '.env.staging' \
+  --exclude 'agent-proxy/stats.json' \
+  --exclude 'agent-proxy/users.json' \
+  --exclude 'agent-proxy/installs.json' \
   ./ "$SERVER:$DEST_DIR"
 
 # Step 2: Build and restart containers
