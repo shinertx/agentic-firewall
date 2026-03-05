@@ -4,7 +4,7 @@ const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
 interface FailoverConfig {
     pattern: string;
     fallbackModel: string;
-    provider: 'anthropic' | 'openai';
+    provider: 'anthropic' | 'openai' | 'gemini';
 }
 
 // Failover mappings: expensive model → cheaper equivalent
@@ -15,26 +15,45 @@ const FAILOVER_MAP: FailoverConfig[] = [
     // OpenAI: GPT-4o → GPT-4o-mini
     { pattern: 'gpt-4o', fallbackModel: 'gpt-4o-mini', provider: 'openai' },
     { pattern: 'gpt-4', fallbackModel: 'gpt-4o-mini', provider: 'openai' },
+    // Gemini: Pro → Flash
+    { pattern: 'gemini-2.5-pro', fallbackModel: 'gemini-2.5-flash', provider: 'gemini' },
+    { pattern: 'gemini-2.0-pro', fallbackModel: 'gemini-2.0-flash', provider: 'gemini' },
+    { pattern: 'gemini-1.5-pro', fallbackModel: 'gemini-1.5-flash', provider: 'gemini' },
 ];
 
-export async function attemptShadowRouterFailover(reqBody: any, originalHeaders: Record<string, string>): Promise<Response | null> {
-    if (!reqBody || typeof reqBody.model !== 'string') return null;
-
-    const model = reqBody.model.toLowerCase();
+export async function attemptShadowRouterFailover(
+    reqBody: any,
+    originalHeaders: Record<string, string>,
+    originalUrl?: string,
+): Promise<Response | null> {
+    // For Gemini, the model is in the URL path, not the body
+    const bodyModel = reqBody?.model;
+    const urlModel = originalUrl ? extractGeminiModel(originalUrl) : null;
+    const modelStr = (typeof bodyModel === 'string' ? bodyModel : urlModel || '').toLowerCase();
+    if (!modelStr) return null;
 
     // Find matching failover rule
-    const config = FAILOVER_MAP.find(f => model.includes(f.pattern) && model !== f.fallbackModel);
+    const config = FAILOVER_MAP.find(f => modelStr.includes(f.pattern) && modelStr !== f.fallbackModel);
     if (!config) return null;
 
     // Don't failover if we're already on the fallback model
-    if (model.includes('mini') || model.includes('haiku')) return null;
+    if (modelStr.includes('mini') || modelStr.includes('haiku') || modelStr.includes('flash')) return null;
 
-    console.log(`[SHADOW ROUTER] 🔀 429 on ${reqBody.model}. Failing over to ${config.fallbackModel}...`);
+    console.log(`[SHADOW ROUTER] 🔀 429 on ${bodyModel || urlModel}. Failing over to ${config.fallbackModel}...`);
 
     const failoverBody = { ...reqBody, model: config.fallbackModel };
     // Strip thinking parameters — fallback models may not support adaptive thinking
     delete failoverBody.thinking;
-    const url = config.provider === 'anthropic' ? ANTHROPIC_API_URL : OPENAI_API_URL;
+
+    let url: string;
+    if (config.provider === 'gemini' && originalUrl) {
+        // Gemini: swap the model in the URL path
+        url = originalUrl.replace(/models\/[^:]+/, `models/${config.fallbackModel}`);
+    } else if (config.provider === 'openai') {
+        url = OPENAI_API_URL;
+    } else {
+        url = ANTHROPIC_API_URL;
+    }
 
     const init: RequestInit = {
         method: 'POST',
@@ -55,6 +74,11 @@ export async function attemptShadowRouterFailover(reqBody: any, originalHeaders:
     }
 
     return null;
+}
+
+function extractGeminiModel(url: string): string | null {
+    const match = url.match(/models\/(gemini-[^:/?]+)/);
+    return match ? match[1] : null;
 }
 
 /**

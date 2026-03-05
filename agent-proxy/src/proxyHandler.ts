@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { checkCircuitBreaker } from './circuitBreaker';
-import { attemptShadowRouterFailover } from './shadowRouter';
+import { attemptShadowRouterFailover, attemptCrossProviderFailover } from './shadowRouter';
 import { getInputCost, CACHE_SAVINGS_RATE } from './pricing';
 import { generateCacheKey } from './tokenCounter';
 import { getUserId, checkBudget, recordUserSpend, recordUserLoop, getOrCreateUser } from './budgetGovernor';
@@ -235,6 +235,34 @@ export async function handleProxyRequest(req: Request, res: Response) {
         headers,
     };
 
+    // Fast pass-through for /v1/messages/count_tokens — skip all firewall logic
+    if (isCountTokens) {
+        console.log(`[PROXY] => count_tokens pass-through to ${url}`);
+        const ctInit: RequestInit = { method: req.method, headers, body: req.body ? JSON.stringify(req.body) : undefined };
+        try {
+            const ctRes = await fetch(url, ctInit);
+            ctRes.headers.forEach((value, key) => {
+                if (key.toLowerCase() !== 'transfer-encoding' && key.toLowerCase() !== 'content-encoding') {
+                    res.setHeader(key, value);
+                }
+            });
+            res.status(ctRes.status);
+            if (!ctRes.body) return res.end();
+            const reader = ctRes.body.getReader();
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                res.write(value);
+            }
+        } catch (err) {
+            console.error('[PROXY] count_tokens error:', err);
+            if (!res.headersSent) res.status(502).json({ error: { message: 'Failed to reach Anthropic count_tokens endpoint' } });
+        } finally {
+            res.end();
+        }
+        return;
+    }
+
     let optimizedBody = req.body;
     let originalBodyStr = req.body ? JSON.stringify(req.body) : "";
     const apiKey = (req.headers['x-api-key'] || req.headers['authorization'] || '') as string;
@@ -246,7 +274,36 @@ export async function handleProxyRequest(req: Request, res: Response) {
         const cb = checkCircuitBreaker(ip, req.body, apiKey || undefined);
         if (cb.blocked) {
             recordUserLoop(userId);
-            res.status(400).json({ error: { message: cb.reason, type: 'agentic_firewall_blocked' } });
+            const model = req.body?.model || 'unknown';
+            const stopMsg = `The Agentic Firewall detected a loop: the last 3 requests were identical. This request has been blocked to prevent waste. I need to try a different approach or ask the user for guidance instead of retrying the same operation.`;
+
+            res.setHeader('X-Firewall-Action', 'circuit_breaker_blocked');
+
+            if (isOpenAI) {
+                res.status(200).json({
+                    id: `chatcmpl-firewall-${Date.now()}`,
+                    object: 'chat.completion',
+                    created: Math.floor(Date.now() / 1000),
+                    model,
+                    choices: [{ index: 0, message: { role: 'assistant', content: stopMsg }, finish_reason: 'stop' }],
+                    usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+                });
+            } else {
+                res.status(200).json({
+                    id: `msg_firewall_${Date.now()}`,
+                    type: 'message',
+                    role: 'assistant',
+                    content: [{ type: 'text', text: stopMsg }],
+                    model,
+                    stop_reason: 'end_turn',
+                    stop_sequence: null,
+                    usage: { input_tokens: 0, output_tokens: 0 },
+                });
+            }
+
+            recordActivity({ time: new Date().toLocaleTimeString(), model, tokens: 0, status: 'Loop Blocked', statusColor: 'text-red-400' });
+            globalStats.blockedLoops++;
+            console.log(`[FIREWALL] Circuit breaker blocked for ${userId}: ${cb.reason}`);
             return;
         }
         requestHash = cb.hash;
@@ -381,15 +438,26 @@ export async function handleProxyRequest(req: Request, res: Response) {
     let statusText = 'Pass-through';
     let statusColor = 'text-gray-400 bg-gray-400/10';
 
-    if (response.status === 429 && optimizedBody && !isGemini) {
-        const failoverRes = await attemptShadowRouterFailover(optimizedBody, headers);
+    if (response.status === 429 && optimizedBody) {
+        // Same-provider failover (Anthropic, OpenAI, Gemini)
+        const failoverRes = await attemptShadowRouterFailover(optimizedBody, headers, url);
         if (failoverRes) {
             response = failoverRes;
             statusText = 'Shadow Router Failover';
             statusColor = 'text-yellow-400 bg-yellow-400/10';
         } else {
-            statusText = '429 Rate Limited';
-            statusColor = 'text-red-400 bg-red-400/10';
+            // Cross-provider failover as second-stage fallback
+            const provider = isGemini ? 'gemini' : isOpenAI ? 'openai' : 'anthropic';
+            const originalModel = optimizedBody?.model || '';
+            const crossRes = await attemptCrossProviderFailover(optimizedBody, originalModel, provider);
+            if (crossRes) {
+                response = crossRes.response;
+                statusText = `Cross-Provider Failover (${crossRes.targetProvider})`;
+                statusColor = 'text-yellow-400 bg-yellow-400/10';
+            } else {
+                statusText = '429 Rate Limited';
+                statusColor = 'text-red-400 bg-red-400/10';
+            }
         }
     }
 
