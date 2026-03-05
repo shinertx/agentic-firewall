@@ -1,9 +1,11 @@
 import fs from 'fs';
 import path from 'path';
 
-// Persistent storage — use /app/data/ inside Docker (volume-mounted),
-// fall back to sibling stats.json for local dev
-const DATA_DIR = fs.existsSync('/app/data') ? '/app/data' : path.join(__dirname, '..');
+// Persistent storage file path (relative to where the server runs)
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
+if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+}
 const STATS_FILE = path.join(DATA_DIR, 'stats.json');
 
 // Persisted fields — recentActivity stays in-memory only (transient)

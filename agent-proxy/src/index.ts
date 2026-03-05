@@ -152,7 +152,11 @@ import { recordTelemetryEvent, getInstallStats, getInstallBreakdown, getNpmStats
 
 // Load persisted user data on startup
 import fs from 'fs';
-const DATA_DIR = fs.existsSync('/app/data') ? '/app/data' : path.join(__dirname, '..');
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
+if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json');
 const INSTALLS_FILE = path.join(DATA_DIR, 'installs.json');
