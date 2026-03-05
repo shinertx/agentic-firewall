@@ -154,7 +154,7 @@ const activityBuffer: any[] = new Array(MAX_RECENT).fill(null);
 let activityWriteIndex = 0;
 let activityCount = 0;
 
-export function recordActivity(activity: { time: string, model: string, tokens: number | string, status: string, statusColor: string }) {
+export function recordActivity(activity: { time: string, model: string, tokens: number | string, status: string, statusColor: string, saved?: string }) {
     activityBuffer[activityWriteIndex] = activity;
     activityWriteIndex = (activityWriteIndex + 1) % MAX_RECENT;
     activityCount = Math.min(activityCount + 1, MAX_RECENT);

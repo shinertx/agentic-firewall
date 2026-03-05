@@ -3,7 +3,7 @@ import { globalStats } from '../stats';
 
 /**
  * Renders the public landing page HTML with live aggregate stats.
- * Design: Light mode — Stripe/Notion-inspired. White bg, clean borders,
+ * Design: Light mode — Stripe/Linear-inspired. White bg, clean borders,
  * Inter font, one accent color (indigo-600), generous whitespace.
  */
 export function renderLandingPage(): string {
@@ -30,6 +30,13 @@ export function renderLandingPage(): string {
   --accent: #4f46e5;
   --accent-light: #eef2ff;
   --accent-hover: #4338ca;
+  --green: #16a34a;
+  --green-bg: #f0fdf4;
+  --green-border: #bbf7d0;
+  --red: #dc2626;
+  --red-bg: #fef2f2;
+  --amber: #d97706;
+  --amber-bg: #fffbeb;
 }
 
 *{margin:0;padding:0;box-sizing:border-box}
@@ -39,13 +46,15 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .nav{display:flex;justify-content:space-between;align-items:center;padding:16px 32px;border-bottom:1px solid var(--border);max-width:1100px;margin:0 auto}
 .nav .logo{font-weight:700;font-size:1rem;color:var(--text);display:flex;align-items:center;gap:8px}
 .nav .logo span{font-size:1.1rem}
+.nav-links{display:flex;gap:20px}
 .nav a{color:var(--text-secondary);text-decoration:none;font-size:0.9rem;font-weight:500;transition:color 0.2s}
 .nav a:hover{color:var(--text)}
 
 /* Hero */
 .hero{text-align:center;padding:80px 24px 64px;max-width:680px;margin:0 auto}
 .badge{display:inline-flex;align-items:center;gap:6px;padding:4px 14px;border-radius:100px;border:1px solid var(--border);font-size:0.8rem;color:var(--text-secondary);margin-bottom:24px;font-weight:500}
-.badge .dot{width:6px;height:6px;border-radius:50%;background:#22c55e}
+.badge .dot{width:6px;height:6px;border-radius:50%;background:#22c55e;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
 .hero h1{font-size:clamp(2.2rem,4.5vw,3.2rem);font-weight:800;letter-spacing:-0.035em;line-height:1.15;margin-bottom:16px;color:var(--text)}
 .hero .sub{color:var(--text-secondary);font-size:1.1rem;max-width:480px;margin:0 auto 40px;line-height:1.6}
 
@@ -65,8 +74,100 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .cta{display:inline-block;background:var(--accent);color:#fff;padding:12px 28px;border-radius:8px;font-size:0.9rem;font-weight:600;text-decoration:none;transition:all 0.2s;letter-spacing:-0.01em}
 .cta:hover{background:var(--accent-hover);transform:translateY(-1px);box-shadow:0 4px 12px rgba(79,70,229,0.25)}
 
+/* ─── Live Activity Feed ─── */
+.feed-section{border-top:1px solid var(--border);padding:64px 24px;background:var(--bg)}
+.feed-container{max-width:780px;margin:0 auto}
+.feed-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}
+.feed-header-left{display:flex;align-items:center;gap:10px}
+.feed-header h2{font-size:1.1rem;font-weight:700;letter-spacing:-0.02em;color:var(--text)}
+.feed-live-dot{width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse 2s infinite;flex-shrink:0}
+.feed-savings-total{display:flex;align-items:center;gap:6px;padding:6px 14px;border-radius:100px;background:var(--green-bg);border:1px solid var(--green-border);font-size:0.82rem;font-weight:600;color:var(--green)}
+
+/* 8 rows * 45px + 7 * 1px gap = 367px — fixed height prevents layout shift */
+.feed-list{display:flex;flex-direction:column;gap:1px;background:var(--border);border:1px solid var(--border);border-radius:12px;overflow:hidden;height:367px}
+.feed-empty{padding:80px 24px;text-align:center;color:var(--text-muted);font-size:0.9rem;background:var(--bg)}
+
+/* Individual feed row */
+.feed-row{display:grid;grid-template-columns:1fr auto auto auto;align-items:center;gap:16px;padding:12px 20px;background:var(--bg);transition:background 0.15s}
+.feed-row:hover{background:var(--bg-secondary)}
+
+.feed-model{font-weight:600;font-size:0.85rem;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.feed-tokens{font-size:0.8rem;color:var(--text-secondary);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+
+.feed-saved{font-size:0.8rem;font-weight:600;color:var(--green);text-align:right;white-space:nowrap;min-width:64px}
+.feed-saved:empty{min-width:64px}
+
+.feed-status{display:inline-flex;align-items:center;padding:3px 10px;border-radius:100px;font-size:0.72rem;font-weight:600;white-space:nowrap;letter-spacing:0.01em}
+.feed-status.cdn{background:var(--green-bg);color:var(--green);border:1px solid var(--green-border)}
+.feed-status.pass{background:var(--bg-secondary);color:var(--text-muted);border:1px solid var(--border)}
+.feed-status.blocked{background:var(--red-bg);color:var(--red);border:1px solid #fecaca}
+.feed-status.failover{background:var(--amber-bg);color:var(--amber);border:1px solid #fde68a}
+
+/* Row enter animation — slides in and flashes green then fades to white */
+.feed-row.entering{animation:rowEnter 0.5s ease-out forwards,rowFlash 1.2s ease-out forwards}
+@keyframes rowEnter{
+  from{opacity:0;transform:translateY(-10px)}
+  to{opacity:1;transform:translateY(0)}
+}
+@keyframes rowFlash{
+  0%{background:var(--green-bg)}
+  60%{background:var(--green-bg)}
+  100%{background:var(--bg)}
+}
+/* Row exit animation */
+.feed-row.exiting{animation:rowExit 0.3s ease-in forwards}
+@keyframes rowExit{
+  from{opacity:1;max-height:48px}
+  to{opacity:0;max-height:0;padding-top:0;padding-bottom:0;margin:0}
+}
+
+/* ─── How It Works ─── */
+.how-section{border-top:1px solid var(--border);padding:80px 24px;background:var(--bg)}
+.how{max-width:780px;margin:0 auto}
+.how-header{text-align:center;margin-bottom:48px}
+.how-header h2{font-size:1.5rem;font-weight:700;letter-spacing:-0.02em;color:var(--text)}
+.how-header p{color:var(--text-secondary);margin-top:8px;font-size:0.95rem}
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;position:relative}
+.step{text-align:center;position:relative}
+.step-num{width:40px;height:40px;border-radius:50%;background:var(--accent-light);color:var(--accent);font-weight:700;font-size:1rem;display:inline-flex;align-items:center;justify-content:center;margin-bottom:16px;border:2px solid var(--accent)}
+.step h3{font-size:0.95rem;font-weight:600;color:var(--text);margin-bottom:6px}
+.step p{color:var(--text-secondary);font-size:0.82rem;line-height:1.55}
+.step-code{display:inline-block;margin-top:10px;padding:6px 12px;border-radius:6px;background:var(--bg-secondary);border:1px solid var(--border);font-family:'SF Mono','Fira Code',Consolas,monospace;font-size:0.75rem;color:var(--text-secondary)}
+/* Connector lines between steps */
+.steps::before,.steps::after{content:'';position:absolute;top:20px;height:2px;background:var(--border);width:calc(33.33% - 40px)}
+.steps::before{left:calc(16.67% + 20px)}
+.steps::after{left:calc(50% + 20px)}
+
+/* ─── Before / After ─── */
+.compare-section{border-top:1px solid var(--border);padding:80px 24px;background:var(--bg-secondary)}
+.compare{max-width:780px;margin:0 auto}
+.compare-header{text-align:center;margin-bottom:40px}
+.compare-header h2{font-size:1.5rem;font-weight:700;letter-spacing:-0.02em;color:var(--text)}
+.compare-header p{color:var(--text-secondary);margin-top:8px;font-size:0.95rem}
+.compare-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.compare-card{padding:28px 24px;border-radius:12px;border:1px solid var(--border)}
+.compare-card.before{background:#fff;border-color:#fecaca}
+.compare-card.after{background:#fff;border-color:var(--green-border)}
+.compare-card-header{display:flex;align-items:center;gap:8px;margin-bottom:20px}
+.compare-card-label{font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;padding:3px 10px;border-radius:100px}
+.compare-card.before .compare-card-label{background:var(--red-bg);color:var(--red)}
+.compare-card.after .compare-card-label{background:var(--green-bg);color:var(--green)}
+.compare-card-title{font-size:0.9rem;font-weight:600;color:var(--text)}
+.compare-lines{display:flex;flex-direction:column;gap:10px;margin-bottom:20px}
+.compare-line{display:flex;justify-content:space-between;align-items:center;font-size:0.82rem}
+.compare-line .cl-label{color:var(--text-secondary)}
+.compare-line .cl-value{font-weight:600;font-variant-numeric:tabular-nums}
+.compare-card.before .cl-value{color:var(--red)}
+.compare-card.after .cl-value{color:var(--text)}
+.compare-total{display:flex;justify-content:space-between;align-items:center;padding-top:16px;border-top:1px solid var(--border);font-size:1rem;font-weight:700}
+.compare-card.before .compare-total .ct-value{color:var(--red);font-size:1.4rem}
+.compare-card.after .compare-total .ct-value{color:var(--green);font-size:1.4rem}
+.compare-savings{text-align:center;margin-top:24px;padding:16px;background:var(--green-bg);border:1px solid var(--green-border);border-radius:10px}
+.compare-savings .big{font-size:1.6rem;font-weight:800;color:var(--green);letter-spacing:-0.02em}
+.compare-savings .desc{color:var(--text-secondary);font-size:0.85rem;margin-top:4px}
+
 /* Features */
-.features-section{background:var(--bg-secondary);border-top:1px solid var(--border);padding:80px 24px}
+.features-section{background:var(--bg);border-top:1px solid var(--border);padding:80px 24px}
 .features{max-width:720px;margin:0 auto}
 .features-header{text-align:center;margin-bottom:48px}
 .features-header h2{font-size:1.5rem;font-weight:700;letter-spacing:-0.02em;color:var(--text)}
@@ -78,37 +179,6 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .feature h3{color:var(--text);font-size:0.9rem;font-weight:600;margin-bottom:4px;letter-spacing:-0.01em}
 .feature p{color:var(--text-secondary);font-size:0.8rem;line-height:1.55}
 
-/* Terminal Section */
-.terminal-section{background:#0d1117;min-height:50vh;display:flex;flex-direction:column}
-.terminal{flex:1;display:flex;flex-direction:column;max-width:900px;width:100%;margin:0 auto}
-.terminal-bar{display:flex;align-items:center;gap:8px;padding:12px 20px;background:#161b22;border-bottom:1px solid #30363d}
-.terminal-dots{display:flex;gap:6px}
-.terminal-dots span{width:10px;height:10px;border-radius:50%}
-.terminal-dots span:nth-child(1){background:#ff5f57}
-.terminal-dots span:nth-child(2){background:#febc2e}
-.terminal-dots span:nth-child(3){background:#28c840}
-.terminal-title{color:#8b949e;font-size:0.75rem;font-family:'SF Mono','Fira Code',Consolas,monospace;margin-left:10px;display:flex;align-items:center;gap:8px}
-.terminal-title .pulse{width:6px;height:6px;border-radius:50%;background:#3fb950;animation:pulse 2s infinite}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
-.terminal-body{flex:1;padding:16px 0;font-family:'SF Mono','Fira Code',Consolas,monospace;font-size:0.82rem;line-height:1;overflow:hidden;position:relative;display:flex;flex-direction:column;justify-content:flex-end}
-.terminal-line{display:flex;align-items:center;padding:5px 20px;height:30px;white-space:nowrap;opacity:0;transform:translateY(30px);animation:none}
-.terminal-line.enter{animation:lineEnter 0.35s ease-out forwards}
-.terminal-line.shift{animation:lineShift 0.35s ease-out forwards}
-.terminal-line.exit{animation:lineExit 0.35s ease-out forwards}
-@keyframes lineEnter{from{opacity:0;transform:translateY(30px)}to{opacity:1;transform:translateY(0)}}
-@keyframes lineShift{from{transform:translateY(30px)}to{transform:translateY(0)}}
-@keyframes lineExit{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(-30px)}}
-.t-prompt{color:#8b949e;margin-right:10px;flex-shrink:0}
-.t-model{color:#d2a8ff;flex-shrink:0}
-.t-sep{color:#30363d;margin:0 10px;flex-shrink:0}
-.t-tokens{color:#79c0ff;flex-shrink:0;min-width:64px;text-align:right}
-.t-saved{color:#3fb950;margin-left:12px;flex-shrink:0;font-size:0.75rem;opacity:0.8}
-.t-status{margin-left:auto;padding-left:16px;font-weight:500;flex-shrink:0}
-.t-status.cdn{color:#3fb950}
-.t-status.pass{color:#8b949e}
-.t-status.blocked{color:#f85149}
-.t-status.failover{color:#d29922}
-
 /* Footer */
 .footer{text-align:center;padding:40px 24px;color:var(--text-muted);font-size:0.8rem;border-top:1px solid var(--border)}
 
@@ -119,6 +189,13 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   .grid{grid-template-columns:1fr}
   .hero{padding:48px 20px 40px}
   .nav{padding:12px 20px}
+  .feed-row{grid-template-columns:1fr auto auto;gap:10px;padding:10px 14px}
+  .feed-saved{display:none}
+  .feed-list{height:232px}
+  .feed-header{flex-direction:column;gap:12px;align-items:flex-start}
+  .steps{grid-template-columns:1fr;gap:32px}
+  .steps::before,.steps::after{display:none}
+  .compare-grid{grid-template-columns:1fr}
 }
 </style>
 </head>
@@ -126,7 +203,10 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 
 <nav class="nav">
   <div class="logo"><span>🛡️</span> Agent Firewall</div>
-  <a href="#features">Features</a>
+  <div class="nav-links">
+    <a href="#activity">Live Feed</a>
+    <a href="#features">Features</a>
+  </div>
 </nav>
 
 <div class="hero">
@@ -143,17 +223,96 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 
   <div class="actions">
     <div class="code"><span class="prefix">$</span> npx vibe-billing setup</div>
-    <a href="https://github.com/shinertx/agentic-firewall" target="_blank" class="cta">View on GitHub →</a>
+    <a href="https://github.com/shinertx/agentic-firewall" target="_blank" class="cta">View on GitHub</a>
   </div>
 </div>
 
-<div class="terminal-section">
-  <div class="terminal">
-    <div class="terminal-bar">
-      <div class="terminal-dots"><span></span><span></span><span></span></div>
-      <div class="terminal-title"><span class="pulse"></span> live traffic — agent-firewall</div>
+<div class="feed-section" id="activity">
+  <div class="feed-container">
+    <div class="feed-header">
+      <div class="feed-header-left">
+        <span class="feed-live-dot"></span>
+        <h2>Live Activity</h2>
+      </div>
+      <div class="feed-savings-total" id="feedSavings">$${agg.totalSaved.toFixed(2)} saved</div>
     </div>
-    <div class="terminal-body" id="termBody"></div>
+    <div class="feed-list" id="feedList">
+      <div class="feed-empty">Waiting for agent traffic...</div>
+    </div>
+  </div>
+</div>
+
+<div class="how-section" id="how">
+  <div class="how">
+    <div class="how-header">
+      <h2>Up and running in 60 seconds</h2>
+      <p>One command. No config files. Works with every agent.</p>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <h3>Install</h3>
+        <p>Run a single command. It detects your OS, installs the proxy, and configures your shell.</p>
+        <div class="step-code">npx vibe-billing setup</div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <h3>Agent connects</h3>
+        <p>Your agent's API calls route through the firewall automatically. Zero code changes needed.</p>
+        <div class="step-code">Agent &rarr; Firewall &rarr; LLM</div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <h3>Save money</h3>
+        <p>Prompt caching, loop detection, and budget caps kick in immediately. Watch your bill drop.</p>
+        <div class="step-code">avg. 83% savings</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="compare-section">
+  <div class="compare">
+    <div class="compare-header">
+      <h2>What a 2-hour Claude Code session actually costs</h2>
+      <p>Real numbers from a production coding session with Opus.</p>
+    </div>
+    <div class="compare-grid">
+      <div class="compare-card before">
+        <div class="compare-card-header">
+          <span class="compare-card-label">Without Firewall</span>
+        </div>
+        <div class="compare-lines">
+          <div class="compare-line"><span class="cl-label">Prompt tokens (repeated context)</span><span class="cl-value">2.4M</span></div>
+          <div class="compare-line"><span class="cl-label">Duplicate full-codebase reads</span><span class="cl-value">12x</span></div>
+          <div class="compare-line"><span class="cl-label">Stuck retry loops</span><span class="cl-value">3 loops</span></div>
+          <div class="compare-line"><span class="cl-label">Cache hit rate</span><span class="cl-value">0%</span></div>
+        </div>
+        <div class="compare-total">
+          <span>Total cost</span>
+          <span class="ct-value">$47.20</span>
+        </div>
+      </div>
+      <div class="compare-card after">
+        <div class="compare-card-header">
+          <span class="compare-card-label">With Firewall</span>
+        </div>
+        <div class="compare-lines">
+          <div class="compare-line"><span class="cl-label">Prompt tokens (cached)</span><span class="cl-value">2.4M</span></div>
+          <div class="compare-line"><span class="cl-label">Cache hit rate (auto-injected)</span><span class="cl-value">90%</span></div>
+          <div class="compare-line"><span class="cl-label">Loops killed before waste</span><span class="cl-value">3 killed</span></div>
+          <div class="compare-line"><span class="cl-label">Effective cost after caching</span><span class="cl-value">$7.80</span></div>
+        </div>
+        <div class="compare-total">
+          <span>Total cost</span>
+          <span class="ct-value">$7.80</span>
+        </div>
+      </div>
+    </div>
+    <div class="compare-savings">
+      <div class="big">$39.40 saved per session</div>
+      <div class="desc">That's $591 / month for a developer running 3 sessions per day.</div>
+    </div>
   </div>
 </div>
 
@@ -178,38 +337,33 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 
 <div class="footer">
   <p>Agent Firewall — Agent Runtime Control</p>
-  <p style="margin-top:8px;font-size:0.75rem"><a href="https://github.com/shinertx/agentic-firewall" target="_blank" style="color:var(--text-secondary);text-decoration:none;margin:0 8px">GitHub</a> • <a href="https://www.npmjs.com/package/vibe-billing" target="_blank" style="color:var(--text-secondary);text-decoration:none;margin:0 8px">npm</a></p>
+  <p style="margin-top:8px;font-size:0.75rem"><a href="https://github.com/shinertx/agentic-firewall" target="_blank" style="color:var(--text-secondary);text-decoration:none;margin:0 8px">GitHub</a> · <a href="https://www.npmjs.com/package/vibe-billing" target="_blank" style="color:var(--text-secondary);text-decoration:none;margin:0 8px">npm</a></p>
 </div>
+
 <script>
-// Animate a number from current to target over duration ms
+var MAX_ROWS = 8;
+var lastFeedJSON = '';
+
 function animateValue(el, start, end, duration, format) {
   if (start === end) return;
-  const range = end - start;
-  const startTime = performance.now();
+  var range = end - start;
+  var startTime = performance.now();
   function step(now) {
-    const elapsed = now - startTime;
-    const progress = Math.min(elapsed / duration, 1);
-    // Ease-out cubic for a satisfying deceleration
-    const eased = 1 - Math.pow(1 - progress, 3);
-    const current = start + range * eased;
-    el.textContent = format(current);
+    var elapsed = now - startTime;
+    var progress = Math.min(elapsed / duration, 1);
+    var eased = 1 - Math.pow(1 - progress, 3);
+    el.textContent = format(start + range * eased);
     if (progress < 1) requestAnimationFrame(step);
   }
   requestAnimationFrame(step);
 }
 
-// Track previous values for smooth transitions
-let prev = {
+var prev = {
   users: ${agg.totalUsers},
   saved: ${agg.totalSaved},
   reqs: ${globalStats.totalRequests},
   loops: ${globalStats.blockedLoops}
 };
-
-// Terminal feed state
-const MAX_LINES = 14;
-let termLines = [];
-let lastFeedJSON = '';
 
 function statusClass(s) {
   if (s.includes('CDN')) return 'cdn';
@@ -218,95 +372,106 @@ function statusClass(s) {
   return 'pass';
 }
 
-function makeLine(item) {
-  var saved = item.saved ? '<span class="t-saved">-$' + item.saved + '</span>' : '';
-  return '<div class="terminal-line">' +
-    '<span class="t-prompt">$</span>' +
-    '<span class="t-model">' + item.model + '</span>' +
-    '<span class="t-sep">|</span>' +
-    '<span class="t-tokens">' + item.tokens + '</span>' +
-    saved +
-    '<span class="t-status ' + statusClass(item.status) + '">' + item.status + '</span>' +
-  '</div>';
+function statusLabel(s) {
+  if (s.includes('CDN')) return 'Cache Hit';
+  if (s.includes('Loop')) return 'Loop Killed';
+  if (s.includes('Budget')) return 'Budget Block';
+  if (s.includes('No Progress')) return 'Stopped';
+  if (s.includes('Blocked')) return 'Blocked';
+  if (s.includes('Failover') || s.includes('Shadow')) return 'Failover';
+  if (s.includes('429')) return 'Rate Limited';
+  return 'Proxied';
+}
+
+function rowHTML(item) {
+  var savedHTML = item.saved
+    ? '<div class="feed-saved">-$' + item.saved + '</div>'
+    : '<div class="feed-saved"></div>';
+  var sc = statusClass(item.status);
+  var sl = statusLabel(item.status);
+  return '<div class="feed-model">' + item.model + '</div>' +
+    '<div class="feed-tokens">' + item.tokens + ' tokens</div>' +
+    savedHTML +
+    '<span class="feed-status ' + sc + '">' + sl + '</span>';
 }
 
 function renderFeed(feed) {
-  const body = document.getElementById('termBody');
-  if (!body || !feed || feed.length === 0) return;
+  var list = document.getElementById('feedList');
+  if (!list || !feed || feed.length === 0) return;
 
-  const feedJSON = JSON.stringify(feed);
-  const isFirstRender = lastFeedJSON === '';
+  var feedJSON = JSON.stringify(feed);
+  var isFirst = lastFeedJSON === '';
 
-  // Detect new items by comparing to previous feed
-  let newItems = [];
-  if (isFirstRender) {
-    // First load: show all items, animate them in staggered
-    newItems = feed.slice().reverse(); // oldest first
-  } else if (feedJSON !== lastFeedJSON) {
-    // Find items not in previous feed (compare by model+tokens+status+time)
-    const prevSet = new Set(JSON.parse(lastFeedJSON).map(i => i.model + i.tokens + i.status + i.time));
-    for (let i = feed.length - 1; i >= 0; i--) {
-      const key = feed[i].model + feed[i].tokens + feed[i].status + feed[i].time;
-      if (!prevSet.has(key)) newItems.push(feed[i]);
-    }
+  if (isFirst) {
+    // First load: render up to MAX_ROWS instantly, no animation
+    var empty = list.querySelector('.feed-empty');
+    if (empty) empty.remove();
+    var initial = feed.slice(0, MAX_ROWS);
+    initial.forEach(function(item) {
+      var row = document.createElement('div');
+      row.className = 'feed-row';
+      row.innerHTML = rowHTML(item);
+      list.appendChild(row);
+    });
+    lastFeedJSON = feedJSON;
+    return;
+  }
+
+  if (feedJSON === lastFeedJSON) return;
+
+  // Find new items not in previous feed
+  var prevSet = new Set(JSON.parse(lastFeedJSON).map(function(i) { return i.model + i.tokens + i.status + i.time; }));
+  var newItems = [];
+  for (var idx = feed.length - 1; idx >= 0; idx--) {
+    var key = feed[idx].model + feed[idx].tokens + feed[idx].status + feed[idx].time;
+    if (!prevSet.has(key)) newItems.push(feed[idx]);
   }
   lastFeedJSON = feedJSON;
   if (newItems.length === 0) return;
 
-  if (isFirstRender) {
-    // Stagger all lines in on first load
-    body.innerHTML = '';
-    newItems.forEach((item, i) => {
-      setTimeout(() => {
-        pushLine(body, item);
-      }, i * 120);
-    });
-  } else {
-    // Push new lines one by one with small delay between
-    newItems.forEach((item, i) => {
-      setTimeout(() => pushLine(body, item), i * 400);
-    });
-  }
-}
-
-function pushLine(body, item) {
-  const lines = body.querySelectorAll('.terminal-line');
-
-  // If at capacity, animate the top line out
-  if (lines.length >= MAX_LINES) {
-    const top = lines[0];
-    top.classList.remove('enter', 'shift');
-    top.classList.add('exit');
-    top.addEventListener('animationend', () => top.remove(), { once: true });
-  }
-
-  // Shift existing lines up (re-trigger shift animation)
-  body.querySelectorAll('.terminal-line:not(.exit)').forEach(el => {
-    el.classList.remove('enter', 'shift');
-    void el.offsetWidth; // force reflow
-    el.classList.add('shift');
+  newItems.forEach(function(item, i) {
+    setTimeout(function() { addRow(list, item); }, i * 300);
   });
-
-  // Add new line at the bottom with enter animation
-  const div = document.createElement('div');
-  div.innerHTML = makeLine(item);
-  const newLine = div.firstChild;
-  body.appendChild(newLine);
-  requestAnimationFrame(() => newLine.classList.add('enter'));
 }
+
+function addRow(list, item) {
+  // Remove oldest row if at capacity
+  var rows = list.querySelectorAll('.feed-row:not(.exiting)');
+  if (rows.length >= MAX_ROWS) {
+    var oldest = rows[rows.length - 1];
+    oldest.classList.add('exiting');
+    oldest.addEventListener('animationend', function() { oldest.remove(); }, { once: true });
+  }
+
+  // Insert new row at the top with enter animation
+  var row = document.createElement('div');
+  row.className = 'feed-row entering';
+  row.innerHTML = rowHTML(item);
+  list.insertBefore(row, list.firstChild);
+  row.addEventListener('animationend', function() { row.classList.remove('entering'); }, { once: true });
+}
+
+var STATS_URL = location.hostname === 'localhost' || location.hostname === '127.0.0.1'
+  ? 'https://api.jockeyvc.com/api/public-stats'
+  : '/api/public-stats';
 
 async function pollStats() {
   try {
-    const r = await fetch('/api/public-stats');
+    var r = await fetch(STATS_URL);
     if (!r.ok) return;
-    const d = await r.json();
-    animateValue(document.getElementById('users'), prev.users, d.totalUsers, 1500, v => Math.round(v));
-    animateValue(document.getElementById('saved'), prev.saved, d.totalSaved, 2000, v => '$' + v.toFixed(2));
-    animateValue(document.getElementById('reqs'), prev.reqs, d.totalRequests, 1500, v => Math.round(v).toLocaleString());
-    animateValue(document.getElementById('loops'), prev.loops, d.blockedLoops, 1500, v => Math.round(v));
+    var d = await r.json();
+    animateValue(document.getElementById('users'), prev.users, d.totalUsers, 1500, function(v) { return Math.round(v); });
+    animateValue(document.getElementById('saved'), prev.saved, d.totalSaved, 2000, function(v) { return '$' + v.toFixed(2); });
+    animateValue(document.getElementById('reqs'), prev.reqs, d.totalRequests, 1500, function(v) { return Math.round(v).toLocaleString(); });
+    animateValue(document.getElementById('loops'), prev.loops, d.blockedLoops, 1500, function(v) { return Math.round(v); });
+
+    // Update savings badge
+    var badge = document.getElementById('feedSavings');
+    if (badge) badge.textContent = '$' + d.totalSaved.toFixed(2) + ' saved';
+
     prev = { users: d.totalUsers, saved: d.totalSaved, reqs: d.totalRequests, loops: d.blockedLoops };
     if (d.recentFeed) renderFeed(d.recentFeed);
-  } catch {}
+  } catch(e) {}
 }
 
 pollStats();
