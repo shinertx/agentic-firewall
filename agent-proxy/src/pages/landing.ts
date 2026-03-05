@@ -27,8 +27,8 @@ function ssrStatusLabel(s: string): string {
 export function renderLandingPage(): string {
   const agg = getAggregateStats();
 
-  // Pre-render feed rows server-side so the page isn't empty on first paint
-  const MAX_SSR_ROWS = 8;
+  // Pre-render a generous batch so JS can trim to fit the viewport on load
+  const MAX_SSR_ROWS = 14;
   const feedItems = globalStats.recentActivity.slice(0, MAX_SSR_ROWS);
   const ssrFeedRows = feedItems.map((a: any) => {
     const saved = a.saved ? `<div class="feed-saved">-$${a.saved}</div>` : '<div class="feed-saved"></div>';
@@ -116,8 +116,8 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .feed-live-dot{width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse 2s infinite;flex-shrink:0}
 .feed-savings-total{display:flex;align-items:center;gap:6px;padding:6px 14px;border-radius:100px;background:var(--green-bg);border:1px solid var(--green-border);font-size:0.82rem;font-weight:600;color:var(--green)}
 
-/* 8 rows * 45px + 7 * 1px gap = 367px — fixed height prevents layout shift */
-.feed-list{display:flex;flex-direction:column;gap:1px;background:var(--border);border:1px solid var(--border);border-radius:12px;overflow:hidden;height:367px}
+/* 14 rows * 45px + 13 * 1px gap = 643px */
+.feed-list{display:flex;flex-direction:column;gap:1px;background:var(--border);border:1px solid var(--border);border-radius:12px;overflow:hidden;height:643px}
 .feed-empty{padding:80px 24px;text-align:center;color:var(--text-muted);font-size:0.9rem;background:var(--bg)}
 
 /* Individual feed row */
@@ -224,7 +224,7 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   .nav{padding:12px 20px}
   .feed-row{grid-template-columns:1fr auto auto;gap:10px;padding:10px 14px}
   .feed-saved{display:none}
-  .feed-list{height:232px}
+  .feed-list{height:559px}
   .feed-header{flex-direction:column;gap:12px;align-items:flex-start}
   .steps{grid-template-columns:1fr;gap:32px}
   .steps::before,.steps::after{display:none}
@@ -384,7 +384,7 @@ function copyCmd() {
   });
 }
 
-var MAX_ROWS = 8;
+var MAX_ROWS = 14;
 var lastFeedJSON = '';
 
 function animateValue(el, start, end, duration, format) {

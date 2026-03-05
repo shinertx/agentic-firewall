@@ -284,16 +284,47 @@ export async function handleProxyRequest(req: Request, res: Response) {
             return;
         }
 
-        // No-progress detection
+        // No-progress detection — return a synthetic model response so the agent
+        // processes it as a real turn and changes approach instead of retrying.
         const npCheck = checkNoProgress(userId, req.body);
         if (npCheck.noProgress) {
-            res.status(400).json({
-                error: {
-                    message: npCheck.reason,
-                    type: 'no_progress_detected',
-                    consecutiveErrors: npCheck.consecutiveErrors,
-                }
-            });
+            const stopMsg = `I've been repeating the same failing operation ${npCheck.consecutiveErrors} times. The Agentic Firewall has stopped this loop to prevent waste. I need to try a completely different approach instead of retrying the same thing.`;
+            const model = req.body?.model || 'unknown';
+
+            res.setHeader('X-Firewall-Action', 'no_progress_blocked');
+            res.setHeader('X-Firewall-Consecutive-Errors', String(npCheck.consecutiveErrors));
+
+            if (isOpenAI) {
+                // OpenAI Chat Completions format
+                res.status(200).json({
+                    id: `chatcmpl-firewall-${Date.now()}`,
+                    object: 'chat.completion',
+                    created: Math.floor(Date.now() / 1000),
+                    model,
+                    choices: [{
+                        index: 0,
+                        message: { role: 'assistant', content: stopMsg },
+                        finish_reason: 'stop',
+                    }],
+                    usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+                });
+            } else {
+                // Anthropic Messages format (also used as fallback)
+                res.status(200).json({
+                    id: `msg_firewall_${Date.now()}`,
+                    type: 'message',
+                    role: 'assistant',
+                    content: [{ type: 'text', text: stopMsg }],
+                    model,
+                    stop_reason: 'end_turn',
+                    stop_sequence: null,
+                    usage: { input_tokens: 0, output_tokens: 0 },
+                });
+            }
+
+            recordActivity({ time: new Date().toLocaleTimeString(), model, tokens: 0, status: 'No Progress Blocked', statusColor: 'text-red-400' });
+            globalStats.blockedLoops++;
+            console.log(`[FIREWALL] No-progress blocked for ${userId}: ${npCheck.reason}`);
             return;
         }
 
