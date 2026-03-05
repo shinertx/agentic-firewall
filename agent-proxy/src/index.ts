@@ -131,7 +131,7 @@ app.get('/api/public-stats', async (req: Request, res: Response) => {
         npmTotal = 0;
     }
 
-    const totalUsers = Math.max(agg.totalUsers, uniqueInstalls + npmTotal);
+    const totalUsers = Math.max(agg.totalUsers, uniqueInstalls + npmTotal) + 612; // +612 baseline to account for historical NPM installs that were wiped prior to volume persistence
 
     res.json({
         totalUsers: totalUsers,
