@@ -99,6 +99,32 @@ for (const settingsPath of vscodePaths) {
     }
 }
 
+// Configure Claude Code settings (~/.claude/settings.json) so the env override
+// takes effect even when Claude Code doesn't inherit from shell or VS Code
+const claudeSettingsPath = path.join(os.homedir(), '.claude', 'settings.json');
+try {
+    if (fs.existsSync(claudeSettingsPath)) {
+        const claudeSettings = JSON.parse(fs.readFileSync(claudeSettingsPath, 'utf8'));
+        const envBlock = claudeSettings.env || {};
+        let claudeModified = false;
+
+        if (envBlock['ANTHROPIC_BASE_URL'] !== PROXY_URL_ROOT) {
+            envBlock['ANTHROPIC_BASE_URL'] = PROXY_URL_ROOT;
+            claudeModified = true;
+        }
+
+        if (claudeModified) {
+            claudeSettings.env = envBlock;
+            fs.writeFileSync(claudeSettingsPath, JSON.stringify(claudeSettings, null, 2), 'utf8');
+            console.log(`✅ Injected proxy routing into Claude Code settings (${claudeSettingsPath})`);
+        } else {
+            console.log(`✅ Claude Code proxy routing already configured (${claudeSettingsPath})`);
+        }
+    }
+} catch (e) {
+    console.log(`⚠️ Could not update Claude Code settings at ${claudeSettingsPath}: ${e.message}`);
+}
+
 // OpenClaw launchd service uses macOS LaunchAgents property lists for env variables.
 // Instead of messing with plist files directly via node, we tell the user the script
 // has explicitly configured all their terminal sessions to route via the proxy.
@@ -116,5 +142,5 @@ try {
 console.log('\n🚀 SUCCESS: Agentic Firewall is configured!');
 console.log('All outbound payload routing has been secured over HTTPS/TLS.');
 console.log('Context CDN and Savings Math are live.');
-console.log('Configured: Shell (zshrc/bashrc) + VS Code (Claude Code extension)');
+console.log('Configured: Shell (zshrc/bashrc) + VS Code + Claude Code');
 console.log('Please restart your terminal and VS Code to apply changes!');
