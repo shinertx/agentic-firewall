@@ -144,9 +144,17 @@ function trimAnthropic(body: any, targetTokens: number): TrimResult {
     const droppedMessages = droppedUnits.flatMap(u => u.messages);
     const trimmedMessages = keptUnits.flatMap(u => u.messages);
 
-    // Anthropic requires first message to be role: 'user'
-    if (trimmedMessages.length > 0 && trimmedMessages[0].role === 'assistant') {
+    // Anthropic requires first message to be role: 'user'.
+    // Must drop entire tool_use/tool_result pairs to avoid orphaned tool_result blocks
+    // that reference a tool_use_id from a removed assistant message.
+    while (trimmedMessages.length > 0 && trimmedMessages[0].role === 'assistant') {
         trimmedMessages.shift();
+        // If the next message is a paired tool_result, remove it too
+        if (trimmedMessages.length > 0 && trimmedMessages[0].role === 'user' &&
+            Array.isArray(trimmedMessages[0].content) &&
+            trimmedMessages[0].content.some((b: any) => b.type === 'tool_result')) {
+            trimmedMessages.shift();
+        }
     }
 
     return {

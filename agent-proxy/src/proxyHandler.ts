@@ -301,6 +301,8 @@ export async function handleProxyRequest(req: Request, res: Response) {
         const smartResult = await smartRoute(optimizedBody, isGemini, !!isOpenAI);
         if (smartResult.routed) {
             optimizedBody = { ...optimizedBody, model: smartResult.newModel };
+            // Strip thinking parameters — downgraded models may not support adaptive thinking
+            delete optimizedBody.thinking;
             globalStats.smartRouteDowngrades++;
             const origCost = getInputCost(smartResult.originalModel);
             const newCost = getInputCost(smartResult.newModel);

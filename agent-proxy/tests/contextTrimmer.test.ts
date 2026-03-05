@@ -80,6 +80,48 @@ describe('Context Trimmer', () => {
             }
         });
 
+        it('should not leave orphaned tool_result when trim boundary falls on a tool pair', () => {
+            // Reproduce: trimming removes old messages, leaving a tool_use/tool_result
+            // pair as the first messages. The assistant gets shifted to satisfy
+            // "first message must be user", but the paired tool_result must also be removed.
+            const filler = Array.from({ length: 1600 }, (_, i) => ({
+                role: i % 2 === 0 ? 'user' : 'assistant',
+                content: 'X'.repeat(500),
+            }));
+            // Place a tool pair right after the filler — this will be near the trim boundary
+            const toolPair = [
+                {
+                    role: 'assistant',
+                    content: [{ type: 'tool_use', id: 'toolu_orphan', name: 'read_file', input: {} }]
+                },
+                {
+                    role: 'user',
+                    content: [{ type: 'tool_result', tool_use_id: 'toolu_orphan', content: 'result' }]
+                },
+            ];
+            const recentMsgs = [
+                { role: 'user', content: 'continue' },
+                { role: 'assistant', content: 'ok' },
+                { role: 'user', content: 'final question' },
+            ];
+            const body = {
+                model: 'claude-sonnet-4-6',
+                system: 'sys',
+                messages: [...filler, ...toolPair, ...recentMsgs]
+            };
+            const result = trimContext(body, false, false, 'claude-sonnet-4-6');
+            expect(result.trimmed).toBe(true);
+            // First message must be a user message WITHOUT tool_result
+            const firstMsg = result.body.messages[0];
+            expect(firstMsg.role).toBe('user');
+            if (Array.isArray(firstMsg.content)) {
+                const hasOrphanedToolResult = firstMsg.content.some(
+                    (b: any) => b.type === 'tool_result'
+                );
+                expect(hasOrphanedToolResult).toBe(false);
+            }
+        });
+
         it('should preserve system prompt entirely', () => {
             const longSystem = 'S'.repeat(100_000);
             const messages = Array.from({ length: 800 }, (_, i) => ({

@@ -32,6 +32,8 @@ export async function attemptShadowRouterFailover(reqBody: any, originalHeaders:
     console.log(`[SHADOW ROUTER] 🔀 429 on ${reqBody.model}. Failing over to ${config.fallbackModel}...`);
 
     const failoverBody = { ...reqBody, model: config.fallbackModel };
+    // Strip thinking parameters — fallback models may not support adaptive thinking
+    delete failoverBody.thinking;
     const url = config.provider === 'anthropic' ? ANTHROPIC_API_URL : OPENAI_API_URL;
 
     const init: RequestInit = {
