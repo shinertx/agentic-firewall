@@ -6,7 +6,7 @@
 // ─── Circuit Breaker ────────────────────────────────────
 export const CB_TTL_MS = 5 * 60 * 1000;          // Entries expire after 5 minutes
 export const CB_WINDOW_SIZE = 5;                   // Sliding window of recent hashes
-export const CB_THRESHOLD = 4;                     // Identical requests before blocking
+export const CB_THRESHOLD = 3;                     // Identical requests before blocking
 
 // ─── No-Progress Detection ──────────────────────────────
 export const NP_FAILURE_STATE_TTL_MS = 10 * 60 * 1000;  // Expire stale failure states after 10 min

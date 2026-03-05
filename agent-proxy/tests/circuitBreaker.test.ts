@@ -3,7 +3,7 @@ import { checkCircuitBreaker } from '../src/circuitBreaker';
 
 describe('Circuit Breaker (Loop Detection)', () => {
 
-    it('should not block on the first, second, or third request', async () => {
+    it('should not block on the first or second request', async () => {
         const body = { model: 'test-model', messages: [{ role: 'user', content: 'cb_test_1' }] };
         const r1 = await checkCircuitBreaker('10.0.0.1', body);
         expect(r1.blocked).toBe(false);
@@ -14,15 +14,10 @@ describe('Circuit Breaker (Loop Detection)', () => {
         expect(r2.blocked).toBe(false);
         expect(r2.hash).toBe(r1.hash);
         expect(r2.identicalCount).toBe(2);
-
-        const r3 = await checkCircuitBreaker('10.0.0.1', body);
-        expect(r3.blocked).toBe(false);
-        expect(r3.identicalCount).toBe(3);
     });
 
-    it('should block on the fourth identical request in a row', async () => {
+    it('should block on the third identical request in a row', async () => {
         const body = { model: 'claude-sonnet', messages: [{ role: 'user', content: 'stuck_in_loop_v2' }] };
-        expect((await checkCircuitBreaker('10.0.0.2', body)).blocked).toBe(false);
         expect((await checkCircuitBreaker('10.0.0.2', body)).blocked).toBe(false);
         expect((await checkCircuitBreaker('10.0.0.2', body)).blocked).toBe(false);
 
@@ -30,7 +25,7 @@ describe('Circuit Breaker (Loop Detection)', () => {
         expect(result.blocked).toBe(true);
         expect(result.reason).toContain('Loop detected');
         expect(result.hash).toBeTruthy();
-        expect(result.identicalCount).toBe(4);
+        expect(result.identicalCount).toBe(3);
     });
 
     it('should not block if the user message changes', async () => {
@@ -49,7 +44,6 @@ describe('Circuit Breaker (Loop Detection)', () => {
     it('should key on API-key instead of IP when provided', async () => {
         const body = { model: 'test', messages: [{ role: 'user', content: 'api_key_test' }] };
         const apiKey = 'sk-test-key-123';
-        expect((await checkCircuitBreaker('10.0.0.5', body, apiKey)).blocked).toBe(false);
         expect((await checkCircuitBreaker('10.0.0.5', body, apiKey)).blocked).toBe(false);
         expect((await checkCircuitBreaker('10.0.0.5', body, apiKey)).blocked).toBe(false);
 
@@ -81,9 +75,8 @@ describe('Circuit Breaker (Loop Detection)', () => {
         // Use different IPs and apiKeys but same sessionId — should still accumulate
         expect((await checkCircuitBreaker('10.0.0.7', body, 'sk-key-a', sessionId)).blocked).toBe(false);
         expect((await checkCircuitBreaker('10.0.0.8', body, 'sk-key-b', sessionId)).blocked).toBe(false);
-        expect((await checkCircuitBreaker('10.0.0.9', body, 'sk-key-c', sessionId)).blocked).toBe(false);
 
-        const result = await checkCircuitBreaker('10.0.0.10', body, 'sk-key-d', sessionId);
+        const result = await checkCircuitBreaker('10.0.0.9', body, 'sk-key-c', sessionId);
         expect(result.blocked).toBe(true);
         expect(result.reason).toContain('Loop detected');
     });
@@ -96,12 +89,9 @@ describe('Circuit Breaker (Loop Detection)', () => {
         const r2 = await checkCircuitBreaker('10.0.0.11', body);
         expect(r2.identicalCount).toBe(2);
 
+        // 3rd call triggers the block, identicalCount should be 3
         const r3 = await checkCircuitBreaker('10.0.0.11', body);
         expect(r3.identicalCount).toBe(3);
-
-        // 4th call triggers the block, identicalCount should be 4
-        const r4 = await checkCircuitBreaker('10.0.0.11', body);
-        expect(r4.identicalCount).toBe(4);
-        expect(r4.blocked).toBe(true);
+        expect(r3.blocked).toBe(true);
     });
 });

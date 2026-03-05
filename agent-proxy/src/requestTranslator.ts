@@ -399,17 +399,25 @@ export function translateRequest(
     sourceFormat: ProviderFormat,
     targetProvider: string,
     targetModel: string,
+    callerKey?: string,
 ): TranslationResult | TranslationError {
     try {
         if (hasToolUseContent(body, sourceFormat)) {
             return { error: 'Cannot translate requests with tool use content', reason: 'tool_use' };
         }
 
-        const keyResult = getProviderKey(targetProvider as any);
-        if ('error' in keyResult) {
-            return { error: keyResult.error, reason: 'no_key' };
+        // Use the caller's own key if provided; only fall back to server-side
+        // env keys when no caller key is available (local-first mode).
+        let apiKey: string;
+        if (callerKey) {
+            apiKey = callerKey;
+        } else {
+            const keyResult = getProviderKey(targetProvider as any);
+            if ('error' in keyResult) {
+                return { error: keyResult.error, reason: 'no_key' };
+            }
+            apiKey = keyResult.key;
         }
-        const apiKey = keyResult.key;
 
         const estimatedTokens = JSON.stringify(body).length / 4;
         const contextWindow = getContextWindow(targetModel);

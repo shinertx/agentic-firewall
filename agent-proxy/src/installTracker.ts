@@ -10,6 +10,7 @@
 import https from 'https';
 import http from 'http';
 import { isRedisAvailable, getRedisClient } from './redis';
+import type { EnvironmentType } from './environmentDetector';
 
 export interface InstallRecord {
     machineId: string;
@@ -31,6 +32,7 @@ export interface InstallRecord {
         other: number;
     };
     totalPings: number;
+    environment: EnvironmentType;
 }
 
 export interface TelemetryEvent {
@@ -44,6 +46,7 @@ export interface TelemetryEvent {
     node: string;
     isFirstRun: boolean;
     timestamp: string;
+    environment?: EnvironmentType;
 }
 
 // Redis key patterns
@@ -79,6 +82,7 @@ export function recordTelemetryEvent(event: TelemetryEvent): void {
         existing.lastSeen = event.timestamp;
         existing.lastVersion = event.version;
         existing.totalPings++;
+        if (event.environment) existing.environment = event.environment;
         if (isValidCommand(event.command)) {
             existing.commandCounts[event.command]++;
         } else {
@@ -106,6 +110,7 @@ export function recordTelemetryEvent(event: TelemetryEvent): void {
             nodeVersion: event.node,
             commandCounts,
             totalPings: 1,
+            environment: event.environment || 'unknown',
         });
     }
 
@@ -126,16 +131,20 @@ export function getInstallStats(): {
     platformBreakdown: Record<string, number>;
     archBreakdown: Record<string, number>;
     versionBreakdown: Record<string, number>;
+    environmentBreakdown: Record<string, number>;
 } {
     const records = Array.from(installs.values());
     const platformBreakdown: Record<string, number> = {};
     const archBreakdown: Record<string, number> = {};
     const versionBreakdown: Record<string, number> = {};
+    const environmentBreakdown: Record<string, number> = {};
 
     for (const r of records) {
         platformBreakdown[r.platform] = (platformBreakdown[r.platform] || 0) + 1;
         archBreakdown[r.arch] = (archBreakdown[r.arch] || 0) + 1;
         versionBreakdown[r.lastVersion] = (versionBreakdown[r.lastVersion] || 0) + 1;
+        const env = r.environment || 'unknown';
+        environmentBreakdown[env] = (environmentBreakdown[env] || 0) + 1;
     }
 
     return {
@@ -145,6 +154,7 @@ export function getInstallStats(): {
         platformBreakdown,
         archBreakdown,
         versionBreakdown,
+        environmentBreakdown,
     };
 }
 
@@ -159,6 +169,30 @@ export function getInstallBreakdown(): {
 } {
     const { uniqueInstalls, platformBreakdown, archBreakdown, versionBreakdown } = getInstallStats();
     return { uniqueInstalls, platformBreakdown, archBreakdown, versionBreakdown };
+}
+
+/**
+ * Get daily install timeline for the last N days (gap-filled).
+ */
+export function getDailyInstallTimeline(days: number = 30): Array<{ date: string; count: number }> {
+    const records = Array.from(installs.values());
+    const dayCounts = new Map<string, number>();
+
+    for (const r of records) {
+        const date = r.firstSeen.slice(0, 10); // YYYY-MM-DD
+        dayCounts.set(date, (dayCounts.get(date) || 0) + 1);
+    }
+
+    // Gap-fill from (today - days) to today
+    const result: Array<{ date: string; count: number }> = [];
+    const now = new Date();
+    for (let i = days - 1; i >= 0; i--) {
+        const d = new Date(now);
+        d.setDate(d.getDate() - i);
+        const dateStr = d.toISOString().slice(0, 10);
+        result.push({ date: dateStr, count: dayCounts.get(dateStr) || 0 });
+    }
+    return result;
 }
 
 /**
@@ -262,6 +296,7 @@ function syncInstallToRedis(machineId: string, record: InstallRecord): void {
         nodeVersion: record.nodeVersion,
         commandCounts: JSON.stringify(record.commandCounts),
         totalPings: record.totalPings.toString(),
+        environment: record.environment || 'unknown',
     }).then(() => redis.sadd(REDIS_INSTALL_IDS_KEY, machineId)).catch(() => {});
 }
 
@@ -290,6 +325,7 @@ export async function loadInstallsFromRedis(): Promise<boolean> {
                         run: 0, replay: 0, uninstall: 0, other: 0,
                     },
                     totalPings: parseInt(data.totalPings) || 0,
+                    environment: (data.environment as any) || 'unknown',
                 });
                 loaded++;
             }
@@ -322,6 +358,7 @@ export async function saveInstallsToRedis(): Promise<void> {
                 nodeVersion: record.nodeVersion,
                 commandCounts: JSON.stringify(record.commandCounts),
                 totalPings: record.totalPings.toString(),
+                environment: record.environment || 'unknown',
             });
             pipeline.sadd(REDIS_INSTALL_IDS_KEY, id);
         }
@@ -343,6 +380,7 @@ export function exportInstallData(): Record<string, InstallRecord> {
 
 export function importInstallData(data: Record<string, InstallRecord>): void {
     for (const [id, record] of Object.entries(data)) {
+        if (!record.environment) record.environment = 'unknown';
         installs.set(id, record);
     }
 }

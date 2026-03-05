@@ -536,7 +536,7 @@ export async function handleProxyRequest(req: Request, res: Response) {
         } else {
             // Cross-provider failover as second-stage fallback
             const originalModel = optimizedBody?.model || '';
-            const crossRes = await attemptCrossProviderFailover(optimizedBody, originalModel, provider);
+            const crossRes = await attemptCrossProviderFailover(optimizedBody, originalModel, provider, headers);
             if (crossRes) {
                 response = crossRes.response;
                 statusText = `Cross-Provider Failover (${crossRes.targetProvider})`;

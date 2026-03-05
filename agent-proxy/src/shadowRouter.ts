@@ -116,14 +116,38 @@ function extractGeminiModel(url: string): string | null {
 }
 
 /**
+ * Extract the caller's API key for a target provider from the original request headers.
+ * Returns the key string if found, or null if the caller has no key for that provider.
+ */
+function extractCallerKeyForProvider(headers: Record<string, string>, targetProvider: string): string | null {
+    if (targetProvider === 'anthropic') {
+        return headers['x-api-key'] || null;
+    }
+    if (targetProvider === 'openai' || targetProvider === 'nvidia') {
+        const auth = headers['authorization'] || '';
+        if (auth.startsWith('Bearer ')) return auth.slice(7);
+        return auth || null;
+    }
+    if (targetProvider === 'gemini') {
+        return headers['x-goog-api-key'] || null;
+    }
+    return null;
+}
+
+/**
  * Cross-provider failover: translate the request to a different provider
  * and attempt the call there. Used when same-provider failover is not
  * available or also rate-limited.
+ *
+ * IMPORTANT: Uses the caller's own API keys extracted from originalHeaders.
+ * If the caller doesn't have a key for the target provider, the failover
+ * is skipped entirely — we never fall back to server-side env keys.
  */
 export async function attemptCrossProviderFailover(
     reqBody: any,
     originalModel: string,
     sourceProvider: string,
+    originalHeaders: Record<string, string>,
 ): Promise<{ response: Response; targetModel: string; targetProvider: string } | null> {
     try {
         const { detectFormat, findCrossProviderTarget, hasToolUseContent, translateRequest } = await import('./requestTranslator');
@@ -132,10 +156,19 @@ export async function attemptCrossProviderFailover(
         const target = findCrossProviderTarget(originalModel);
         if (!target) return null;
 
+        // Extract the caller's API key for the target provider from the original request headers.
+        // If the caller doesn't have a key for the target provider, skip the failover
+        // to avoid silently spending server-side API credits.
+        const callerKey = extractCallerKeyForProvider(originalHeaders, target.targetProvider);
+        if (!callerKey) {
+            console.log(`[SHADOW ROUTER] Skipping cross-provider failover to ${target.targetProvider}: caller has no key for target provider`);
+            return null;
+        }
+
         const format = detectFormat(reqBody);
         if (hasToolUseContent(reqBody, format)) return null;
 
-        const translation = translateRequest(reqBody, format, target.targetProvider, target.targetModel);
+        const translation = translateRequest(reqBody, format, target.targetProvider, target.targetModel, callerKey);
         if ('error' in translation) return null;
 
         console.log(`[SHADOW ROUTER] 🌐 Cross-provider failover: ${sourceProvider}/${originalModel} → ${target.targetProvider}/${target.targetModel}`);

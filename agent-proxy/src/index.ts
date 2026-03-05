@@ -13,6 +13,14 @@ dotenv.config();
 const firewallEnvPath = path.join(os.homedir(), '.firewall', '.env');
 dotenv.config({ path: firewallEnvPath });
 
+import { initAdminCredentials, requireAdminAuth, requireAdminPage, validateCredentials, createSession, destroySession, parseCookies, hasCredentialsConfigured } from './adminAuth';
+import { classifyEnvironment } from './environmentDetector';
+import { renderAdminLogin } from './pages/adminLogin';
+import { renderAdminDashboard, type AdminDashboardData } from './pages/admin';
+
+// Initialize admin credentials from env vars
+initAdminCredentials();
+
 const app = express();
 const PORT = process.env.PORT || 4000;
 
@@ -56,14 +64,7 @@ app.use((err: any, req: Request, res: Response, next: express.NextFunction) => {
     next(err);
 });
 
-// Admin auth middleware — protects stats/aggregate endpoints
-const ADMIN_TOKEN = process.env.ADMIN_TOKEN || '';
-function requireAdmin(req: Request, res: Response, next: express.NextFunction) {
-    if (!ADMIN_TOKEN) return next(); // No token configured = open access (backwards compatible)
-    const auth = req.headers.authorization || '';
-    if (auth === `Bearer ${ADMIN_TOKEN}`) return next();
-    res.status(401).json({ error: 'Unauthorized — set Authorization: Bearer <ADMIN_TOKEN>' });
-}
+// Admin auth middleware — uses imported requireAdminAuth from adminAuth.ts
 
 // Simple per-IP rate limiter for public endpoints (no external deps)
 import { RATE_LIMIT_WINDOW_MS, RATE_LIMIT_MAX } from './config';
@@ -107,7 +108,7 @@ app.post('/api/register', express.json(), (req: Request, res: Response) => {
     console.log(`[REGISTER] 📥 Setup complete from ${req.ip} — ${ping.platform}/${ping.arch} node ${ping.node} v${ping.version}`);
     // Bridge to install tracker so old CLI versions get tracked too
     if (ping.platform) {
-        recordTelemetryEvent({
+        const bridgeEvent = {
             event: ping.event || 'setup_complete',
             command: 'setup',
             machineId: ping.machineId || `legacy-${(req.ip || '127.0.0.1').replace(/[:.]/g, '')}`,
@@ -118,12 +119,14 @@ app.post('/api/register', express.json(), (req: Request, res: Response) => {
             node: ping.node || 'unknown',
             isFirstRun: true,
             timestamp: ping.timestamp || new Date().toISOString(),
-        });
+            environment: classifyEnvironment(ping, req.headers['user-agent'] || '') as any,
+        };
+        recordTelemetryEvent(bridgeEvent);
     }
     res.json({ ok: true, totalRegistrations: registrations.length });
 });
 
-app.get('/api/registrations', requireAdmin, (req: Request, res: Response) => {
+app.get('/api/registrations', requireAdminAuth, (req: Request, res: Response) => {
     res.json({ total: registrations.length, registrations });
 });
 
@@ -133,13 +136,17 @@ app.post('/api/telemetry', express.json(), (req: Request, res: Response) => {
     if (!event.machineId || !event.event) {
         return res.status(400).json({ error: { message: 'Missing machineId or event' } });
     }
+    // Server-side environment classification if client didn't provide one
+    if (!event.environment) {
+        event.environment = classifyEnvironment(event, req.headers['user-agent'] || '');
+    }
     recordTelemetryEvent(event);
-    console.log(`[TELEMETRY] ${event.event} from ${event.machineId} — ${event.platform}/${event.arch} v${event.version} [${event.command}]`);
+    console.log(`[TELEMETRY] ${event.event} from ${event.machineId} — ${event.platform}/${event.arch} v${event.version} [${event.command}] env=${event.environment}`);
     res.json({ ok: true });
 });
 
 // Install stats (admin only — full install records)
-app.get('/api/installs', requireAdmin, (req: Request, res: Response) => {
+app.get('/api/installs', requireAdminAuth, (req: Request, res: Response) => {
     res.json(getInstallStats());
 });
 
@@ -211,7 +218,7 @@ import { getAllSessions, getSessionStats, getUserSessions, exportSessionData, im
 import { getQueueStats } from './requestQueue';
 import { getCacheStats } from './responseCache';
 import { getCompressionStats } from './promptCompressor';
-import { recordTelemetryEvent, getInstallStats, getInstallBreakdown, getNpmStats, getUniqueInstallCount, exportInstallData, importInstallData, loadInstallsFromRedis, saveInstallsToRedis } from './installTracker';
+import { recordTelemetryEvent, getInstallStats, getInstallBreakdown, getNpmStats, getUniqueInstallCount, getDailyInstallTimeline, exportInstallData, importInstallData, loadInstallsFromRedis, saveInstallsToRedis } from './installTracker';
 import { isRedisAvailable } from './redis';
 import { startTelemetry, flushTelemetry } from './telemetryReporter';
 
@@ -293,13 +300,13 @@ setInterval(async () => {
     }
 }, 30_000);
 
-app.get('/api/user/:userId', requireAdmin, (req: Request, res: Response) => {
+app.get('/api/user/:userId', requireAdminAuth, (req: Request, res: Response) => {
     const stats = getUserStats(req.params.userId as string);
     if (!stats) return res.status(404).json({ error: 'User not found' });
     res.json(stats);
 });
 
-app.get('/api/aggregate', requireAdmin, (req: Request, res: Response) => {
+app.get('/api/aggregate', requireAdminAuth, (req: Request, res: Response) => {
     const agg = getAggregateStats();
     const np = getNoProgressStats();
     const queueStats = getQueueStats();
@@ -321,18 +328,110 @@ app.get('/api/aggregate', requireAdmin, (req: Request, res: Response) => {
 });
 
 // Session tracking API
-app.get('/api/sessions', requireAdmin, (req: Request, res: Response) => {
+app.get('/api/sessions', requireAdminAuth, (req: Request, res: Response) => {
     res.json(getAllSessions());
 });
 
-app.get('/api/sessions/:id', requireAdmin, (req: Request, res: Response) => {
+app.get('/api/sessions/:id', requireAdminAuth, (req: Request, res: Response) => {
     const session = getSessionStats(req.params.id as string);
     if (!session) return res.status(404).json({ error: 'Session not found' });
     res.json(session);
 });
 
-app.get('/api/user/:userId/sessions', requireAdmin, (req: Request, res: Response) => {
+app.get('/api/user/:userId/sessions', requireAdminAuth, (req: Request, res: Response) => {
     res.json(getUserSessions(req.params.userId as string));
+});
+
+// ─── Admin Dashboard Routes ──────────────────────────────
+
+app.get('/admin/login', (req: Request, res: Response) => {
+    res.setHeader('Content-Type', 'text/html');
+    res.send(renderAdminLogin());
+});
+
+app.post('/admin/login', express.urlencoded({ extended: false }), (req: Request, res: Response) => {
+    const { username, password } = req.body || {};
+    if (!username || !password || !validateCredentials(username, password)) {
+        res.setHeader('Content-Type', 'text/html');
+        res.send(renderAdminLogin('Invalid username or password'));
+        return;
+    }
+    const sessionId = createSession(username);
+    res.setHeader('Set-Cookie', `admin_session=${sessionId}; Path=/; HttpOnly; SameSite=Strict; Max-Age=86400`);
+    res.redirect('/admin');
+});
+
+app.post('/admin/logout', (req: Request, res: Response) => {
+    const cookies = parseCookies(req.headers.cookie);
+    const sessionId = cookies['admin_session'];
+    if (sessionId) destroySession(sessionId);
+    res.setHeader('Set-Cookie', 'admin_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0');
+    res.redirect('/admin/login');
+});
+
+app.get('/admin', requireAdminPage, async (req: Request, res: Response) => {
+    const stats = getInstallStats();
+    let npmStats = { weekly: 0, monthly: 0 };
+    try { npmStats = await getNpmStats(); } catch {}
+
+    const data: AdminDashboardData = {
+        npmWeekly: npmStats.weekly,
+        npmMonthly: npmStats.monthly,
+        uniqueInstalls: stats.uniqueInstalls,
+        totalPings: stats.totalInstalls,
+        environmentBreakdown: stats.environmentBreakdown,
+        platformBreakdown: stats.platformBreakdown,
+        archBreakdown: stats.archBreakdown,
+        versionBreakdown: stats.versionBreakdown,
+        dailyTimeline: getDailyInstallTimeline(30),
+        recentInstalls: stats.installs
+            .sort((a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime())
+            .slice(0, 20)
+            .map(r => ({
+                machineId: r.machineId,
+                platform: r.platform,
+                arch: r.arch,
+                lastVersion: r.lastVersion,
+                environment: r.environment || 'unknown',
+                firstSeen: r.firstSeen,
+                lastSeen: r.lastSeen,
+                totalPings: r.totalPings,
+            })),
+    };
+
+    res.setHeader('Content-Type', 'text/html');
+    res.send(renderAdminDashboard(data));
+});
+
+app.get('/api/admin/stats', requireAdminAuth, async (req: Request, res: Response) => {
+    const stats = getInstallStats();
+    let npmStats = { weekly: 0, monthly: 0 };
+    try { npmStats = await getNpmStats(); } catch {}
+
+    res.json({
+        npmWeekly: npmStats.weekly,
+        npmMonthly: npmStats.monthly,
+        uniqueInstalls: stats.uniqueInstalls,
+        totalPings: stats.totalInstalls,
+        environmentBreakdown: stats.environmentBreakdown,
+        platformBreakdown: stats.platformBreakdown,
+        archBreakdown: stats.archBreakdown,
+        versionBreakdown: stats.versionBreakdown,
+        dailyTimeline: getDailyInstallTimeline(30),
+        recentInstalls: stats.installs
+            .sort((a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime())
+            .slice(0, 20)
+            .map(r => ({
+                machineId: r.machineId,
+                platform: r.platform,
+                arch: r.arch,
+                lastVersion: r.lastVersion,
+                environment: r.environment || 'unknown',
+                firstSeen: r.firstSeen,
+                lastSeen: r.lastSeen,
+                totalPings: r.totalPings,
+            })),
+    });
 });
 
 // Landing page (extracted to src/pages/landing.ts)
