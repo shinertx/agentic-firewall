@@ -5,6 +5,11 @@ import { getInputCost, CACHE_SAVINGS_RATE } from './pricing';
 import { generateCacheKey } from './tokenCounter';
 import { getUserId, checkBudget, recordUserSpend, recordUserLoop, getOrCreateUser } from './budgetGovernor';
 import { checkNoProgress } from './noProgress';
+import { smartRoute } from './smartRouter';
+import { trimContext } from './contextTrimmer';
+import { getCachedResponse, setCachedResponse } from './responseCache';
+import { parseUsageFromChunks } from './usageParser';
+import { globalStats, recordActivity } from './stats';
 
 // Explicit Interfaces for Edge Case Handling
 export interface LLMRequest {
@@ -234,6 +239,7 @@ export async function handleProxyRequest(req: Request, res: Response) {
     let originalBodyStr = req.body ? JSON.stringify(req.body) : "";
     const apiKey = (req.headers['x-api-key'] || req.headers['authorization'] || '') as string;
     const userId = getUserId(apiKey);
+    let requestHash = '';
 
     if (req.method !== 'GET' && req.method !== 'HEAD' && req.body && Object.keys(req.body).length > 0) {
         const ip = req.ip || '127.0.0.1';
@@ -242,6 +248,23 @@ export async function handleProxyRequest(req: Request, res: Response) {
             recordUserLoop(userId);
             res.status(400).json({ error: { message: cb.reason, type: 'agentic_firewall_blocked' } });
             return;
+        }
+        requestHash = cb.hash;
+
+        // Response Cache — serve cached response for repeated identical requests
+        if (cb.identicalCount >= 2) {
+            const cached = getCachedResponse(cb.hash);
+            if (cached) {
+                console.log(`[RESPONSE CACHE] Serving cached response for repeat request (${cb.identicalCount}x identical)`);
+                globalStats.responseCacheHits++;
+                Object.entries(cached.headers).forEach(([key, value]) => {
+                    res.setHeader(key, value);
+                });
+                res.status(cached.statusCode);
+                res.end(cached.body);
+                return;
+            }
+            globalStats.responseCacheMisses++;
         }
 
         // Budget governor — check spend cap
@@ -274,8 +297,29 @@ export async function handleProxyRequest(req: Request, res: Response) {
             return;
         }
 
-        // Deep copy so we don't accidentally mutate the original request when passing it
-        const result = applyContextCDN(JSON.parse(originalBodyStr), isGemini, req.originalUrl);
+        // Smart Router — downgrade model for simple requests
+        const smartResult = await smartRoute(optimizedBody, isGemini, !!isOpenAI);
+        if (smartResult.routed) {
+            optimizedBody = { ...optimizedBody, model: smartResult.newModel };
+            globalStats.smartRouteDowngrades++;
+            const origCost = getInputCost(smartResult.originalModel);
+            const newCost = getInputCost(smartResult.newModel);
+            const estTokens = Math.round(originalBodyStr.length / 4);
+            globalStats.smartRouteSavings += (estTokens / 1_000_000) * (origCost - newCost);
+            console.log(`[SMART ROUTER] ${smartResult.originalModel} → ${smartResult.newModel} (${smartResult.complexity}: ${smartResult.reason})`);
+        }
+
+        // Context Trimmer — reduce oversized payloads before upstream dispatch
+        const trimResult = trimContext(optimizedBody, isGemini, !!isOpenAI, optimizedBody?.model || '', originalBodyStr.length);
+        if (trimResult.trimmed) {
+            optimizedBody = trimResult.body;
+            globalStats.trimmedRequests++;
+            globalStats.trimmedTokensSaved += trimResult.trimmedTokens;
+            console.log(`[CONTEXT TRIMMER] Trimmed ${trimResult.removedMessages} msgs, saved ~${trimResult.trimmedTokens} tokens`);
+        }
+
+        // Apply Context CDN (cache headers) on the optimized body
+        const result = applyContextCDN(JSON.parse(JSON.stringify(optimizedBody)), isGemini, req.originalUrl);
         optimizedBody = result.body;
         init.body = JSON.stringify(optimizedBody);
 
@@ -316,60 +360,6 @@ export async function handleProxyRequest(req: Request, res: Response) {
         }
     }
 
-    // Record stats — ONLY for actual LLM API calls (POST with a body), not bot/crawler GET requests
-    import('./stats').then(({ globalStats, recordActivity }) => {
-        // Extract model name accurately before math
-        let displayModel = optimizedBody?.model || 'unknown';
-        if (isGemini) {
-            const urlMatch = req.originalUrl.match(/models\/(gemini-[^:]+)/);
-            if (urlMatch) displayModel = urlMatch[1];
-        } else if (isOpenAI || (typeof isNvidia !== 'undefined' && isNvidia)) {
-            displayModel = optimizedBody?.model || 'unknown';
-        }
-
-        // Skip stats for non-LLM traffic (GET requests, bot crawlers, health checks, favicon etc.)
-        if (req.method === 'GET' || req.method === 'HEAD' || !req.body || Object.keys(req.body).length === 0) {
-            return; // Do NOT count bots/crawlers in our stats
-        }
-
-        globalStats.totalRequests++;
-
-        // Estimate prompt size: 1 token ~= 4 characters.
-        const estimatedPromptTokens = Math.max(Math.round(originalBodyStr.length / 4), 1000);
-
-        const optimizedStr = optimizedBody ? JSON.stringify(optimizedBody) : "";
-        const proxyModified = optimizedStr !== originalBodyStr;
-        const clientHasCaching = hasExistingCacheControl(req.body);
-        const isCDN = statusText === 'Pass-through' && (proxyModified || clientHasCaching);
-
-        if (isCDN) {
-            statusText = 'Context CDN Hit';
-            statusColor = 'text-emerald-400 bg-emerald-400/10';
-
-            // Dynamic pricing via centralized pricing module
-            const inputCostPerMillionTokens = getInputCost(displayModel);
-
-            // Calculate the dollar value of cached tokens
-            const baseCost = (estimatedPromptTokens / 1_000_000) * inputCostPerMillionTokens;
-            const savingsCost = baseCost * CACHE_SAVINGS_RATE;
-            const savedTokens = estimatedPromptTokens * CACHE_SAVINGS_RATE;
-
-            globalStats.savedTokens += savedTokens;
-            globalStats.savedMoney += savingsCost;
-        }
-
-        // Record per-user spend
-        recordUserSpend(userId, displayModel, estimatedPromptTokens, isCDN);
-
-        recordActivity({
-            time: new Date().toLocaleTimeString(),
-            model: displayModel,
-            tokens: estimatedPromptTokens ? `${Math.round(estimatedPromptTokens / 1000)}k` : 'auto',
-            status: statusText,
-            statusColor
-        });
-    });
-
     // Forward response headers
     response.headers.forEach((value, key) => {
         if (key.toLowerCase() !== 'transfer-encoding' && key.toLowerCase() !== 'content-encoding') {
@@ -390,16 +380,90 @@ export async function handleProxyRequest(req: Request, res: Response) {
         return res.end();
     }
 
+    // Stream response and capture chunks for usage parsing + response caching
     const reader = response.body.getReader();
+    const chunks: Buffer[] = [];
     try {
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
+            chunks.push(Buffer.from(value));
             res.write(value);
         }
     } catch (err) {
         console.error('[PROXY STREAM ERROR]', err);
     } finally {
         res.end();
+    }
+
+    // Parse real token usage from the response stream
+    const provider = isGemini ? 'gemini' : isOpenAI ? 'openai' : 'anthropic';
+    const usage = parseUsageFromChunks(chunks, provider);
+    if (usage) {
+        globalStats.realInputTokens += usage.inputTokens;
+        globalStats.realOutputTokens += usage.outputTokens;
+        globalStats.realCachedTokens += usage.cachedTokens;
+
+        // Track estimation accuracy
+        const estimated = Math.round(originalBodyStr.length / 4);
+        const actual = usage.inputTokens + usage.cachedTokens + usage.cacheCreationTokens;
+        if (actual > 0) {
+            globalStats.estimationErrorSum += Math.abs(estimated - actual) / actual;
+            globalStats.estimationSamples++;
+        }
+    }
+
+    // Store in response cache for identical-request deduplication
+    if (response.status === 200 && requestHash) {
+        const fullBody = Buffer.concat(chunks);
+        const contentType = response.headers.get('content-type') || '';
+        const responseHeaders: Record<string, string> = {};
+        response.headers.forEach((v, k) => {
+            if (k.toLowerCase() !== 'transfer-encoding' && k.toLowerCase() !== 'content-encoding') {
+                responseHeaders[k] = v;
+            }
+        });
+        setCachedResponse(requestHash, 200, responseHeaders, fullBody, contentType);
+    }
+
+    // Record stats — ONLY for actual LLM API calls (POST with a body)
+    if (req.method !== 'GET' && req.method !== 'HEAD' && req.body && Object.keys(req.body).length > 0) {
+        let displayModel = optimizedBody?.model || 'unknown';
+        if (isGemini) {
+            const urlMatch = req.originalUrl.match(/models\/(gemini-[^:]+)/);
+            if (urlMatch) displayModel = urlMatch[1];
+        }
+
+        globalStats.totalRequests++;
+
+        const estimatedPromptTokens = Math.max(Math.round(originalBodyStr.length / 4), 1000);
+
+        const optimizedStr = optimizedBody ? JSON.stringify(optimizedBody) : "";
+        const proxyModified = optimizedStr !== originalBodyStr;
+        const clientHasCaching = hasExistingCacheControl(req.body);
+        const isCDN = statusText === 'Pass-through' && (proxyModified || clientHasCaching);
+
+        if (isCDN) {
+            statusText = 'Context CDN Hit';
+            statusColor = 'text-emerald-400 bg-emerald-400/10';
+
+            const inputCostPerMillionTokens = getInputCost(displayModel);
+            const baseCost = (estimatedPromptTokens / 1_000_000) * inputCostPerMillionTokens;
+            const savingsCost = baseCost * CACHE_SAVINGS_RATE;
+            const savedTokens = estimatedPromptTokens * CACHE_SAVINGS_RATE;
+
+            globalStats.savedTokens += savedTokens;
+            globalStats.savedMoney += savingsCost;
+        }
+
+        recordUserSpend(userId, displayModel, estimatedPromptTokens, isCDN);
+
+        recordActivity({
+            time: new Date().toLocaleTimeString(),
+            model: displayModel,
+            tokens: estimatedPromptTokens ? `${Math.round(estimatedPromptTokens / 1000)}k` : 'auto',
+            status: statusText,
+            statusColor
+        });
     }
 }

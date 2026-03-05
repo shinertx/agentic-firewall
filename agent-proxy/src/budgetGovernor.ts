@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { getInputCost } from './pricing';
+import { isRedisAvailable, getRedisClient } from './redis';
 
 /**
  * Budget Governor — per-user spend tracking and enforcement.
@@ -23,7 +24,11 @@ export interface UserBudget {
     lastSeen: string;
 }
 
-// In-memory per-user tracking — persisted via stats.ts
+// Redis key patterns
+const REDIS_USER_PREFIX = 'firewall:user:';
+const REDIS_USER_IDS_KEY = 'firewall:user_ids';
+
+// In-memory per-user tracking — synced to Redis when available
 const userBudgets = new Map<string, UserBudget>();
 
 /**
@@ -99,6 +104,8 @@ export function recordUserSpend(userId: string, model: string, estimatedTokens: 
         user.savedMoney += saved;
         user.savedTokens += estimatedTokens * 0.9;
     }
+
+    syncUserToRedis(userId, user);
 }
 
 /**
@@ -107,6 +114,7 @@ export function recordUserSpend(userId: string, model: string, estimatedTokens: 
 export function recordUserLoop(userId: string) {
     const user = getOrCreateUser(userId);
     user.blockedLoops++;
+    syncUserToRedis(userId, user);
 }
 
 /**
@@ -164,7 +172,91 @@ export function reconcileUserSpend(
         user.savedMoney += (realSaved - estimatedSaved);
         user.savedTokens += (realInputTokens * 0.9) - (estimatedTokens * 0.9);
     }
+
+    syncUserToRedis(userId, user);
 }
+
+// ─── Redis sync helpers ──────────────────────────────────
+
+/** Sync a single user record to Redis (non-blocking, best-effort). */
+function syncUserToRedis(userId: string, user: UserBudget): void {
+    const redis = getRedisClient();
+    if (!redis) return;
+    redis.hset(REDIS_USER_PREFIX + userId, {
+        userId: user.userId,
+        totalSpend: user.totalSpend.toString(),
+        totalTokens: user.totalTokens.toString(),
+        totalRequests: user.totalRequests.toString(),
+        savedMoney: user.savedMoney.toString(),
+        savedTokens: user.savedTokens.toString(),
+        blockedLoops: user.blockedLoops.toString(),
+        firstSeen: user.firstSeen,
+        lastSeen: user.lastSeen,
+    }).then(() => redis.sadd(REDIS_USER_IDS_KEY, userId)).catch(() => {});
+}
+
+/** Load all user data from Redis into memory. */
+export async function loadUsersFromRedis(): Promise<boolean> {
+    const redis = getRedisClient();
+    if (!redis) return false;
+    try {
+        const userIds = await redis.smembers(REDIS_USER_IDS_KEY);
+        if (!userIds.length) return false;
+        let loaded = 0;
+        for (const id of userIds) {
+            const data = await redis.hgetall(REDIS_USER_PREFIX + id);
+            if (data && data.userId) {
+                userBudgets.set(id, {
+                    userId: data.userId,
+                    totalSpend: parseFloat(data.totalSpend) || 0,
+                    totalTokens: parseFloat(data.totalTokens) || 0,
+                    totalRequests: parseInt(data.totalRequests) || 0,
+                    savedMoney: parseFloat(data.savedMoney) || 0,
+                    savedTokens: parseFloat(data.savedTokens) || 0,
+                    blockedLoops: parseInt(data.blockedLoops) || 0,
+                    firstSeen: data.firstSeen || new Date().toISOString(),
+                    lastSeen: data.lastSeen || new Date().toISOString(),
+                });
+                loaded++;
+            }
+        }
+        if (loaded > 0) {
+            console.log(`[USERS] Loaded ${loaded} users from Redis`);
+        }
+        return loaded > 0;
+    } catch (err) {
+        console.error('[USERS] Failed to load from Redis:', err);
+        return false;
+    }
+}
+
+/** Bulk sync all users to Redis. */
+export async function saveUsersToRedis(): Promise<void> {
+    const redis = getRedisClient();
+    if (!redis) return;
+    try {
+        const pipeline = redis.pipeline();
+        for (const [id, user] of userBudgets) {
+            pipeline.hset(REDIS_USER_PREFIX + id, {
+                userId: user.userId,
+                totalSpend: user.totalSpend.toString(),
+                totalTokens: user.totalTokens.toString(),
+                totalRequests: user.totalRequests.toString(),
+                savedMoney: user.savedMoney.toString(),
+                savedTokens: user.savedTokens.toString(),
+                blockedLoops: user.blockedLoops.toString(),
+                firstSeen: user.firstSeen,
+                lastSeen: user.lastSeen,
+            });
+            pipeline.sadd(REDIS_USER_IDS_KEY, id);
+        }
+        await pipeline.exec();
+    } catch (err) {
+        console.error('[USERS] Failed to save to Redis:', err);
+    }
+}
+
+// ─── Persistence (export/import pattern — file fallback) ──
 
 /**
  * Export all user data for persistence.

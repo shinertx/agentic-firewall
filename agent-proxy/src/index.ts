@@ -133,11 +133,20 @@ app.get('/api/public-stats', async (req: Request, res: Response) => {
 
     const totalUsers = Math.max(agg.totalUsers, uniqueInstalls + npmTotal) + 612; // +612 baseline to account for historical NPM installs that were wiped prior to volume persistence
 
+    // Slice the 8 most recent activities for the public feed (already anonymized: model, tokens, status only)
+    const recentFeed = globalStats.recentActivity.slice(0, 8).map((a: any) => ({
+        time: a.time,
+        model: a.model,
+        tokens: a.tokens,
+        status: a.status,
+    }));
+
     res.json({
         totalUsers: totalUsers,
         totalSaved: agg.totalSaved,
         totalRequests: globalStats.totalRequests,
         blockedLoops: globalStats.blockedLoops,
+        recentFeed,
     });
 });
 
@@ -152,15 +161,16 @@ app.get('/api/npm-stats', async (req: Request, res: Response) => {
 });
 
 // Per-user stats API
-import { getUserStats, getAggregateStats, exportUserData, importUserData } from './budgetGovernor';
+import { getUserStats, getAggregateStats, exportUserData, importUserData, loadUsersFromRedis, saveUsersToRedis } from './budgetGovernor';
 import { getNoProgressStats } from './noProgress';
 import { renderLandingPage } from './pages/landing';
 import { renderDashboard } from './pages/dashboard';
-import { getAllSessions, getSessionStats, getUserSessions, exportSessionData, importSessionData, expireStaleSessions } from './sessionTracker';
+import { getAllSessions, getSessionStats, getUserSessions, exportSessionData, importSessionData, expireStaleSessions, loadSessionsFromRedis, saveSessionsToRedis } from './sessionTracker';
 import { getQueueStats } from './requestQueue';
 import { getCacheStats } from './responseCache';
 import { getCompressionStats } from './promptCompressor';
-import { recordTelemetryEvent, getInstallStats, getInstallBreakdown, getNpmStats, getUniqueInstallCount, exportInstallData, importInstallData } from './installTracker';
+import { recordTelemetryEvent, getInstallStats, getInstallBreakdown, getNpmStats, getUniqueInstallCount, exportInstallData, importInstallData, loadInstallsFromRedis, saveInstallsToRedis } from './installTracker';
+import { isRedisAvailable } from './redis';
 
 // Load persisted user data on startup
 import fs from 'fs';
@@ -200,22 +210,37 @@ try {
     console.error('[INSTALLS] ⚠️ Failed to load installs.json:', err);
 }
 
-// Persist user + session data every 30 seconds (non-blocking async write)
+// Try loading from Redis after connection is established (overrides file data if Redis has records)
+setTimeout(async () => {
+    await loadUsersFromRedis();
+    await loadSessionsFromRedis();
+    await loadInstallsFromRedis();
+}, 1500);
+
+// Persist user + session data every 30 seconds
+// When Redis is available, sync to Redis (individual writes already happen per-mutation, this is a safety net).
+// When Redis is unavailable, fall back to file persistence.
 setInterval(async () => {
-    try {
-        await fs.promises.writeFile(USERS_FILE, JSON.stringify(exportUserData(), null, 2));
-    } catch (err) {
-        console.error('[USERS] ⚠️ Failed to write users.json:', err);
-    }
-    try {
-        await fs.promises.writeFile(SESSIONS_FILE, JSON.stringify(exportSessionData(), null, 2));
-    } catch (err) {
-        console.error('[SESSIONS] ⚠️ Failed to write sessions.json:', err);
-    }
-    try {
-        await fs.promises.writeFile(INSTALLS_FILE, JSON.stringify(exportInstallData(), null, 2));
-    } catch (err) {
-        console.error('[INSTALLS] ⚠️ Failed to write installs.json:', err);
+    if (isRedisAvailable()) {
+        await saveUsersToRedis();
+        await saveSessionsToRedis();
+        await saveInstallsToRedis();
+    } else {
+        try {
+            await fs.promises.writeFile(USERS_FILE, JSON.stringify(exportUserData(), null, 2));
+        } catch (err) {
+            console.error('[USERS] Failed to write users.json:', err);
+        }
+        try {
+            await fs.promises.writeFile(SESSIONS_FILE, JSON.stringify(exportSessionData(), null, 2));
+        } catch (err) {
+            console.error('[SESSIONS] Failed to write sessions.json:', err);
+        }
+        try {
+            await fs.promises.writeFile(INSTALLS_FILE, JSON.stringify(exportInstallData(), null, 2));
+        } catch (err) {
+            console.error('[INSTALLS] Failed to write installs.json:', err);
+        }
     }
 }, 30_000);
 

@@ -1,12 +1,16 @@
 import fs from 'fs';
 import path from 'path';
+import { isRedisAvailable, getRedisClient } from './redis';
 
-// Persistent storage file path (relative to where the server runs)
+// File-based persistence fallback (local dev or Redis unavailable)
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 const STATS_FILE = path.join(DATA_DIR, 'stats.json');
+
+const REDIS_STATS_KEY = 'firewall:stats';
+const REDIS_ACTIVITY_KEY = 'firewall:activity';
 
 // Persisted fields — recentActivity stays in-memory only (transient)
 interface PersistedStats {
@@ -21,17 +25,57 @@ function loadStats(): PersistedStats {
         if (fs.existsSync(STATS_FILE)) {
             const raw = fs.readFileSync(STATS_FILE, 'utf-8');
             const parsed = JSON.parse(raw);
-            console.log(`[STATS] 📂 Loaded persisted stats: ${parsed.totalRequests} requests, $${parsed.savedMoney.toFixed(4)} saved`);
+            console.log(`[STATS] Loaded persisted stats: ${parsed.totalRequests} requests, $${parsed.savedMoney.toFixed(4)} saved`);
             return parsed;
         }
     } catch (err) {
-        console.error('[STATS] ⚠️ Failed to load stats.json, starting fresh:', err);
+        console.error('[STATS] Failed to load stats.json, starting fresh:', err);
     }
     return { savedTokens: 0, savedMoney: 0, blockedLoops: 0, totalRequests: 0 };
 }
 
+async function loadStatsFromRedis(): Promise<PersistedStats | null> {
+    const redis = getRedisClient();
+    if (!redis) return null;
+    try {
+        const data = await redis.hgetall(REDIS_STATS_KEY);
+        if (data && data.totalRequests) {
+            const stats: PersistedStats = {
+                savedTokens: parseFloat(data.savedTokens) || 0,
+                savedMoney: parseFloat(data.savedMoney) || 0,
+                blockedLoops: parseInt(data.blockedLoops) || 0,
+                totalRequests: parseInt(data.totalRequests) || 0,
+            };
+            console.log(`[STATS] Loaded from Redis: ${stats.totalRequests} requests, $${stats.savedMoney.toFixed(4)} saved`);
+            return stats;
+        }
+    } catch (err) {
+        console.error('[STATS] Failed to load from Redis:', err);
+    }
+    return null;
+}
+
+async function saveStatsToRedis(): Promise<void> {
+    const redis = getRedisClient();
+    if (!redis) return;
+    try {
+        await redis.hset(REDIS_STATS_KEY, {
+            savedTokens: globalStats.savedTokens.toString(),
+            savedMoney: globalStats.savedMoney.toString(),
+            blockedLoops: globalStats.blockedLoops.toString(),
+            totalRequests: globalStats.totalRequests.toString(),
+        });
+    } catch (err) {
+        console.error('[STATS] Failed to write to Redis:', err);
+    }
+}
+
 // Async version for periodic saves (non-blocking)
 async function saveStatsAsync(): Promise<void> {
+    if (isRedisAvailable()) {
+        await saveStatsToRedis();
+        return;
+    }
     try {
         const persisted: PersistedStats = {
             savedTokens: globalStats.savedTokens,
@@ -41,7 +85,7 @@ async function saveStatsAsync(): Promise<void> {
         };
         await fs.promises.writeFile(STATS_FILE, JSON.stringify(persisted, null, 2));
     } catch (err) {
-        console.error('[STATS] ⚠️ Failed to write stats.json:', err);
+        console.error('[STATS] Failed to write stats.json:', err);
     }
 }
 
@@ -56,11 +100,11 @@ function saveStatsSync(): void {
         };
         fs.writeFileSync(STATS_FILE, JSON.stringify(persisted, null, 2));
     } catch (err) {
-        console.error('[STATS] ⚠️ Failed to write stats.json:', err);
+        console.error('[STATS] Failed to write stats.json:', err);
     }
 }
 
-// Initialize from disk
+// Initialize from disk (Redis load happens async after startup)
 const loaded = loadStats();
 
 export const globalStats = {
@@ -93,6 +137,17 @@ export const globalStats = {
     compressionCacheHits: 0,
 };
 
+// Try loading from Redis once connected (overrides file-based stats if Redis has data)
+setTimeout(async () => {
+    const redisStats = await loadStatsFromRedis();
+    if (redisStats) {
+        globalStats.savedTokens = redisStats.savedTokens;
+        globalStats.savedMoney = redisStats.savedMoney;
+        globalStats.blockedLoops = redisStats.blockedLoops;
+        globalStats.totalRequests = redisStats.totalRequests;
+    }
+}, 1000);
+
 // Circular buffer for O(1) insertion (replaces O(n) unshift)
 const MAX_RECENT = 50;
 const activityBuffer: any[] = new Array(MAX_RECENT).fill(null);
@@ -111,6 +166,14 @@ export function recordActivity(activity: { time: string, model: string, tokens: 
         result.push(activityBuffer[idx]);
     }
     globalStats.recentActivity = result;
+
+    // Also push to Redis activity list (non-blocking, best-effort)
+    const redis = getRedisClient();
+    if (redis) {
+        redis.lpush(REDIS_ACTIVITY_KEY, JSON.stringify(activity))
+            .then(() => redis.ltrim(REDIS_ACTIVITY_KEY, 0, MAX_RECENT - 1))
+            .catch(() => {});
+    }
 }
 
 // Flush to disk every 30 seconds (non-blocking)

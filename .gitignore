@@ -39,3 +39,6 @@ coverage/
 agent-proxy/stats.json
 agent-proxy/users.json
 agent-proxy/installs.json
+
+# Specs
+specs/

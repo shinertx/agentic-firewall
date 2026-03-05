@@ -9,6 +9,7 @@
 
 import https from 'https';
 import http from 'http';
+import { isRedisAvailable, getRedisClient } from './redis';
 
 export interface InstallRecord {
     machineId: string;
@@ -44,6 +45,10 @@ export interface TelemetryEvent {
     isFirstRun: boolean;
     timestamp: string;
 }
+
+// Redis key patterns
+const REDIS_INSTALL_PREFIX = 'firewall:install:';
+const REDIS_INSTALL_IDS_KEY = 'firewall:install_ids';
 
 const installs = new Map<string, InstallRecord>();
 
@@ -103,6 +108,10 @@ export function recordTelemetryEvent(event: TelemetryEvent): void {
             totalPings: 1,
         });
     }
+
+    // Sync to Redis
+    const record = installs.get(event.machineId);
+    if (record) syncInstallToRedis(event.machineId, record);
 
     forwardToAnalytics(event);
 }
@@ -234,6 +243,92 @@ function forwardToAnalytics(event: TelemetryEvent): void {
         req.write(payload);
         req.end();
     } catch { /* never block proxy operation for analytics */ }
+}
+
+// ─── Redis sync helpers ──────────────────────────────────
+
+/** Sync a single install record to Redis (non-blocking). */
+function syncInstallToRedis(machineId: string, record: InstallRecord): void {
+    const redis = getRedisClient();
+    if (!redis) return;
+    redis.hset(REDIS_INSTALL_PREFIX + machineId, {
+        machineId: record.machineId,
+        installId: record.installId,
+        firstSeen: record.firstSeen,
+        lastSeen: record.lastSeen,
+        lastVersion: record.lastVersion,
+        platform: record.platform,
+        arch: record.arch,
+        nodeVersion: record.nodeVersion,
+        commandCounts: JSON.stringify(record.commandCounts),
+        totalPings: record.totalPings.toString(),
+    }).then(() => redis.sadd(REDIS_INSTALL_IDS_KEY, machineId)).catch(() => {});
+}
+
+/** Load all install data from Redis into memory. */
+export async function loadInstallsFromRedis(): Promise<boolean> {
+    const redis = getRedisClient();
+    if (!redis) return false;
+    try {
+        const machineIds = await redis.smembers(REDIS_INSTALL_IDS_KEY);
+        if (!machineIds.length) return false;
+        let loaded = 0;
+        for (const id of machineIds) {
+            const data = await redis.hgetall(REDIS_INSTALL_PREFIX + id);
+            if (data && data.machineId) {
+                installs.set(id, {
+                    machineId: data.machineId,
+                    installId: data.installId,
+                    firstSeen: data.firstSeen,
+                    lastSeen: data.lastSeen,
+                    lastVersion: data.lastVersion,
+                    platform: data.platform,
+                    arch: data.arch,
+                    nodeVersion: data.nodeVersion,
+                    commandCounts: data.commandCounts ? JSON.parse(data.commandCounts) : {
+                        setup: 0, scan: 0, status: 0, verify: 0,
+                        run: 0, replay: 0, uninstall: 0, other: 0,
+                    },
+                    totalPings: parseInt(data.totalPings) || 0,
+                });
+                loaded++;
+            }
+        }
+        if (loaded > 0) {
+            console.log(`[INSTALLS] Loaded ${loaded} install records from Redis`);
+        }
+        return loaded > 0;
+    } catch (err) {
+        console.error('[INSTALLS] Failed to load from Redis:', err);
+        return false;
+    }
+}
+
+/** Bulk sync all installs to Redis. */
+export async function saveInstallsToRedis(): Promise<void> {
+    const redis = getRedisClient();
+    if (!redis) return;
+    try {
+        const pipeline = redis.pipeline();
+        for (const [id, record] of installs) {
+            pipeline.hset(REDIS_INSTALL_PREFIX + id, {
+                machineId: record.machineId,
+                installId: record.installId,
+                firstSeen: record.firstSeen,
+                lastSeen: record.lastSeen,
+                lastVersion: record.lastVersion,
+                platform: record.platform,
+                arch: record.arch,
+                nodeVersion: record.nodeVersion,
+                commandCounts: JSON.stringify(record.commandCounts),
+                totalPings: record.totalPings.toString(),
+            });
+            pipeline.sadd(REDIS_INSTALL_IDS_KEY, id);
+        }
+        await pipeline.exec();
+    } catch (err) {
+        console.error('[INSTALLS] Failed to save to Redis:', err);
+    }
 }
 
 // ─── Persistence (export/import pattern) ─────────────────

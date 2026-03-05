@@ -78,6 +78,25 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .feature h3{color:var(--text);font-size:0.9rem;font-weight:600;margin-bottom:4px;letter-spacing:-0.01em}
 .feature p{color:var(--text-secondary);font-size:0.8rem;line-height:1.55}
 
+/* Live Feed */
+.feed{max-width:560px;margin:0 auto 32px;border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.feed-header{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;font-size:0.8rem;font-weight:600;color:var(--text-secondary)}
+.feed-header .pulse{width:6px;height:6px;border-radius:50%;background:#22c55e;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+.feed-list{list-style:none}
+.feed-item{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:1px solid var(--border);font-size:0.8rem;opacity:0;transform:translateY(-8px);transition:opacity 0.4s,transform 0.4s}
+.feed-item:last-child{border-bottom:none}
+.feed-item:hover{background:var(--bg-secondary)}
+.feed-item.visible{opacity:1;transform:translateY(0)}
+.feed-model{font-weight:600;color:var(--text);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.feed-tokens{color:var(--text-secondary);margin:0 12px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.feed-status{font-weight:500;font-size:0.75rem;padding:2px 8px;border-radius:100px;white-space:nowrap}
+.feed-status.cdn{color:#059669;background:#ecfdf5}
+.feed-status.pass{color:var(--text-secondary);background:var(--bg-secondary)}
+.feed-status.blocked{color:#dc2626;background:#fef2f2}
+.feed-status.failover{color:#d97706;background:#fffbeb}
+@media(max-width:640px){.feed-model{font-size:0.75rem}.feed-tokens{font-size:0.75rem}}
+
 /* Footer */
 .footer{text-align:center;padding:40px 24px;color:var(--text-muted);font-size:0.8rem;border-top:1px solid var(--border)}
 
@@ -108,6 +127,11 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     <div class="stat"><div class="num" id="saved">$${agg.totalSaved.toFixed(2)}</div><div class="label">Saved</div></div>
     <div class="stat"><div class="num" id="reqs">${globalStats.totalRequests.toLocaleString()}</div><div class="label">Requests</div></div>
     <div class="stat"><div class="num" id="loops">${globalStats.blockedLoops}</div><div class="label">Loops Killed</div></div>
+  </div>
+
+  <div class="feed">
+    <div class="feed-header"><span class="pulse"></span> Live Traffic</div>
+    <ul class="feed-list" id="feedList"></ul>
   </div>
 
   <div class="actions">
@@ -165,7 +189,33 @@ let prev = {
   loops: ${globalStats.blockedLoops}
 };
 
-setInterval(async () => {
+// Map status text to CSS class for feed pills
+function statusClass(s) {
+  if (s.includes('CDN')) return 'cdn';
+  if (s.includes('Blocked') || s.includes('Loop') || s.includes('Budget') || s.includes('No Progress')) return 'blocked';
+  if (s.includes('Failover') || s.includes('Shadow') || s.includes('429')) return 'failover';
+  return 'pass';
+}
+
+function renderFeed(feed) {
+  const list = document.getElementById('feedList');
+  if (!list || !feed || feed.length === 0) return;
+  list.innerHTML = feed.map((item, i) =>
+    '<li class="feed-item" style="transition-delay:' + (i * 60) + 'ms">' +
+      '<span class="feed-model">' + item.model + '</span>' +
+      '<span class="feed-tokens">' + item.tokens + '</span>' +
+      '<span class="feed-status ' + statusClass(item.status) + '">' + item.status + '</span>' +
+    '</li>'
+  ).join('');
+  // Trigger staggered enter animation
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      list.querySelectorAll('.feed-item').forEach(el => el.classList.add('visible'));
+    });
+  });
+}
+
+async function pollStats() {
   try {
     const r = await fetch('/api/public-stats');
     if (!r.ok) return;
@@ -175,8 +225,12 @@ setInterval(async () => {
     animateValue(document.getElementById('reqs'), prev.reqs, d.totalRequests, 1500, v => Math.round(v).toLocaleString());
     animateValue(document.getElementById('loops'), prev.loops, d.blockedLoops, 1500, v => Math.round(v));
     prev = { users: d.totalUsers, saved: d.totalSaved, reqs: d.totalRequests, loops: d.blockedLoops };
+    if (d.recentFeed) renderFeed(d.recentFeed);
   } catch {}
-}, 5000);
+}
+
+pollStats();
+setInterval(pollStats, 5000);
 </script>
 
 </body>

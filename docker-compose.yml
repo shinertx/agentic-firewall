@@ -1,4 +1,24 @@
 services:
+  # ── Redis ──────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: agentic-firewall-redis
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      start_period: 3s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+
   # ── Core Proxy Server ──────────────────────────────────────
   proxy:
     build:
@@ -11,8 +31,12 @@ services:
     environment:
       - PORT=4000
       - BIND_HOST=0.0.0.0
+      - REDIS_URL=redis://redis:6379
     volumes:
       - proxy-data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:4000/api/stats',r=>{r.statusCode===200?process.exit(0):process.exit(1)}).on('error',()=>process.exit(1))\""]
       interval: 10s
@@ -55,8 +79,12 @@ services:
     environment:
       - PORT=4000
       - BIND_HOST=0.0.0.0
+      - REDIS_URL=redis://redis:6379
     volumes:
       - proxy-staging-data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:4000/api/stats',r=>{r.statusCode===200?process.exit(0):process.exit(1)}).on('error',()=>process.exit(1))\""]
       interval: 10s
@@ -74,3 +102,4 @@ services:
 volumes:
   proxy-data:
   proxy-staging-data:
+  redis-data:
