@@ -140,13 +140,19 @@ app.get('/api/public-stats', async (req: Request, res: Response) => {
         tokens: a.tokens,
         status: a.status,
         saved: a.saved || '',
+        ttftMs: a.ttftMs || 0,
     }));
+
+    const avgTtftMs = globalStats.timedRequests > 0 ? Math.round(globalStats.totalTtftMs / globalStats.timedRequests) : 0;
 
     res.json({
         totalUsers: totalUsers,
         totalSaved: agg.totalSaved,
         totalRequests: globalStats.totalRequests,
         blockedLoops: globalStats.blockedLoops,
+        avgTtftMs,
+        smartRouteDowngrades: globalStats.smartRouteDowngrades,
+        compressionCalls: globalStats.compressionCalls,
         recentFeed,
     });
 });

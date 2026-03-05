@@ -365,6 +365,11 @@ export async function handleProxyRequest(req: Request, res: Response) {
             return;
         }
 
+        // Soft budget warning — alert agents approaching their spend limit
+        if (budgetCheck.warningPct) {
+            res.setHeader('X-Firewall-Budget-Warning', `${budgetCheck.warningPct}% of budget used ($${budgetCheck.spent?.toFixed(2)} of $${budgetCheck.limit?.toFixed(2)})`);
+        }
+
         // No-progress detection — return a synthetic model response so the agent
         // processes it as a real turn and changes approach instead of retrying.
         const npCheck = checkNoProgress(userId, req.body);
@@ -467,6 +472,7 @@ export async function handleProxyRequest(req: Request, res: Response) {
 
     console.log(`[PROXY] => ${req.method} ${url}`);
 
+    const fetchStartMs = Date.now();
     let response = await fetch(url, init);
 
     let statusText = 'Pass-through';
@@ -518,10 +524,12 @@ export async function handleProxyRequest(req: Request, res: Response) {
     // Stream response and capture chunks for usage parsing + response caching
     const reader = response.body.getReader();
     const chunks: Buffer[] = [];
+    let ttftMs = 0;
     try {
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
+            if (ttftMs === 0) ttftMs = Date.now() - fetchStartMs;
             chunks.push(Buffer.from(value));
             res.write(value);
         }
@@ -530,6 +538,7 @@ export async function handleProxyRequest(req: Request, res: Response) {
     } finally {
         res.end();
     }
+    const totalResponseMs = Date.now() - fetchStartMs;
 
     // Parse real token usage from the response stream
     const provider = isGemini ? 'gemini' : isOpenAI ? 'openai' : 'anthropic';
@@ -603,6 +612,11 @@ export async function handleProxyRequest(req: Request, res: Response) {
             savedAmount = cost >= 0.01 ? cost.toFixed(2) : cost.toFixed(4);
         }
 
+        // Track response timing
+        globalStats.totalTtftMs += ttftMs;
+        globalStats.totalResponseMs += totalResponseMs;
+        globalStats.timedRequests++;
+
         recordActivity({
             time: new Date().toLocaleTimeString(),
             model: displayModel,
@@ -610,6 +624,8 @@ export async function handleProxyRequest(req: Request, res: Response) {
             status: statusText,
             statusColor,
             saved: savedAmount,
+            ttftMs,
+            totalMs: totalResponseMs,
         });
     }
 }

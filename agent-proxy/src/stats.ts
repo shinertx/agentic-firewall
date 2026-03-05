@@ -18,6 +18,15 @@ interface PersistedStats {
     savedMoney: number;
     blockedLoops: number;
     totalRequests: number;
+    smartRouteDowngrades: number;
+    smartRouteSavings: number;
+    compressedTokensSaved: number;
+    compressionCalls: number;
+    crossProviderFailovers: number;
+    crossProviderSavings: number;
+    totalTtftMs: number;
+    totalResponseMs: number;
+    timedRequests: number;
 }
 
 function loadStats(): PersistedStats {
@@ -31,7 +40,7 @@ function loadStats(): PersistedStats {
     } catch (err) {
         console.error('[STATS] Failed to load stats.json, starting fresh:', err);
     }
-    return { savedTokens: 0, savedMoney: 0, blockedLoops: 0, totalRequests: 0 };
+    return { savedTokens: 0, savedMoney: 0, blockedLoops: 0, totalRequests: 0, smartRouteDowngrades: 0, smartRouteSavings: 0, compressedTokensSaved: 0, compressionCalls: 0, crossProviderFailovers: 0, crossProviderSavings: 0, totalTtftMs: 0, totalResponseMs: 0, timedRequests: 0 };
 }
 
 async function loadStatsFromRedis(): Promise<PersistedStats | null> {
@@ -45,6 +54,15 @@ async function loadStatsFromRedis(): Promise<PersistedStats | null> {
                 savedMoney: parseFloat(data.savedMoney) || 0,
                 blockedLoops: parseInt(data.blockedLoops) || 0,
                 totalRequests: parseInt(data.totalRequests) || 0,
+                smartRouteDowngrades: parseInt(data.smartRouteDowngrades) || 0,
+                smartRouteSavings: parseFloat(data.smartRouteSavings) || 0,
+                compressedTokensSaved: parseInt(data.compressedTokensSaved) || 0,
+                compressionCalls: parseInt(data.compressionCalls) || 0,
+                crossProviderFailovers: parseInt(data.crossProviderFailovers) || 0,
+                crossProviderSavings: parseFloat(data.crossProviderSavings) || 0,
+                totalTtftMs: parseFloat(data.totalTtftMs) || 0,
+                totalResponseMs: parseFloat(data.totalResponseMs) || 0,
+                timedRequests: parseInt(data.timedRequests) || 0,
             };
             console.log(`[STATS] Loaded from Redis: ${stats.totalRequests} requests, $${stats.savedMoney.toFixed(4)} saved`);
             return stats;
@@ -64,6 +82,15 @@ async function saveStatsToRedis(): Promise<void> {
             savedMoney: globalStats.savedMoney.toString(),
             blockedLoops: globalStats.blockedLoops.toString(),
             totalRequests: globalStats.totalRequests.toString(),
+            smartRouteDowngrades: globalStats.smartRouteDowngrades.toString(),
+            smartRouteSavings: globalStats.smartRouteSavings.toString(),
+            compressedTokensSaved: globalStats.compressedTokensSaved.toString(),
+            compressionCalls: globalStats.compressionCalls.toString(),
+            crossProviderFailovers: globalStats.crossProviderFailovers.toString(),
+            crossProviderSavings: globalStats.crossProviderSavings.toString(),
+            totalTtftMs: globalStats.totalTtftMs.toString(),
+            totalResponseMs: globalStats.totalResponseMs.toString(),
+            timedRequests: globalStats.timedRequests.toString(),
         });
     } catch (err) {
         console.error('[STATS] Failed to write to Redis:', err);
@@ -82,6 +109,15 @@ async function saveStatsAsync(): Promise<void> {
             savedMoney: globalStats.savedMoney,
             blockedLoops: globalStats.blockedLoops,
             totalRequests: globalStats.totalRequests,
+            smartRouteDowngrades: globalStats.smartRouteDowngrades,
+            smartRouteSavings: globalStats.smartRouteSavings,
+            compressedTokensSaved: globalStats.compressedTokensSaved,
+            compressionCalls: globalStats.compressionCalls,
+            crossProviderFailovers: globalStats.crossProviderFailovers,
+            crossProviderSavings: globalStats.crossProviderSavings,
+            totalTtftMs: globalStats.totalTtftMs,
+            totalResponseMs: globalStats.totalResponseMs,
+            timedRequests: globalStats.timedRequests,
         };
         await fs.promises.writeFile(STATS_FILE, JSON.stringify(persisted, null, 2));
     } catch (err) {
@@ -97,6 +133,15 @@ function saveStatsSync(): void {
             savedMoney: globalStats.savedMoney,
             blockedLoops: globalStats.blockedLoops,
             totalRequests: globalStats.totalRequests,
+            smartRouteDowngrades: globalStats.smartRouteDowngrades,
+            smartRouteSavings: globalStats.smartRouteSavings,
+            compressedTokensSaved: globalStats.compressedTokensSaved,
+            compressionCalls: globalStats.compressionCalls,
+            crossProviderFailovers: globalStats.crossProviderFailovers,
+            crossProviderSavings: globalStats.crossProviderSavings,
+            totalTtftMs: globalStats.totalTtftMs,
+            totalResponseMs: globalStats.totalResponseMs,
+            timedRequests: globalStats.timedRequests,
         };
         fs.writeFileSync(STATS_FILE, JSON.stringify(persisted, null, 2));
     } catch (err) {
@@ -135,6 +180,10 @@ export const globalStats = {
     compressedTokensSaved: 0,
     compressionCalls: 0,
     compressionCacheHits: 0,
+    // Response timing
+    totalTtftMs: 0,
+    totalResponseMs: 0,
+    timedRequests: 0,
 };
 
 // Try loading from Redis once connected (overrides file-based stats if Redis has data)
@@ -145,6 +194,15 @@ setTimeout(async () => {
         globalStats.savedMoney = redisStats.savedMoney;
         globalStats.blockedLoops = redisStats.blockedLoops;
         globalStats.totalRequests = redisStats.totalRequests;
+        globalStats.smartRouteDowngrades = redisStats.smartRouteDowngrades;
+        globalStats.smartRouteSavings = redisStats.smartRouteSavings;
+        globalStats.compressedTokensSaved = redisStats.compressedTokensSaved;
+        globalStats.compressionCalls = redisStats.compressionCalls;
+        globalStats.crossProviderFailovers = redisStats.crossProviderFailovers;
+        globalStats.crossProviderSavings = redisStats.crossProviderSavings;
+        globalStats.totalTtftMs = redisStats.totalTtftMs;
+        globalStats.totalResponseMs = redisStats.totalResponseMs;
+        globalStats.timedRequests = redisStats.timedRequests;
     }
 }, 1000);
 
@@ -154,7 +212,7 @@ const activityBuffer: any[] = new Array(MAX_RECENT).fill(null);
 let activityWriteIndex = 0;
 let activityCount = 0;
 
-export function recordActivity(activity: { time: string, model: string, tokens: number | string, status: string, statusColor: string, saved?: string }) {
+export function recordActivity(activity: { time: string, model: string, tokens: number | string, status: string, statusColor: string, saved?: string, ttftMs?: number, totalMs?: number }) {
     activityBuffer[activityWriteIndex] = activity;
     activityWriteIndex = (activityWriteIndex + 1) % MAX_RECENT;
     activityCount = Math.min(activityCount + 1, MAX_RECENT);

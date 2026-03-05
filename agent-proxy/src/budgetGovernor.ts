@@ -71,6 +71,7 @@ export function checkBudget(userId: string, budgetLimit: number | null): {
     reason?: string;
     spent?: number;
     limit?: number;
+    warningPct?: number;
 } {
     if (!budgetLimit || budgetLimit <= 0) return { allowed: true };
 
@@ -83,7 +84,10 @@ export function checkBudget(userId: string, budgetLimit: number | null): {
             limit: budgetLimit,
         };
     }
-    return { allowed: true };
+
+    const pct = (user.totalSpend / budgetLimit) * 100;
+    const warningPct = pct >= 90 ? 90 : pct >= 80 ? 80 : undefined;
+    return { allowed: true, spent: user.totalSpend, limit: budgetLimit, warningPct };
 }
 
 /**

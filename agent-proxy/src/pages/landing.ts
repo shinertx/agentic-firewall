@@ -7,14 +7,18 @@ import { globalStats } from '../stats';
  * Inter font, one accent color (indigo-600), generous whitespace.
  */
 function ssrStatusClass(s: string): string {
+  if (s.includes('Compressed') && s.includes('CDN')) return 'cdn';
   if (s.includes('CDN')) return 'cdn';
+  if (s.includes('Compressed')) return 'compressed';
   if (s.includes('Blocked') || s.includes('Loop') || s.includes('Budget') || s.includes('No Progress')) return 'blocked';
   if (s.includes('Failover') || s.includes('Shadow') || s.includes('429')) return 'failover';
   return 'pass';
 }
 
 function ssrStatusLabel(s: string): string {
+  if (s.includes('Compressed') && s.includes('CDN')) return 'Cached + Compressed';
   if (s.includes('CDN')) return 'Cache Hit';
+  if (s.includes('Compressed')) return 'Compressed';
   if (s.includes('Loop')) return 'Loop Killed';
   if (s.includes('Budget')) return 'Budget Block';
   if (s.includes('No Progress')) return 'Stopped';
@@ -32,9 +36,10 @@ export function renderLandingPage(): string {
   const feedItems = globalStats.recentActivity.slice(0, MAX_SSR_ROWS);
   const ssrFeedRows = feedItems.map((a: any) => {
     const saved = a.saved ? `<div class="feed-saved">-$${a.saved}</div>` : '<div class="feed-saved"></div>';
+    const ttft = a.ttftMs ? `<div class="feed-ttft">${a.ttftMs < 1000 ? a.ttftMs + 'ms' : (a.ttftMs / 1000).toFixed(1) + 's'}</div>` : '<div class="feed-ttft"></div>';
     const sc = ssrStatusClass(a.status);
     const sl = ssrStatusLabel(a.status);
-    return `<div class="feed-row"><div class="feed-model">${a.model}</div><div class="feed-tokens">${a.tokens} tokens</div>${saved}<span class="feed-status ${sc}">${sl}</span></div>`;
+    return `<div class="feed-row"><div class="feed-model">${a.model}</div><div class="feed-tokens">${a.tokens} tokens</div>${ttft}${saved}<span class="feed-status ${sc}">${sl}</span></div>`;
   }).join('\n      ');
 
   return `<!DOCTYPE html>
@@ -137,7 +142,7 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .feed-empty{padding:80px 24px;text-align:center;color:var(--text-muted);font-size:0.9rem;background:var(--bg)}
 
 /* Individual feed row */
-.feed-row{display:grid;grid-template-columns:1fr auto auto auto;align-items:center;gap:16px;padding:12px 20px;background:var(--bg);transition:background 0.15s}
+.feed-row{display:grid;grid-template-columns:1fr auto auto auto auto;align-items:center;gap:16px;padding:12px 20px;background:var(--bg);transition:background 0.15s}
 .feed-row:hover{background:var(--bg-secondary)}
 
 .feed-model{font-weight:600;font-size:0.85rem;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -146,11 +151,15 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .feed-saved{font-size:0.8rem;font-weight:600;color:var(--green);text-align:right;white-space:nowrap;min-width:64px}
 .feed-saved:empty{min-width:64px}
 
+.feed-ttft{font-size:0.8rem;color:var(--text-muted);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;min-width:48px}
+.feed-ttft:empty{min-width:48px}
+
 .feed-status{display:inline-flex;align-items:center;padding:3px 10px;border-radius:100px;font-size:0.72rem;font-weight:600;white-space:nowrap;letter-spacing:0.01em}
 .feed-status.cdn{background:var(--green-bg);color:var(--green);border:1px solid var(--green-border)}
 .feed-status.pass{background:var(--bg-secondary);color:var(--text-muted);border:1px solid var(--border)}
 .feed-status.blocked{background:var(--red-bg);color:var(--red);border:1px solid #fecaca}
 .feed-status.failover{background:var(--amber-bg);color:var(--amber);border:1px solid #fde68a}
+.feed-status.compressed{background:#f0f9ff;color:#0284c7;border:1px solid #bae6fd}
 
 /* Row enter animation — slides in and flashes green then fades to white */
 .feed-row.entering{animation:rowEnter 0.5s ease-out forwards,rowFlash 1.2s ease-out forwards}
@@ -240,6 +249,7 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   .nav{padding:12px 20px}
   .feed-row{grid-template-columns:1fr auto auto;gap:10px;padding:10px 14px}
   .feed-saved{display:none}
+  .feed-ttft{display:none}
   .feed-list{height:559px}
   .feed-header{flex-direction:column;gap:12px;align-items:flex-start}
   .steps{grid-template-columns:1fr;gap:32px}
@@ -379,7 +389,8 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
       <div class="feature"><div class="icon">🚫</div><h3>Budget Governor</h3><p>Set per-session spend caps. Agents get a 402 when they hit the limit — hard kill, not a suggestion.</p></div>
       <div class="feature"><div class="icon">🧠</div><h3>No-Progress Detection</h3><p>Fingerprints tool failures. Same error 5 times? Stopped automatically.</p></div>
       <div class="feature"><div class="icon">📊</div><h3>Per-User Dashboard</h3><p>Every user gets a personal savings dashboard with spend tracking and loop history.</p></div>
-      <div class="feature"><div class="icon">🔐</div><h3>Bring Your Own Keys</h3><p>Your API keys pass directly to the LLM. Never logged, never stored. Fully transparent operation.</p></div>
+      <div class="feature"><div class="icon">🧩</div><h3>Smart Router</h3><p>Classifies request complexity with local AI. Simple tasks auto-downgrade from Opus to Haiku — 73% faster responses.${globalStats.smartRouteDowngrades > 0 ? ` <strong>${globalStats.smartRouteDowngrades} downgrades</strong> so far.` : ''}</p></div>
+      <div class="feature"><div class="icon">🗜️</div><h3>Prompt Compression</h3><p>Compresses oversized system prompts and long histories via local AI before sending to the provider. Fewer tokens = faster + cheaper.${globalStats.compressionCalls > 0 ? ` <strong>${globalStats.compressionCalls} compressions</strong>, ~${Math.round(globalStats.compressedTokensSaved / 1000)}k tokens saved.` : ''}</p></div>
     </div>
   </div>
 </div>
@@ -425,14 +436,18 @@ var prev = {
 };
 
 function statusClass(s) {
+  if (s.includes('Compressed') && s.includes('CDN')) return 'cdn';
   if (s.includes('CDN')) return 'cdn';
+  if (s.includes('Compressed')) return 'compressed';
   if (s.includes('Blocked') || s.includes('Loop') || s.includes('Budget') || s.includes('No Progress')) return 'blocked';
   if (s.includes('Failover') || s.includes('Shadow') || s.includes('429')) return 'failover';
   return 'pass';
 }
 
 function statusLabel(s) {
+  if (s.includes('Compressed') && s.includes('CDN')) return 'Cached + Compressed';
   if (s.includes('CDN')) return 'Cache Hit';
+  if (s.includes('Compressed')) return 'Compressed';
   if (s.includes('Loop')) return 'Loop Killed';
   if (s.includes('Budget')) return 'Budget Block';
   if (s.includes('No Progress')) return 'Stopped';
@@ -446,10 +461,14 @@ function rowHTML(item) {
   var savedHTML = item.saved
     ? '<div class="feed-saved">-$' + item.saved + '</div>'
     : '<div class="feed-saved"></div>';
+  var ttftHTML = item.ttftMs
+    ? '<div class="feed-ttft">' + (item.ttftMs < 1000 ? item.ttftMs + 'ms' : (item.ttftMs / 1000).toFixed(1) + 's') + '</div>'
+    : '<div class="feed-ttft"></div>';
   var sc = statusClass(item.status);
   var sl = statusLabel(item.status);
   return '<div class="feed-model">' + item.model + '</div>' +
     '<div class="feed-tokens">' + item.tokens + ' tokens</div>' +
+    ttftHTML +
     savedHTML +
     '<span class="feed-status ' + sc + '">' + sl + '</span>';
 }
