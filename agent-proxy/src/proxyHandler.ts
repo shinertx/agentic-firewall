@@ -16,6 +16,7 @@ export interface LLMRequest {
     max_tokens?: number;
     prompt_cache_key?: string;
     prompt_cache_retention?: string;
+    tools?: any[];
 }
 
 const ANTHROPIC_BASE_URL = 'https://api.anthropic.com';
@@ -42,9 +43,79 @@ function injectEphemeralCache(block: any): { modified: boolean, content: any } {
     return { modified: false, content: block };
 }
 
+// Anthropic enforces strict non-increasing TTL ordering across cache_control blocks
+// (tools → system → messages). Clients like the VS Code plugin may send mixed TTLs
+// (e.g., 5m on tools, 1h on messages), causing 400 errors. This function normalizes
+// all cache_control blocks to the same TTL to prevent ordering violations.
+const TTL_RANK: Record<string, number> = { '5m': 1, '1h': 2 };
+
+export function normalizeCacheControlTTLs(body: LLMRequest): boolean {
+    const allBlocks: any[] = [];
+
+    // Collect all cache_control blocks in processing order: tools → system → messages
+    const collect = (obj: any): void => {
+        if (!obj || typeof obj !== 'object') return;
+        if (obj.cache_control) { allBlocks.push(obj); return; }
+        if (Array.isArray(obj)) { obj.forEach(collect); return; }
+        Object.values(obj).forEach(collect);
+    };
+
+    collect(body.tools);
+    collect(body.system);
+    collect(body.messages);
+
+    if (allBlocks.length < 2) return false;
+
+    // Find the minimum TTL — we'll normalize everything to this value
+    // to guarantee non-increasing order (all equal = valid)
+    let minTTL: string | undefined;
+    for (const block of allBlocks) {
+        const ttl = block.cache_control?.ttl;
+        if (ttl && (!minTTL || (TTL_RANK[ttl] ?? 0) < (TTL_RANK[minTTL] ?? 0))) {
+            minTTL = ttl;
+        }
+    }
+
+    if (!minTTL) return false;
+
+    // Check if there's actually a conflict
+    const hasConflict = allBlocks.some(b => b.cache_control?.ttl && b.cache_control.ttl !== minTTL);
+    if (!hasConflict) return false;
+
+    // Normalize all explicit TTLs to the minimum
+    for (const block of allBlocks) {
+        if (block.cache_control?.ttl) {
+            block.cache_control.ttl = minTTL;
+        }
+    }
+
+    console.log(`[PROXY Context CDN] Normalized cache_control TTLs to '${minTTL}' to prevent ordering violation`);
+    return true;
+}
+
+function hasExistingCacheControl(body: LLMRequest): boolean {
+    const check = (obj: any): boolean => {
+        if (!obj) return false;
+        if (typeof obj !== 'object') return false;
+        if (obj.cache_control) return true;
+        if (Array.isArray(obj)) return obj.some(check);
+        return Object.values(obj).some(check);
+    };
+    return check(body.system) || check(body.messages) || check(body.tools);
+}
+
 export function applyContextCDN(body: LLMRequest, isGemini: boolean, reqUrl: string = "") {
     if (!body) return body;
     let modified = false;
+
+    // For Anthropic requests, normalize any existing cache_control TTLs to prevent
+    // ordering violations (e.g., VS Code plugin sending 5m on tools, 1h on messages)
+    const isOpenAIPath = reqUrl.includes('/v1/chat/completions') || reqUrl.includes('/v1/responses') || reqUrl.includes('api.openai.com');
+    if (!isGemini && !isOpenAIPath) {
+        if (normalizeCacheControlTTLs(body)) {
+            modified = true;
+        }
+    }
 
     if (isGemini) {
         // Gemini Implicit Caching — automatic for prompts with matching prefixes.
@@ -88,8 +159,9 @@ export function applyContextCDN(body: LLMRequest, isGemini: boolean, reqUrl: str
 
             modified = true;
         }
-    } else {
+    } else if (!hasExistingCacheControl(body)) {
         // Anthropic Cache injection (DRY Implementation)
+        // Only inject when the request doesn't already have cache_control blocks
         if (body.system) {
             const result = injectEphemeralCache(body.system);
             if (result.modified) {
@@ -143,6 +215,15 @@ export async function handleProxyRequest(req: Request, res: Response) {
 
     // Clean up content-length as it will change if we mutate the body string later
     delete headers['content-length'];
+
+    // Inject OAuth beta header for Claude Code Max/Pro users using OAuth tokens
+    const authHeader = headers['authorization'] || '';
+    if (authHeader.includes('sk-ant-oat')) {
+        const currentBeta = headers['anthropic-beta'] || '';
+        if (!currentBeta.includes('oauth-2025-04-20')) {
+            headers['anthropic-beta'] = currentBeta ? `${currentBeta},oauth-2025-04-20` : 'oauth-2025-04-20';
+        }
+    }
 
     const init: RequestInit = {
         method: req.method,

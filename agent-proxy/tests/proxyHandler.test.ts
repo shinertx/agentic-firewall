@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { applyContextCDN, LLMRequest } from '../src/proxyHandler';
+import { applyContextCDN, normalizeCacheControlTTLs, LLMRequest } from '../src/proxyHandler';
 
 describe('applyContextCDN', () => {
 
@@ -127,5 +127,93 @@ describe('applyContextCDN', () => {
         const result = applyContextCDN(body, false, '/v1/chat/completions');
 
         expect(result.body.prompt_cache_key).toBe('user-provided-key');
+    });
+
+    it('should not inject cache_control when request already has cache_control blocks', () => {
+        const body: LLMRequest = {
+            system: [{ type: 'text', text: 'A'.repeat(5000), cache_control: { type: 'ephemeral', ttl: '1h' } }],
+            messages: [
+                { role: 'user', content: [{ type: 'text', text: 'B'.repeat(5000), cache_control: { type: 'ephemeral', ttl: '1h' } }] }
+            ]
+        };
+        const result = applyContextCDN(body, false);
+
+        // Should not add extra cache_control blocks — only normalize existing TTLs
+        expect(result.body.messages?.[0].content[0].cache_control.type).toBe('ephemeral');
+    });
+});
+
+describe('normalizeCacheControlTTLs', () => {
+    it('should normalize mixed TTLs to the minimum', () => {
+        const body: LLMRequest = {
+            tools: [{ name: 'tool1', cache_control: { type: 'ephemeral', ttl: '5m' } }],
+            messages: [
+                { role: 'user', content: [{ type: 'text', text: 'hello', cache_control: { type: 'ephemeral', ttl: '1h' } }] }
+            ]
+        };
+
+        const changed = normalizeCacheControlTTLs(body);
+
+        expect(changed).toBe(true);
+        expect(body.tools?.[0].cache_control.ttl).toBe('5m');
+        expect(body.messages?.[0].content[0].cache_control.ttl).toBe('5m');
+    });
+
+    it('should not modify when all TTLs are the same', () => {
+        const body: LLMRequest = {
+            system: [{ type: 'text', text: 'sys', cache_control: { type: 'ephemeral', ttl: '1h' } }],
+            messages: [
+                { role: 'user', content: [{ type: 'text', text: 'hello', cache_control: { type: 'ephemeral', ttl: '1h' } }] }
+            ]
+        };
+
+        const changed = normalizeCacheControlTTLs(body);
+
+        expect(changed).toBe(false);
+    });
+
+    it('should not modify when there is only one cache_control block', () => {
+        const body: LLMRequest = {
+            system: [{ type: 'text', text: 'sys', cache_control: { type: 'ephemeral', ttl: '1h' } }],
+            messages: [{ role: 'user', content: 'hello' }]
+        };
+
+        const changed = normalizeCacheControlTTLs(body);
+
+        expect(changed).toBe(false);
+    });
+
+    it('should handle cache_control without explicit ttl', () => {
+        const body: LLMRequest = {
+            system: [{ type: 'text', text: 'sys', cache_control: { type: 'ephemeral' } }],
+            messages: [
+                { role: 'user', content: [{ type: 'text', text: 'hello', cache_control: { type: 'ephemeral', ttl: '1h' } }] }
+            ]
+        };
+
+        // Only one block has an explicit ttl, so no conflict to normalize
+        const changed = normalizeCacheControlTTLs(body);
+        expect(changed).toBe(false);
+    });
+
+    it('should normalize across tools, system, and messages', () => {
+        const body: LLMRequest = {
+            tools: [
+                { name: 'read', cache_control: { type: 'ephemeral', ttl: '5m' } },
+                { name: 'write', cache_control: { type: 'ephemeral', ttl: '5m' } }
+            ],
+            system: [{ type: 'text', text: 'sys', cache_control: { type: 'ephemeral', ttl: '1h' } }],
+            messages: [
+                { role: 'user', content: [{ type: 'text', text: 'hello', cache_control: { type: 'ephemeral', ttl: '1h' } }] }
+            ]
+        };
+
+        const changed = normalizeCacheControlTTLs(body);
+
+        expect(changed).toBe(true);
+        expect(body.tools?.[0].cache_control.ttl).toBe('5m');
+        expect(body.tools?.[1].cache_control.ttl).toBe('5m');
+        expect(body.system[0].cache_control.ttl).toBe('5m');
+        expect(body.messages?.[0].content[0].cache_control.ttl).toBe('5m');
     });
 });
