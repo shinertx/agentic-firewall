@@ -57,9 +57,19 @@ jobs:
             set -euo pipefail
             cd ~/agentic-firewall
 
+            # Preserve runtime data files across deploys
+            for f in agent-proxy/stats.json agent-proxy/users.json agent-proxy/installs.json; do
+              [ -f "$f" ] && cp "$f" "/tmp/$(basename $f)" || true
+            done
+
             # Force-sync with remote (handles dirty working tree)
             git fetch origin main
             git reset --hard origin/main
+
+            # Restore runtime data files
+            for f in stats.json users.json installs.json; do
+              [ -f "/tmp/$f" ] && cp "/tmp/$f" "agent-proxy/$f" || true
+            done
 
             # Stop PM2 if running (legacy non-Docker setup)
             pm2 stop all 2>/dev/null || true
