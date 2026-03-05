@@ -1,4 +1,5 @@
 import { getUserStats, UserBudget } from '../budgetGovernor';
+import { getUserSessions, SessionData } from '../sessionTracker';
 
 /**
  * Renders the per-user dashboard HTML.
@@ -46,7 +47,29 @@ h1{font-size:1.4rem;font-weight:700;color:var(--text);letter-spacing:-0.02em;mar
 .none code{color:var(--text);background:var(--bg-secondary);border:1px solid var(--border);padding:6px 16px;border-radius:6px;font-size:0.85rem;font-family:'SF Mono','Fira Code',Consolas,monospace;display:inline-block;margin-top:16px}
 .back{color:var(--text-secondary);text-decoration:none;display:inline-flex;align-items:center;gap:6px;margin-top:32px;font-size:0.85rem;font-weight:500;transition:color 0.2s}
 .back:hover{color:var(--accent)}
-@media(max-width:480px){.grid{grid-template-columns:repeat(2,1fr)} .card:nth-child(3n){border-right:1px solid var(--border)} .card:nth-child(2n){border-right:none}}
+
+/* Session history */
+.sessions{margin-top:40px}
+.sessions h2{font-size:1.1rem;font-weight:700;letter-spacing:-0.02em;color:var(--text);margin-bottom:16px}
+.sessions-table{width:100%;border:1px solid var(--border);border-radius:12px;overflow:hidden;border-collapse:separate;border-spacing:0;font-size:0.82rem}
+.sessions-table thead{background:var(--bg-secondary)}
+.sessions-table th{padding:10px 14px;text-align:left;font-weight:600;color:var(--text-muted);font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid var(--border)}
+.sessions-table td{padding:10px 14px;border-bottom:1px solid var(--border);color:var(--text-secondary);font-variant-numeric:tabular-nums}
+.sessions-table tr:last-child td{border-bottom:none}
+.sessions-table tr:hover td{background:var(--bg-secondary)}
+.sessions-table .s-id{font-family:'SF Mono','Fira Code',Consolas,monospace;font-size:0.75rem;color:var(--text-muted)}
+.sessions-table .s-saved{color:#16a34a;font-weight:600}
+.sessions-table .s-spend{color:var(--text);font-weight:600}
+.s-status{display:inline-flex;padding:2px 8px;border-radius:100px;font-size:0.7rem;font-weight:600}
+.s-status.active{background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0}
+.s-status.expired{background:var(--bg-secondary);color:var(--text-muted);border:1px solid var(--border)}
+.sessions-empty{text-align:center;padding:32px 16px;color:var(--text-muted);font-size:0.85rem}
+.s-models{font-size:0.72rem;color:var(--text-muted);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:480px){
+  .grid{grid-template-columns:repeat(2,1fr)} .card:nth-child(3n){border-right:1px solid var(--border)} .card:nth-child(2n){border-right:none}
+  .sessions-table{font-size:0.75rem}
+  .sessions-table th:nth-child(n+5),.sessions-table td:nth-child(n+5){display:none}
+}
 </style>
 </head>
 <body>
@@ -59,6 +82,10 @@ ${stats ? renderUserStats(userId, stats) : renderEmpty()}
 }
 
 function renderUserStats(userId: string, stats: UserBudget): string {
+  const sessions = getUserSessions(userId).sort((a, b) =>
+    new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime()
+  );
+
   return `
 <h1>Your Dashboard</h1>
 <p class="uid">${userId}</p>
@@ -70,7 +97,40 @@ function renderUserStats(userId: string, stats: UserBudget): string {
   <div class="card"><div class="val">${stats.totalTokens.toLocaleString()}</div><div class="lbl">Tokens</div></div>
   <div class="card"><div class="val">${Math.round(stats.savedTokens).toLocaleString()}</div><div class="lbl">Cached</div></div>
 </div>
-<p class="meta">First seen: ${stats.firstSeen}<br>Last active: ${stats.lastSeen}</p>`;
+<p class="meta">First seen: ${stats.firstSeen}<br>Last active: ${stats.lastSeen}</p>
+${renderSessions(sessions)}`;
+}
+
+function renderSessions(sessions: SessionData[]): string {
+  if (sessions.length === 0) {
+    return `<div class="sessions"><h2>Sessions</h2><div class="sessions-empty">No sessions recorded yet.</div></div>`;
+  }
+
+  const rows = sessions.map(s => {
+    const models = Object.keys(s.models).join(', ') || '-';
+    const created = new Date(s.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const statusCls = s.status === 'active' ? 'active' : 'expired';
+    return `<tr>
+      <td class="s-id">${s.sessionId.slice(0, 8)}</td>
+      <td>${created}</td>
+      <td class="s-spend">$${s.totalSpend.toFixed(2)}</td>
+      <td class="s-saved">${s.savedMoney > 0 ? '-$' + s.savedMoney.toFixed(2) : '-'}</td>
+      <td>${s.totalRequests}</td>
+      <td class="s-models" title="${models}">${models}</td>
+      <td><span class="s-status ${statusCls}">${s.status}</span></td>
+    </tr>`;
+  }).join('\n');
+
+  return `
+<div class="sessions">
+  <h2>Sessions</h2>
+  <table class="sessions-table">
+    <thead><tr>
+      <th>ID</th><th>Started</th><th>Spend</th><th>Saved</th><th>Reqs</th><th>Models</th><th>Status</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+</div>`;
 }
 
 function renderEmpty(): string {

@@ -6,8 +6,36 @@ import { globalStats } from '../stats';
  * Design: Light mode — Stripe/Linear-inspired. White bg, clean borders,
  * Inter font, one accent color (indigo-600), generous whitespace.
  */
+function ssrStatusClass(s: string): string {
+  if (s.includes('CDN')) return 'cdn';
+  if (s.includes('Blocked') || s.includes('Loop') || s.includes('Budget') || s.includes('No Progress')) return 'blocked';
+  if (s.includes('Failover') || s.includes('Shadow') || s.includes('429')) return 'failover';
+  return 'pass';
+}
+
+function ssrStatusLabel(s: string): string {
+  if (s.includes('CDN')) return 'Cache Hit';
+  if (s.includes('Loop')) return 'Loop Killed';
+  if (s.includes('Budget')) return 'Budget Block';
+  if (s.includes('No Progress')) return 'Stopped';
+  if (s.includes('Blocked')) return 'Blocked';
+  if (s.includes('Failover') || s.includes('Shadow')) return 'Failover';
+  if (s.includes('429')) return 'Rate Limited';
+  return 'Proxied';
+}
+
 export function renderLandingPage(): string {
   const agg = getAggregateStats();
+
+  // Pre-render feed rows server-side so the page isn't empty on first paint
+  const MAX_SSR_ROWS = 8;
+  const feedItems = globalStats.recentActivity.slice(0, MAX_SSR_ROWS);
+  const ssrFeedRows = feedItems.map((a: any) => {
+    const saved = a.saved ? `<div class="feed-saved">-$${a.saved}</div>` : '<div class="feed-saved"></div>';
+    const sc = ssrStatusClass(a.status);
+    const sl = ssrStatusLabel(a.status);
+    return `<div class="feed-row"><div class="feed-model">${a.model}</div><div class="feed-tokens">${a.tokens} tokens</div>${saved}<span class="feed-status ${sc}">${sl}</span></div>`;
+  }).join('\n      ');
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -51,7 +79,9 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .nav a:hover{color:var(--text)}
 
 /* Hero */
-.hero{text-align:center;padding:80px 24px 64px;max-width:680px;margin:0 auto}
+.hero{text-align:center;padding:80px 24px 64px;max-width:680px;margin:0 auto;position:relative}
+.hero::before{content:'';position:absolute;top:-80px;left:50%;transform:translateX(-50%);width:800px;height:500px;background:radial-gradient(ellipse at center,rgba(79,70,229,0.12) 0%,rgba(79,70,229,0.06) 35%,rgba(79,70,229,0.02) 55%,transparent 75%);pointer-events:none;z-index:0}
+.hero>*{position:relative;z-index:1}
 .badge{display:inline-flex;align-items:center;gap:6px;padding:4px 14px;border-radius:100px;border:1px solid var(--border);font-size:0.8rem;color:var(--text-secondary);margin-bottom:24px;font-weight:500}
 .badge .dot{width:6px;height:6px;border-radius:50%;background:#22c55e;animation:pulse 2s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
@@ -68,9 +98,12 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 
 /* CTA area */
 .actions{display:flex;flex-direction:column;align-items:center;gap:12px}
-.code{background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:10px 20px;font-family:'SF Mono','Fira Code',Consolas,monospace;font-size:0.85rem;color:var(--text);display:inline-flex;align-items:center;gap:8px;user-select:all;transition:border-color 0.2s}
+.code{background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:10px 20px;font-family:'SF Mono','Fira Code',Consolas,monospace;font-size:0.85rem;color:var(--text);display:inline-flex;align-items:center;gap:8px;user-select:all;transition:border-color 0.2s;position:relative}
 .code:hover{border-color:var(--border-hover)}
 .code .prefix{color:var(--text-muted)}
+.copy-btn{all:unset;cursor:pointer;padding:4px 8px;border-radius:6px;color:var(--text-muted);transition:all 0.2s;user-select:none;display:inline-flex;align-items:center;gap:4px;font-size:0.75rem;font-family:'Inter',-apple-system,sans-serif;font-weight:500;border:1px solid transparent}
+.copy-btn:hover{color:var(--text);background:var(--bg);border-color:var(--border)}
+.copy-btn.copied{color:var(--green)}
 .cta{display:inline-block;background:var(--accent);color:#fff;padding:12px 28px;border-radius:8px;font-size:0.9rem;font-weight:600;text-decoration:none;transition:all 0.2s;letter-spacing:-0.01em}
 .cta:hover{background:var(--accent-hover);transform:translateY(-1px);box-shadow:0 4px 12px rgba(79,70,229,0.25)}
 
@@ -222,7 +255,7 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   </div>
 
   <div class="actions">
-    <div class="code"><span class="prefix">$</span> npx vibe-billing setup</div>
+    <div class="code"><span class="prefix">$</span> npx vibe-billing setup <button class="copy-btn" id="copyBtn" onclick="copyCmd()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span id="copyLabel">Copy</span></button></div>
     <a href="https://github.com/shinertx/agentic-firewall" target="_blank" class="cta">View on GitHub</a>
   </div>
 </div>
@@ -237,7 +270,7 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
       <div class="feed-savings-total" id="feedSavings">$${agg.totalSaved.toFixed(2)} saved</div>
     </div>
     <div class="feed-list" id="feedList">
-      <div class="feed-empty">Waiting for agent traffic...</div>
+      ${ssrFeedRows || '<div class="feed-empty" style="color:var(--text-muted);font-size:0.82rem;padding:32px 20px;background:var(--bg);text-align:center;opacity:0.6">Listening for traffic...</div>'}
     </div>
   </div>
 </div>
@@ -341,6 +374,16 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 </div>
 
 <script>
+function copyCmd() {
+  navigator.clipboard.writeText('npx vibe-billing setup').then(function() {
+    var btn = document.getElementById('copyBtn');
+    var label = document.getElementById('copyLabel');
+    btn.classList.add('copied');
+    label.textContent = 'Copied!';
+    setTimeout(function() { btn.classList.remove('copied'); label.textContent = 'Copy'; }, 2000);
+  });
+}
+
 var MAX_ROWS = 8;
 var lastFeedJSON = '';
 
@@ -403,16 +446,19 @@ function renderFeed(feed) {
   var isFirst = lastFeedJSON === '';
 
   if (isFirst) {
-    // First load: render up to MAX_ROWS instantly, no animation
+    // SSR already rendered rows — just record the feed state and move on
     var empty = list.querySelector('.feed-empty');
     if (empty) empty.remove();
-    var initial = feed.slice(0, MAX_ROWS);
-    initial.forEach(function(item) {
-      var row = document.createElement('div');
-      row.className = 'feed-row';
-      row.innerHTML = rowHTML(item);
-      list.appendChild(row);
-    });
+    // If no SSR rows, render initial batch instantly
+    if (!list.querySelector('.feed-row')) {
+      var initial = feed.slice(0, MAX_ROWS);
+      initial.forEach(function(item) {
+        var row = document.createElement('div');
+        row.className = 'feed-row';
+        row.innerHTML = rowHTML(item);
+        list.appendChild(row);
+      });
+    }
     lastFeedJSON = feedJSON;
     return;
   }
