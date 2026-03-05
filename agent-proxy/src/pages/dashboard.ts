@@ -14,6 +14,7 @@ export function renderDashboard(userId: string): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Dashboard — Agent Firewall</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%234f46e5'/><text x='50' y='72' font-size='60' text-anchor='middle' fill='white' font-family='system-ui'>AF</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -77,6 +78,52 @@ h1{font-size:1.4rem;font-weight:700;color:var(--text);letter-spacing:-0.02em;mar
 ${stats ? renderUserStats(userId, stats) : renderEmpty()}
 <a href="/" class="back">← Back to Agent Firewall</a>
 </div>
+<script>
+var DASH_USER = '${userId}';
+var DASH_URL = '/api/dashboard/' + DASH_USER;
+
+function statusCls(s) { return s === 'active' ? 'active' : 'expired'; }
+
+async function pollDashboard() {
+  try {
+    var r = await fetch(DASH_URL);
+    if (!r.ok) return;
+    var d = await r.json();
+    if (!d.stats) return;
+    var s = d.stats;
+    var el = function(id) { return document.getElementById(id); };
+    el('d-reqs').textContent = s.totalRequests;
+    el('d-spend').textContent = '$' + s.totalSpend.toFixed(2);
+    el('d-saved').textContent = '$' + s.savedMoney.toFixed(2);
+    el('d-loops').textContent = s.blockedLoops;
+    el('d-tokens').textContent = s.totalTokens.toLocaleString();
+    el('d-cached').textContent = Math.round(s.savedTokens).toLocaleString();
+    el('d-meta').innerHTML = 'First seen: ' + s.firstSeen + '<br>Last active: ' + s.lastSeen;
+
+    // Update sessions table
+    var tbody = el('d-sessions');
+    if (tbody && d.sessions && d.sessions.length > 0) {
+      tbody.innerHTML = d.sessions.map(function(sess) {
+        var models = Object.keys(sess.models || {}).join(', ') || '-';
+        var dt = new Date(sess.createdAt);
+        var created = dt.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        var sc = statusCls(sess.status);
+        return '<tr>' +
+          '<td class="s-id">' + sess.sessionId.slice(0, 8) + '</td>' +
+          '<td>' + created + '</td>' +
+          '<td class="s-spend">$' + sess.totalSpend.toFixed(2) + '</td>' +
+          '<td class="s-saved">' + (sess.savedMoney > 0 ? '-$' + sess.savedMoney.toFixed(2) : '-') + '</td>' +
+          '<td>' + sess.totalRequests + '</td>' +
+          '<td class="s-models" title="' + models + '">' + models + '</td>' +
+          '<td><span class="s-status ' + sc + '">' + sess.status + '</span></td>' +
+          '</tr>';
+      }).join('');
+    }
+  } catch (e) {}
+}
+
+setInterval(pollDashboard, 5000);
+</script>
 </body>
 </html>`;
 }
@@ -90,14 +137,14 @@ function renderUserStats(userId: string, stats: UserBudget): string {
 <h1>Your Dashboard</h1>
 <p class="uid">${userId}</p>
 <div class="grid">
-  <div class="card"><div class="val">${stats.totalRequests}</div><div class="lbl">Requests</div></div>
-  <div class="card"><div class="val">$${stats.totalSpend.toFixed(2)}</div><div class="lbl">Spend</div></div>
-  <div class="card"><div class="val">$${stats.savedMoney.toFixed(2)}</div><div class="lbl">Saved</div></div>
-  <div class="card"><div class="val">${stats.blockedLoops}</div><div class="lbl">Loops Blocked</div></div>
-  <div class="card"><div class="val">${stats.totalTokens.toLocaleString()}</div><div class="lbl">Tokens</div></div>
-  <div class="card"><div class="val">${Math.round(stats.savedTokens).toLocaleString()}</div><div class="lbl">Cached</div></div>
+  <div class="card"><div class="val" id="d-reqs">${stats.totalRequests}</div><div class="lbl">Requests</div></div>
+  <div class="card"><div class="val" id="d-spend">$${stats.totalSpend.toFixed(2)}</div><div class="lbl">Spend</div></div>
+  <div class="card"><div class="val" id="d-saved">$${stats.savedMoney.toFixed(2)}</div><div class="lbl">Saved</div></div>
+  <div class="card"><div class="val" id="d-loops">${stats.blockedLoops}</div><div class="lbl">Loops Blocked</div></div>
+  <div class="card"><div class="val" id="d-tokens">${stats.totalTokens.toLocaleString()}</div><div class="lbl">Tokens</div></div>
+  <div class="card"><div class="val" id="d-cached">${Math.round(stats.savedTokens).toLocaleString()}</div><div class="lbl">Cached</div></div>
 </div>
-<p class="meta">First seen: ${stats.firstSeen}<br>Last active: ${stats.lastSeen}</p>
+<p class="meta" id="d-meta">First seen: ${stats.firstSeen}<br>Last active: ${stats.lastSeen}</p>
 ${renderSessions(sessions)}`;
 }
 
@@ -128,7 +175,7 @@ function renderSessions(sessions: SessionData[]): string {
     <thead><tr>
       <th>ID</th><th>Started</th><th>Spend</th><th>Saved</th><th>Reqs</th><th>Models</th><th>Status</th>
     </tr></thead>
-    <tbody>${rows}</tbody>
+    <tbody id="d-sessions">${rows}</tbody>
   </table>
 </div>`;
 }

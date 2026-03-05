@@ -287,6 +287,15 @@ app.get('/dashboard/:userId', (req: Request, res: Response) => {
     res.send(renderDashboard(req.params.userId as string));
 });
 
+// Public per-user stats API (for dashboard live polling)
+app.get('/api/dashboard/:userId', (req: Request, res: Response) => {
+    const stats = getUserStats(req.params.userId as string);
+    if (!stats) return res.json({ stats: null, sessions: [] });
+    const sessions = getUserSessions(req.params.userId as string)
+        .sort((a, b) => new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime());
+    res.json({ stats, sessions });
+});
+
 // Health endpoint — reports mode and configured providers
 app.get('/health', (req: Request, res: Response) => {
     const { valid, missing } = validateAllKeys();

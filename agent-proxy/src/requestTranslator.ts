@@ -22,13 +22,37 @@ interface CrossProviderTarget {
     targetProvider: string;
 }
 
+// Cross-provider failover: when same-provider 429 failover also fails,
+// try an equivalent-tier model on a different provider.
+//
+// ┌──────────────────────────────────────────────────────────────────────┐
+// │              CROSS-PROVIDER EQUIVALENCE MAPPING                     │
+// │                                                                     │
+// │ Tier 1 (Premium):  Opus ↔ GPT-4o ↔ Gemini 2.5 Pro                │
+// │ Tier 2 (Standard): Sonnet ↔ GPT-4.1 ↔ Gemini 2.5 Pro            │
+// │ Tier 3 (Budget):   Haiku ↔ GPT-4o-mini ↔ Gemini 2.5 Flash       │
+// │ Reasoning:         o3/o1 → Sonnet (best non-reasoning alternative) │
+// └──────────────────────────────────────────────────────────────────────┘
 const CROSS_PROVIDER_MAP: CrossProviderTarget[] = [
-    { sourcePattern: 'sonnet', targetModel: 'gpt-4o', targetProvider: 'openai' },
+    // Anthropic → OpenAI
     { sourcePattern: 'opus', targetModel: 'gpt-4o', targetProvider: 'openai' },
+    { sourcePattern: 'sonnet', targetModel: 'gpt-4.1', targetProvider: 'openai' },
+    { sourcePattern: 'haiku', targetModel: 'gpt-4o-mini', targetProvider: 'openai' },
+
+    // OpenAI → Anthropic
+    { sourcePattern: 'o3', targetModel: 'claude-sonnet-4-6', targetProvider: 'anthropic' },
+    { sourcePattern: 'o1', targetModel: 'claude-sonnet-4-6', targetProvider: 'anthropic' },
+    { sourcePattern: 'gpt-5', targetModel: 'claude-sonnet-4-6', targetProvider: 'anthropic' },
+    { sourcePattern: 'gpt-4.1', targetModel: 'claude-sonnet-4-6', targetProvider: 'anthropic' },
     { sourcePattern: 'gpt-4o', targetModel: 'claude-sonnet-4-6', targetProvider: 'anthropic' },
     { sourcePattern: 'gpt-4', targetModel: 'claude-sonnet-4-6', targetProvider: 'anthropic' },
+
+    // Gemini → Anthropic (best text quality)
     { sourcePattern: 'gemini-2.5-pro', targetModel: 'claude-sonnet-4-6', targetProvider: 'anthropic' },
     { sourcePattern: 'gemini-2.5-flash', targetModel: 'gpt-4o-mini', targetProvider: 'openai' },
+    { sourcePattern: 'gemini-2.0-flash', targetModel: 'gpt-4o-mini', targetProvider: 'openai' },
+    { sourcePattern: 'gemini-1.5-pro', targetModel: 'claude-sonnet-4-6', targetProvider: 'anthropic' },
+    { sourcePattern: 'gemini-1.5-flash', targetModel: 'gpt-4o-mini', targetProvider: 'openai' },
 ];
 
 const PROVIDER_URLS = {

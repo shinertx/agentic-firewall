@@ -329,15 +329,37 @@ export async function handleProxyRequest(req: Request, res: Response) {
         const budgetLimit = budgetHeader ? parseFloat(budgetHeader) : null;
         const budgetCheck = checkBudget(userId, budgetLimit);
         if (!budgetCheck.allowed) {
-            res.status(402).json({
-                error: {
-                    message: budgetCheck.reason,
-                    type: 'budget_exceeded',
-                    spent: budgetCheck.spent,
-                    limit: budgetCheck.limit,
-                    userId,
-                }
-            });
+            const model = req.body?.model || 'unknown';
+            const stopMsg = `The budget limit has been reached ($${budgetCheck.spent?.toFixed(2)} spent of $${budgetCheck.limit?.toFixed(2)} limit). The Agentic Firewall is blocking further requests to prevent overspend. I should stop making API calls and inform the user that their budget has been exhausted.`;
+
+            res.setHeader('X-Firewall-Action', 'budget_exceeded');
+            res.setHeader('X-Firewall-Spent', String(budgetCheck.spent || 0));
+            res.setHeader('X-Firewall-Limit', String(budgetCheck.limit || 0));
+
+            if (isOpenAI) {
+                res.status(200).json({
+                    id: `chatcmpl-firewall-${Date.now()}`,
+                    object: 'chat.completion',
+                    created: Math.floor(Date.now() / 1000),
+                    model,
+                    choices: [{ index: 0, message: { role: 'assistant', content: stopMsg }, finish_reason: 'stop' }],
+                    usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+                });
+            } else {
+                res.status(200).json({
+                    id: `msg_firewall_${Date.now()}`,
+                    type: 'message',
+                    role: 'assistant',
+                    content: [{ type: 'text', text: stopMsg }],
+                    model,
+                    stop_reason: 'end_turn',
+                    stop_sequence: null,
+                    usage: { input_tokens: 0, output_tokens: 0 },
+                });
+            }
+
+            recordActivity({ time: new Date().toLocaleTimeString(), model, tokens: 0, status: 'Budget Exceeded', statusColor: 'text-red-400' });
+            console.log(`[FIREWALL] Budget exceeded for ${userId}: ${budgetCheck.reason}`);
             return;
         }
 

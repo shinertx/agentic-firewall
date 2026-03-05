@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { classifyHeuristic, smartRoute } from '../src/smartRouter';
+import { classifyHeuristic, smartRoute, resetProviderKeyCache } from '../src/smartRouter';
 
 // Mock the ollamaClient module
 vi.mock('../src/ollamaClient', () => ({
@@ -18,11 +18,18 @@ vi.mock('../src/stats', () => ({
     },
 }));
 
+// Mock keyVault so all providers appear to have valid keys
+vi.mock('../src/keyVault', () => ({
+    getProviderKey: vi.fn().mockReturnValue({ key: 'test-key' }),
+    getProviderHeaderConfig: vi.fn().mockReturnValue({ headerName: 'x-api-key', headerPrefix: '' }),
+}));
+
 import { isOllamaAvailable, ollamaClassify } from '../src/ollamaClient';
 
 beforeEach(() => {
     vi.mocked(isOllamaAvailable).mockResolvedValue(false);
     vi.mocked(ollamaClassify).mockResolvedValue('');
+    resetProviderKeyCache();
 });
 
 describe('Smart Router', () => {

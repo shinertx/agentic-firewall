@@ -7,15 +7,48 @@ interface FailoverConfig {
     provider: 'anthropic' | 'openai' | 'gemini';
 }
 
-// Failover mappings: expensive model → cheaper equivalent
+// Same-provider failover: expensive model → cheaper equivalent on same provider.
+// On 429, drop one tier to keep the request flowing.
+//
+// ORDER MATTERS — more specific patterns must come first so 'gpt-4o-mini'
+// doesn't accidentally match the 'gpt-4o' rule, etc.
+//
+// ┌──────────────────────────────────────────────────────────────────────┐
+// │                     SAME-PROVIDER FAILOVER CHAINS                   │
+// │                                                                     │
+// │ Anthropic:  Opus → Sonnet → Haiku                                  │
+// │ OpenAI:     o3/o1 → o4-mini (reasoning stays reasoning)            │
+// │             GPT-5.2 Pro → GPT-5.2 → GPT-4.1                       │
+// │             GPT-5 → GPT-4.1 → GPT-4o → GPT-4o-mini               │
+// │ Gemini:     2.5 Pro → 2.5 Flash, 2.0 Pro → 2.0 Flash             │
+// │                                                                     │
+// │ Input cost reference (per 1M tokens, May 2025):                    │
+// │   Anthropic: Opus $15, Sonnet $3, Haiku $0.80                     │
+// │   OpenAI:    o3 $10, o4-mini $1.10, GPT-4o $2.50, 4o-mini $0.15  │
+// │              GPT-4.1 $2, 4.1-nano $0.10, GPT-5 ~$2               │
+// │   Gemini:    2.5 Pro $1.25, 2.5 Flash $0.15, 2.0 Flash $0.10     │
+// └──────────────────────────────────────────────────────────────────────┘
 const FAILOVER_MAP: FailoverConfig[] = [
-    // Anthropic: Sonnet → Haiku
-    { pattern: 'sonnet', fallbackModel: 'claude-haiku-4-5', provider: 'anthropic' },
+    // --- Anthropic ---
     { pattern: 'opus', fallbackModel: 'claude-sonnet-4-6', provider: 'anthropic' },
-    // OpenAI: GPT-4o → GPT-4o-mini
+    { pattern: 'sonnet', fallbackModel: 'claude-haiku-4-5', provider: 'anthropic' },
+
+    // --- OpenAI: Reasoning (o-series) ---
+    { pattern: 'o3', fallbackModel: 'o4-mini', provider: 'openai' },
+    { pattern: 'o1', fallbackModel: 'o4-mini', provider: 'openai' },
+
+    // --- OpenAI: GPT-5 series (specific first) ---
+    { pattern: 'gpt-5.2-pro', fallbackModel: 'gpt-5.2', provider: 'openai' },
+    { pattern: 'gpt-5.2', fallbackModel: 'gpt-4.1', provider: 'openai' },
+    { pattern: 'gpt-5', fallbackModel: 'gpt-4.1', provider: 'openai' },
+
+    // --- OpenAI: GPT-4 series (specific first) ---
+    { pattern: 'gpt-4.1-nano', fallbackModel: 'gpt-4o-mini', provider: 'openai' },
+    { pattern: 'gpt-4.1', fallbackModel: 'gpt-4o', provider: 'openai' },
     { pattern: 'gpt-4o', fallbackModel: 'gpt-4o-mini', provider: 'openai' },
     { pattern: 'gpt-4', fallbackModel: 'gpt-4o-mini', provider: 'openai' },
-    // Gemini: Pro → Flash
+
+    // --- Gemini ---
     { pattern: 'gemini-2.5-pro', fallbackModel: 'gemini-2.5-flash', provider: 'gemini' },
     { pattern: 'gemini-2.0-pro', fallbackModel: 'gemini-2.0-flash', provider: 'gemini' },
     { pattern: 'gemini-1.5-pro', fallbackModel: 'gemini-1.5-flash', provider: 'gemini' },
@@ -36,8 +69,9 @@ export async function attemptShadowRouterFailover(
     const config = FAILOVER_MAP.find(f => modelStr.includes(f.pattern) && modelStr !== f.fallbackModel);
     if (!config) return null;
 
-    // Don't failover if we're already on the fallback model
-    if (modelStr.includes('mini') || modelStr.includes('haiku') || modelStr.includes('flash')) return null;
+    // Don't failover if we're already on the cheapest tier.
+    // Note: use '-mini' not 'mini' — 'gemini' contains 'mini'!
+    if (modelStr.includes('-mini') || modelStr.includes('-nano') || modelStr.includes('haiku') || modelStr.includes('flash')) return null;
 
     console.log(`[SHADOW ROUTER] 🔀 429 on ${bodyModel || urlModel}. Failing over to ${config.fallbackModel}...`);
 

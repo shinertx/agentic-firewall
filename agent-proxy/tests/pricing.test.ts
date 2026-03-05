@@ -26,11 +26,11 @@ describe('Pricing Module', () => {
     });
 
     it('should return Claude Haiku pricing', () => {
-        expect(getInputCost('claude-haiku-4-5')).toBe(1.00);
+        expect(getInputCost('claude-haiku-4-5')).toBe(0.80);
     });
 
     it('should return Claude Opus pricing', () => {
-        expect(getInputCost('claude-opus-4-6')).toBe(5.00);
+        expect(getInputCost('claude-opus-4-6')).toBe(15.00);
     });
 
     // === GPT-4 series (legacy) ===

@@ -25,11 +25,13 @@ export const MODEL_CONTEXT_WINDOWS: ContextWindow[] = [
     { pattern: 'o4-mini', maxTokens: 200_000, label: 'o4-mini' },
     { pattern: 'o3-mini', maxTokens: 200_000, label: 'o3-mini' },
     { pattern: 'o3', maxTokens: 200_000, label: 'o3' },
+    { pattern: 'o1-mini', maxTokens: 128_000, label: 'o1-mini' },
     { pattern: 'o1', maxTokens: 200_000, label: 'o1' },
 
-    // OpenAI GPT-4 legacy
+    // OpenAI GPT-4 series
     { pattern: 'gpt-4o-mini', maxTokens: 128_000, label: 'GPT-4o Mini' },
     { pattern: 'gpt-4o', maxTokens: 128_000, label: 'GPT-4o' },
+    { pattern: 'gpt-4.1-mini', maxTokens: 1_047_576, label: 'GPT-4.1 Mini' },
     { pattern: 'gpt-4.1-nano', maxTokens: 1_047_576, label: 'GPT-4.1 Nano' },
     { pattern: 'gpt-4.1', maxTokens: 1_047_576, label: 'GPT-4.1' },
     { pattern: 'gpt-4-32k', maxTokens: 32_768, label: 'GPT-4 32k' },
@@ -43,6 +45,10 @@ export const MODEL_CONTEXT_WINDOWS: ContextWindow[] = [
     // Google Gemini
     { pattern: 'gemini-2.5-pro', maxTokens: 1_048_576, label: 'Gemini 2.5 Pro' },
     { pattern: 'gemini-2.5-flash', maxTokens: 1_048_576, label: 'Gemini 2.5 Flash' },
+    { pattern: 'gemini-2.0-flash', maxTokens: 1_048_576, label: 'Gemini 2.0 Flash' },
+    { pattern: 'gemini-2.0-pro', maxTokens: 1_048_576, label: 'Gemini 2.0 Pro' },
+    { pattern: 'gemini-1.5-pro', maxTokens: 1_048_576, label: 'Gemini 1.5 Pro' },
+    { pattern: 'gemini-1.5-flash', maxTokens: 1_048_576, label: 'Gemini 1.5 Flash' },
     { pattern: 'flash', maxTokens: 1_048_576, label: 'Gemini Flash' },
     { pattern: 'gemini-pro', maxTokens: 1_048_576, label: 'Gemini Pro' },
     { pattern: 'gemini', maxTokens: 1_048_576, label: 'Gemini' },

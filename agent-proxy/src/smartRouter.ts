@@ -6,9 +6,14 @@
  *   Tier 2: Ollama classification (~200-500ms) — resolves ambiguous MEDIUM cases
  *
  * If Ollama is unavailable, MEDIUM is treated as HIGH (conservative, no downgrade).
+ *
+ * The router checks which provider API keys are available and only downgrades
+ * to models on providers that are configured. It never routes to a provider
+ * without a valid API key.
  */
 
 import { isOllamaAvailable, ollamaClassify } from './ollamaClient';
+import { getProviderKey, Provider } from './keyVault';
 import { globalStats } from './stats';
 
 export type Complexity = 'LOW' | 'MEDIUM' | 'HIGH';
@@ -24,25 +29,88 @@ export interface SmartRouteResult {
 interface DowngradeRule {
     pattern: string;
     downgrade: string;
+    provider: Provider;
     maxComplexity: Complexity;
 }
 
-// Sorted by specificity: longer patterns first
+// ┌──────────────────────────────────────────────────────────────────────┐
+// │                     SMART ROUTER DOWNGRADE MAP                       │
+// │                                                                      │
+// │ Rules are evaluated in order. For each complexity level:              │
+// │   LOW    → drop to cheapest model on same provider                   │
+// │   MEDIUM → drop one tier on same provider                            │
+// │                                                                      │
+// │ The `provider` field ensures we only downgrade to models whose       │
+// │ API key is configured. Rules for providers without keys are skipped. │
+// └──────────────────────────────────────────────────────────────────────┘
 const DOWNGRADE_MAP: DowngradeRule[] = [
-    // LOW complexity: use cheapest model
-    { pattern: 'opus',   downgrade: 'claude-haiku-4-5',  maxComplexity: 'LOW' },
-    { pattern: 'sonnet', downgrade: 'claude-haiku-4-5',  maxComplexity: 'LOW' },
-    { pattern: 'gpt-4o', downgrade: 'gpt-4o-mini',       maxComplexity: 'LOW' },
-    { pattern: 'gpt-5',  downgrade: 'gpt-4o-mini',       maxComplexity: 'LOW' },
-    // MEDIUM complexity: one tier down
-    { pattern: 'opus',   downgrade: 'claude-sonnet-4-6',  maxComplexity: 'MEDIUM' },
-    { pattern: 'gpt-5',  downgrade: 'gpt-4o',             maxComplexity: 'MEDIUM' },
+    // === LOW complexity: use cheapest model on same provider ===
+
+    // Anthropic
+    { pattern: 'opus',   downgrade: 'claude-haiku-4-5',  provider: 'anthropic', maxComplexity: 'LOW' },
+    { pattern: 'sonnet', downgrade: 'claude-haiku-4-5',  provider: 'anthropic', maxComplexity: 'LOW' },
+
+    // OpenAI — reasoning models
+    { pattern: 'o3',     downgrade: 'o4-mini',           provider: 'openai', maxComplexity: 'LOW' },
+    { pattern: 'o1',     downgrade: 'o4-mini',           provider: 'openai', maxComplexity: 'LOW' },
+
+    // OpenAI — GPT-5 series (specific first)
+    { pattern: 'gpt-5.2-pro', downgrade: 'gpt-4o-mini',  provider: 'openai', maxComplexity: 'LOW' },
+    { pattern: 'gpt-5.2',     downgrade: 'gpt-4o-mini',  provider: 'openai', maxComplexity: 'LOW' },
+    { pattern: 'gpt-5',       downgrade: 'gpt-4o-mini',  provider: 'openai', maxComplexity: 'LOW' },
+
+    // OpenAI — GPT-4 series (specific first)
+    { pattern: 'gpt-4.1',     downgrade: 'gpt-4o-mini',  provider: 'openai', maxComplexity: 'LOW' },
+    { pattern: 'gpt-4o',      downgrade: 'gpt-4o-mini',  provider: 'openai', maxComplexity: 'LOW' },
+    { pattern: 'gpt-4',       downgrade: 'gpt-4o-mini',  provider: 'openai', maxComplexity: 'LOW' },
+
+    // Gemini
+    { pattern: 'gemini-2.5-pro',  downgrade: 'gemini-2.5-flash', provider: 'gemini', maxComplexity: 'LOW' },
+    { pattern: 'gemini-2.0-pro',  downgrade: 'gemini-2.0-flash', provider: 'gemini', maxComplexity: 'LOW' },
+    { pattern: 'gemini-1.5-pro',  downgrade: 'gemini-1.5-flash', provider: 'gemini', maxComplexity: 'LOW' },
+
+    // === MEDIUM complexity: drop one tier ===
+
+    // Anthropic
+    { pattern: 'opus',   downgrade: 'claude-sonnet-4-6', provider: 'anthropic', maxComplexity: 'MEDIUM' },
+
+    // OpenAI — GPT-5 series
+    { pattern: 'gpt-5.2-pro', downgrade: 'gpt-5.2',     provider: 'openai', maxComplexity: 'MEDIUM' },
+    { pattern: 'gpt-5.2',     downgrade: 'gpt-4.1',     provider: 'openai', maxComplexity: 'MEDIUM' },
+    { pattern: 'gpt-5',       downgrade: 'gpt-4.1',     provider: 'openai', maxComplexity: 'MEDIUM' },
+
+    // OpenAI — GPT-4 series
+    { pattern: 'gpt-4.1',     downgrade: 'gpt-4o',      provider: 'openai', maxComplexity: 'MEDIUM' },
+    { pattern: 'gpt-4o',      downgrade: 'gpt-4o-mini',  provider: 'openai', maxComplexity: 'MEDIUM' },
+
+    // Gemini
+    { pattern: 'gemini-2.5-pro',  downgrade: 'gemini-2.5-flash', provider: 'gemini', maxComplexity: 'MEDIUM' },
 ];
 
-// Models that are already the cheapest tier — never downgrade these
-const CHEAP_MODELS = ['haiku', 'mini', 'flash', 'gpt-3.5'];
+// Models that are already the cheapest tier — never downgrade these.
+// Use '-mini' not 'mini' because 'gemini' contains 'mini'.
+const CHEAP_MODELS = ['haiku', '-mini', '-nano', 'flash', 'gpt-3.5'];
 
 const COMPLEXITY_RANK: Record<Complexity, number> = { LOW: 0, MEDIUM: 1, HIGH: 2 };
+
+// Cache which providers have valid keys (checked once at first use)
+let providerKeyCache: Map<Provider, boolean> | null = null;
+
+function getAvailableProviders(): Map<Provider, boolean> {
+    if (providerKeyCache) return providerKeyCache;
+    providerKeyCache = new Map();
+    const providers: Provider[] = ['anthropic', 'openai', 'gemini', 'nvidia'];
+    for (const p of providers) {
+        const result = getProviderKey(p);
+        providerKeyCache.set(p, 'key' in result);
+    }
+    return providerKeyCache;
+}
+
+/** Reset provider key cache (for testing). */
+export function resetProviderKeyCache(): void {
+    providerKeyCache = null;
+}
 
 /**
  * Extract the last user message text from a request body.
@@ -168,16 +236,21 @@ Classification:`;
 
 /**
  * Find the best downgrade rule for a model + complexity combination.
+ * Only returns rules for providers that have valid API keys configured.
  */
 function findDowngrade(model: string, complexity: Complexity): DowngradeRule | null {
     const lower = model.toLowerCase();
+    const available = getAvailableProviders();
 
     // Never downgrade already-cheap models
     if (CHEAP_MODELS.some(c => lower.includes(c))) return null;
 
     // Find the best matching rule where complexity <= maxComplexity
+    // AND the target provider has a valid API key
     for (const rule of DOWNGRADE_MAP) {
-        if (lower.includes(rule.pattern) && COMPLEXITY_RANK[complexity] <= COMPLEXITY_RANK[rule.maxComplexity]) {
+        if (lower.includes(rule.pattern)
+            && COMPLEXITY_RANK[complexity] <= COMPLEXITY_RANK[rule.maxComplexity]
+            && available.get(rule.provider) === true) {
             // Don't downgrade to the same model
             if (lower !== rule.downgrade.toLowerCase()) {
                 return rule;
@@ -200,9 +273,6 @@ export async function smartRoute(body: any, isGemini: boolean, isOpenAI: boolean
     };
 
     if (!model || !body) return noResult;
-
-    // For Gemini, model is often in the URL not the body — extract if missing
-    const modelName = model.toLowerCase();
 
     // Tier 1: fast heuristics
     const heuristic = classifyHeuristic(body, isGemini);

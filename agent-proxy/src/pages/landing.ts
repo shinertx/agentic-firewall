@@ -44,6 +44,22 @@ export function renderLandingPage(): string {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Agent Firewall — Agent Runtime Control</title>
 <meta name="description" content="Keep autonomous AI agents under control. Loop detection, prompt caching, budget enforcement for Claude Code, OpenClaw, and any LLM agent.">
+
+<!-- Social / Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Agent Firewall — Agent Runtime Control">
+<meta property="og:description" content="Loop detection, prompt caching, budget enforcement for Claude Code, OpenAI, Gemini, and any LLM agent. Save 30-60% on API costs.">
+<meta property="og:url" content="https://api.jockeyvc.com">
+<meta property="og:site_name" content="Agent Firewall">
+
+<!-- Twitter Card -->
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Agent Firewall — Agent Runtime Control">
+<meta name="twitter:description" content="Loop detection, prompt caching, budget enforcement for Claude Code, OpenAI, Gemini, and any LLM agent.">
+
+<!-- Favicon (inline SVG data URI — no external file needed) -->
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%234f46e5'/><text x='50' y='72' font-size='60' text-anchor='middle' fill='white' font-family='system-ui'>AF</text></svg>">
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>

@@ -133,10 +133,10 @@ describe('Request Translator', () => {
 
     // ========== findCrossProviderTarget ==========
     describe('findCrossProviderTarget', () => {
-        it('should map sonnet to gpt-4o (openai)', () => {
+        it('should map sonnet to gpt-4.1 (openai)', () => {
             const result = findCrossProviderTarget('claude-sonnet-4-6');
             expect(result).not.toBeNull();
-            expect(result!.targetModel).toBe('gpt-4o');
+            expect(result!.targetModel).toBe('gpt-4.1');
             expect(result!.targetProvider).toBe('openai');
         });
 
