@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Shield, Zap, RefreshCw, BarChart2, Download, TrendingUp, Users, Globe } from 'lucide-react';
+import { Shield, Zap, RefreshCw, BarChart2, Download, TrendingUp, Users, Globe, Package } from 'lucide-react';
 import { motion, useMotionValue, useTransform, animate } from 'framer-motion';
 
 /* ── Animated number counter ──────────────────────────────── */
@@ -35,11 +35,15 @@ function App() {
     recentActivity: [] as any[]
   });
 
-  // Community counters: start at a base, then tick up slowly
-  const INSTALL_BASE = 18_200;
-  const SAVINGS_BASE = 42_850;
-  const [communityInstalls, setCommunityInstalls] = useState(INSTALL_BASE);
-  const [communitySavings, setCommunitySavings] = useState(SAVINGS_BASE);
+  // Real community metrics from server
+  const [communityInstalls, setCommunityInstalls] = useState(0);
+  const [communitySavings, setCommunitySavings] = useState(0);
+  const [npmStats, setNpmStats] = useState({ weekly: 0, monthly: 0 });
+  const [installSources, setInstallSources] = useState<{
+    platformBreakdown: Record<string, number>;
+    archBreakdown: Record<string, number>;
+    versionBreakdown: Record<string, number>;
+  } | null>(null);
 
   // Fetch live proxy stats
   useEffect(() => {
@@ -52,7 +56,7 @@ function App() {
             setStats(prev => ({ ...prev, ...data }));
           }
         }
-      } catch (e) {
+      } catch {
         // silently fail
       }
     };
@@ -61,13 +65,43 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Slowly tick up the community counters to simulate global usage
+  // Fetch real install + npm stats
   useEffect(() => {
-    const ticker = setInterval(() => {
-      setCommunityInstalls(prev => prev + Math.floor(Math.random() * 3) + 1);
-      setCommunitySavings(prev => prev + Math.floor(Math.random() * 18) + 5);
-    }, 8000); // tick every 8s
-    return () => clearInterval(ticker);
+    const fetchInstallData = async () => {
+      try {
+        const breakdownRes = await fetch('https://api.jockeyvc.com/api/install-breakdown');
+        if (breakdownRes.ok) {
+          const data = await breakdownRes.json();
+          setCommunityInstalls(data.uniqueInstalls || 0);
+          setInstallSources({
+            platformBreakdown: data.platformBreakdown || {},
+            archBreakdown: data.archBreakdown || {},
+            versionBreakdown: data.versionBreakdown || {},
+          });
+        }
+      } catch {}
+
+      try {
+        const npmRes = await fetch('https://api.jockeyvc.com/api/npm-stats');
+        if (npmRes.ok) {
+          const data = await npmRes.json();
+          setNpmStats({ weekly: data.weekly || 0, monthly: data.monthly || 0 });
+        }
+      } catch {}
+
+      // Fetch aggregate for community savings
+      try {
+        const aggRes = await fetch('https://api.jockeyvc.com/api/stats');
+        if (aggRes.ok) {
+          const data = await aggRes.json();
+          setCommunitySavings(Math.round(data.savedMoney || 0));
+        }
+      } catch {}
+    };
+
+    fetchInstallData();
+    const interval = setInterval(fetchInstallData, 30_000);
+    return () => clearInterval(interval);
   }, []);
 
   return (
@@ -109,21 +143,34 @@ function App() {
                 Live Community Metrics
               </span>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-8">
-              {/* Global Installs */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mt-8">
+              {/* Unique Installs */}
               <div className="text-center">
                 <div className="flex items-center justify-center gap-3 mb-3">
                   <div className="p-2 bg-blue-500/15 rounded-lg">
                     <Download className="w-5 h-5 text-blue-400" />
                   </div>
-                  <span className="text-gray-400 text-sm font-medium uppercase tracking-wider">Global Installs</span>
+                  <span className="text-gray-400 text-sm font-medium uppercase tracking-wider">Unique Installs</span>
                 </div>
-                <p className="text-6xl font-extrabold tracking-tight bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent">
+                <p className="text-5xl font-extrabold tracking-tight bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent">
                   <AnimatedCounter target={communityInstalls} />
+                </p>
+                <p className="text-gray-500 text-sm mt-2">Tracked via CLI telemetry</p>
+              </div>
+              {/* npm Weekly Downloads */}
+              <div className="text-center">
+                <div className="flex items-center justify-center gap-3 mb-3">
+                  <div className="p-2 bg-purple-500/15 rounded-lg">
+                    <Package className="w-5 h-5 text-purple-400" />
+                  </div>
+                  <span className="text-gray-400 text-sm font-medium uppercase tracking-wider">npm Weekly</span>
+                </div>
+                <p className="text-5xl font-extrabold tracking-tight bg-gradient-to-r from-purple-400 to-pink-300 bg-clip-text text-transparent">
+                  <AnimatedCounter target={npmStats.weekly} />
                 </p>
                 <p className="text-gray-500 text-sm mt-2 flex items-center justify-center gap-1.5">
                   <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
-                  <span className="text-emerald-400 font-medium">+12%</span> this week
+                  {npmStats.monthly > 0 ? `${npmStats.monthly.toLocaleString()} monthly` : 'via npm registry'}
                 </p>
               </div>
               {/* Community Savings */}
@@ -134,13 +181,26 @@ function App() {
                   </div>
                   <span className="text-gray-400 text-sm font-medium uppercase tracking-wider">Community Savings</span>
                 </div>
-                <p className="text-6xl font-extrabold tracking-tight bg-gradient-to-r from-emerald-400 to-green-300 bg-clip-text text-transparent">
+                <p className="text-5xl font-extrabold tracking-tight bg-gradient-to-r from-emerald-400 to-green-300 bg-clip-text text-transparent">
                   <AnimatedCounter target={communitySavings} prefix="$" />
                 </p>
                 <p className="text-gray-500 text-sm mt-2 flex items-center justify-center gap-1.5">
                   <Zap className="w-3.5 h-3.5 text-yellow-400" />
-                  Saved via prompt caching &amp; loop prevention
+                  Prompt caching &amp; loop prevention
                 </p>
+              </div>
+              {/* Proxied Requests (global) */}
+              <div className="text-center">
+                <div className="flex items-center justify-center gap-3 mb-3">
+                  <div className="p-2 bg-yellow-500/15 rounded-lg">
+                    <Globe className="w-5 h-5 text-yellow-400" />
+                  </div>
+                  <span className="text-gray-400 text-sm font-medium uppercase tracking-wider">Total Requests</span>
+                </div>
+                <p className="text-5xl font-extrabold tracking-tight bg-gradient-to-r from-yellow-400 to-orange-300 bg-clip-text text-transparent">
+                  <AnimatedCounter target={stats.totalRequests} />
+                </p>
+                <p className="text-gray-500 text-sm mt-2">Proxied through firewall</p>
               </div>
             </div>
           </div>
@@ -176,6 +236,20 @@ function App() {
             />
           </div>
         </div>
+
+        {/* Install Sources */}
+        {installSources && Object.keys(installSources.platformBreakdown).length > 0 && (
+          <section className="bg-[#111] border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+            <div className="p-6 border-b border-white/5 bg-white/[0.02]">
+              <h2 className="text-xl font-semibold">Install Sources</h2>
+            </div>
+            <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+              <BreakdownCard title="Platform" data={installSources.platformBreakdown} />
+              <BreakdownCard title="Architecture" data={installSources.archBreakdown} />
+              <BreakdownCard title="CLI Version" data={installSources.versionBreakdown} />
+            </div>
+          </section>
+        )}
 
         {/* Recent Activity */}
         <section className="bg-[#111] border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
@@ -238,6 +312,33 @@ function FeedRow({ time, model, tokens, status, statusColor }: any) {
       </td>
     </tr>
   )
+}
+
+function BreakdownCard({ title, data }: { title: string; data: Record<string, number> }) {
+  const total = Object.values(data).reduce((a, b) => a + b, 0);
+  const entries = Object.entries(data).sort((a, b) => b[1] - a[1]);
+
+  return (
+    <div>
+      <h3 className="text-sm font-medium text-gray-400 mb-3">{title}</h3>
+      <div className="space-y-2">
+        {entries.map(([key, count]) => {
+          const pct = total > 0 ? (count / total) * 100 : 0;
+          return (
+            <div key={key}>
+              <div className="flex justify-between text-sm mb-1">
+                <span className="text-gray-300">{key}</span>
+                <span className="text-gray-500">{count} ({pct.toFixed(0)}%)</span>
+              </div>
+              <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+                <div className="h-full bg-blue-500/50 rounded-full" style={{ width: `${pct}%` }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 export default App

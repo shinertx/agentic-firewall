@@ -17,12 +17,99 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const crypto = require('crypto');
 const { execSync } = require('child_process');
 const readline = require('readline');
 
 const VERSION = '0.5.11';
 const PROXY_URL = 'http://localhost:4000';
 const PROXY_API = `${PROXY_URL}/api/stats`;
+
+// ─── Install Identity ───────────────────────────────────
+const INSTALL_DIR = path.join(os.homedir(), '.vibe-billing');
+const INSTALL_FILE = path.join(INSTALL_DIR, 'install.json');
+
+/**
+ * Get or create a persistent install identity.
+ * Stored in ~/.vibe-billing/install.json.
+ * Returns { machineId, installId, firstInstalledAt, lastVersion, telemetryEnabled, isFirstRun }.
+ */
+function getInstallIdentity() {
+    let isFirstRun = false;
+    try {
+        if (fs.existsSync(INSTALL_FILE)) {
+            const data = JSON.parse(fs.readFileSync(INSTALL_FILE, 'utf-8'));
+            if (data.lastVersion !== VERSION) {
+                data.lastVersion = VERSION;
+                data.updatedAt = new Date().toISOString();
+                try { fs.writeFileSync(INSTALL_FILE, JSON.stringify(data, null, 2)); } catch {}
+            }
+            return { ...data, isFirstRun: false };
+        }
+    } catch { /* corrupted file, recreate */ }
+
+    isFirstRun = true;
+    const machineId = crypto
+        .createHash('sha256')
+        .update(`${os.hostname()}${os.userInfo().username}${os.homedir()}`)
+        .digest('hex')
+        .slice(0, 16);
+
+    const installId = typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : crypto.randomBytes(16).toString('hex').replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, '$1-$2-$3-$4-$5');
+
+    const identity = {
+        machineId,
+        installId,
+        firstInstalledAt: new Date().toISOString(),
+        lastVersion: VERSION,
+        telemetryEnabled: true,
+    };
+
+    try {
+        fs.mkdirSync(INSTALL_DIR, { recursive: true });
+        fs.writeFileSync(INSTALL_FILE, JSON.stringify(identity, null, 2));
+    } catch { /* non-fatal */ }
+
+    return { ...identity, isFirstRun };
+}
+
+/**
+ * Send a telemetry ping to the local proxy. Fire-and-forget.
+ * Respects VIBE_BILLING_NO_TELEMETRY=1 env var and install.json telemetryEnabled flag.
+ */
+function sendTelemetryPing(eventType, command) {
+    if (process.env.VIBE_BILLING_NO_TELEMETRY === '1') return;
+
+    try {
+        const identity = getInstallIdentity();
+        if (!identity.telemetryEnabled) return;
+
+        const data = JSON.stringify({
+            event: eventType,
+            command: command || 'unknown',
+            machineId: identity.machineId,
+            installId: identity.installId,
+            version: VERSION,
+            platform: process.platform,
+            arch: process.arch,
+            node: process.version,
+            isFirstRun: identity.isFirstRun,
+            timestamp: new Date().toISOString(),
+        });
+
+        const client = PROXY_URL.startsWith('https') ? https : http;
+        const req = client.request(`${PROXY_URL}/api/telemetry`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
+            timeout: 3000,
+        });
+        req.on('error', () => {}); // fire-and-forget
+        req.write(data);
+        req.end();
+    } catch { /* never fail CLI because of telemetry */ }
+}
 const HTTP_TIMEOUT_MS = 10_000;
 
 // ─── Platform Detection ─────────────────────────────────
@@ -479,27 +566,9 @@ function showProxyWaste(stats) {
     }
 }
 
-// ─── Registration Ping ──────────────────────────────────
+// ─── Registration Ping (legacy wrapper) ─────────────────
 function sendRegistrationPing() {
-    try {
-        const data = JSON.stringify({
-            event: 'setup_complete',
-            version: VERSION,
-            platform: process.platform,
-            arch: process.arch,
-            node: process.version,
-            timestamp: new Date().toISOString(),
-        });
-        const client = PROXY_URL.startsWith('https') ? https : http;
-        const req = client.request(`${PROXY_URL}/api/register`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Content-Length': data.length },
-            timeout: 3000,
-        });
-        req.on('error', () => { }); // fire-and-forget
-        req.write(data);
-        req.end();
-    } catch { /* never fail setup because of telemetry */ }
+    sendTelemetryPing('setup_complete', 'setup');
 }
 
 // ─── Setup Command ──────────────────────────────────────
@@ -936,6 +1005,11 @@ async function doctorCmd() {
 
 // ─── Main ───────────────────────────────────────────────
 const command = process.argv[2] || '--help';
+
+// Send telemetry ping on every CLI invocation (fire-and-forget, non-blocking)
+if (!command.startsWith('-')) {
+    sendTelemetryPing('cli_invocation', command);
+}
 
 switch (command) {
     case 'setup': setup().catch(err => fail(err.message)); break;

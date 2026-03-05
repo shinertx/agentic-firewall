@@ -69,17 +69,63 @@ app.get('/api/stats', (req: Request, res: Response) => {
     res.json(globalStats);
 });
 
-// CLI registration telemetry
+// CLI registration telemetry (legacy — kept for backward compat with old CLI versions)
 const registrations: any[] = [];
 app.post('/api/register', express.json(), (req: Request, res: Response) => {
     const ping = { ...req.body, ip: req.ip, receivedAt: new Date().toISOString() };
     registrations.push(ping);
     console.log(`[REGISTER] 📥 Setup complete from ${req.ip} — ${ping.platform}/${ping.arch} node ${ping.node} v${ping.version}`);
+    // Bridge to install tracker so old CLI versions get tracked too
+    if (ping.platform) {
+        recordTelemetryEvent({
+            event: ping.event || 'setup_complete',
+            command: 'setup',
+            machineId: ping.machineId || `legacy-${(req.ip || '127.0.0.1').replace(/[:.]/g, '')}`,
+            installId: ping.installId || 'legacy',
+            version: ping.version || 'unknown',
+            platform: ping.platform,
+            arch: ping.arch || 'unknown',
+            node: ping.node || 'unknown',
+            isFirstRun: true,
+            timestamp: ping.timestamp || new Date().toISOString(),
+        });
+    }
     res.json({ ok: true, totalRegistrations: registrations.length });
 });
 
 app.get('/api/registrations', requireAdmin, (req: Request, res: Response) => {
     res.json({ total: registrations.length, registrations });
+});
+
+// Telemetry ingestion (new CLI versions use this)
+app.post('/api/telemetry', express.json(), (req: Request, res: Response) => {
+    const event = req.body;
+    if (!event.machineId || !event.event) {
+        return res.status(400).json({ error: { message: 'Missing machineId or event' } });
+    }
+    recordTelemetryEvent(event);
+    console.log(`[TELEMETRY] ${event.event} from ${event.machineId} — ${event.platform}/${event.arch} v${event.version} [${event.command}]`);
+    res.json({ ok: true });
+});
+
+// Install stats (admin only — full install records)
+app.get('/api/installs', requireAdmin, (req: Request, res: Response) => {
+    res.json(getInstallStats());
+});
+
+// Install breakdown (public — aggregated only, no individual records)
+app.get('/api/install-breakdown', (req: Request, res: Response) => {
+    res.json(getInstallBreakdown());
+});
+
+// npm download stats (public — cached, querying public npm API)
+app.get('/api/npm-stats', async (req: Request, res: Response) => {
+    try {
+        const stats = await getNpmStats();
+        res.json(stats);
+    } catch {
+        res.status(500).json({ error: { message: 'Failed to fetch npm stats' } });
+    }
 });
 
 // Per-user stats API
@@ -91,11 +137,13 @@ import { getAllSessions, getSessionStats, getUserSessions, exportSessionData, im
 import { getQueueStats } from './requestQueue';
 import { getCacheStats } from './responseCache';
 import { getCompressionStats } from './promptCompressor';
+import { recordTelemetryEvent, getInstallStats, getInstallBreakdown, getNpmStats, getUniqueInstallCount, exportInstallData, importInstallData } from './installTracker';
 
 // Load persisted user data on startup
 import fs from 'fs';
 const USERS_FILE = path.join(__dirname, '..', 'users.json');
 const SESSIONS_FILE = path.join(__dirname, '..', 'sessions.json');
+const INSTALLS_FILE = path.join(__dirname, '..', 'installs.json');
 try {
     if (fs.existsSync(USERS_FILE)) {
         const raw = fs.readFileSync(USERS_FILE, 'utf-8');
@@ -114,6 +162,15 @@ try {
 } catch (err) {
     console.error('[SESSIONS] ⚠️ Failed to load sessions.json:', err);
 }
+try {
+    if (fs.existsSync(INSTALLS_FILE)) {
+        const raw = fs.readFileSync(INSTALLS_FILE, 'utf-8');
+        importInstallData(JSON.parse(raw));
+        console.log('[INSTALLS] 📂 Loaded persisted install data');
+    }
+} catch (err) {
+    console.error('[INSTALLS] ⚠️ Failed to load installs.json:', err);
+}
 
 // Persist user + session data every 30 seconds (non-blocking async write)
 setInterval(async () => {
@@ -126,6 +183,11 @@ setInterval(async () => {
         await fs.promises.writeFile(SESSIONS_FILE, JSON.stringify(exportSessionData(), null, 2));
     } catch (err) {
         console.error('[SESSIONS] ⚠️ Failed to write sessions.json:', err);
+    }
+    try {
+        await fs.promises.writeFile(INSTALLS_FILE, JSON.stringify(exportInstallData(), null, 2));
+    } catch (err) {
+        console.error('[INSTALLS] ⚠️ Failed to write installs.json:', err);
     }
 }, 30_000);
 
@@ -141,7 +203,7 @@ app.get('/api/aggregate', requireAdmin, (req: Request, res: Response) => {
     const queueStats = getQueueStats();
     const cacheStats = getCacheStats();
     const compressionStats = getCompressionStats();
-    res.json({ ...agg, ...np, ...globalStats, queue: queueStats, cache: cacheStats, compression: compressionStats });
+    res.json({ ...agg, ...np, ...globalStats, uniqueInstalls: getUniqueInstallCount(), queue: queueStats, cache: cacheStats, compression: compressionStats });
 });
 
 // Session tracking API
