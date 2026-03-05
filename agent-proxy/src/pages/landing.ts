@@ -28,6 +28,14 @@ function ssrStatusLabel(s: string): string {
   return 'Proxied';
 }
 
+function fmtNum(n: number): string {
+  return n.toLocaleString('en-US');
+}
+
+function fmtMoney(n: number): string {
+  return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 export function renderLandingPage(): string {
   const agg = getAggregateStats();
 
@@ -274,10 +282,10 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   <p class="sub">One command to add loop detection, prompt caching, shadow routing, and budget enforcement to any AI agent.</p>
 
   <div class="stats">
-    <div class="stat"><div class="num" id="users">${agg.totalUsers}</div><div class="label">Users</div></div>
-    <div class="stat"><div class="num" id="saved">$${agg.totalSaved.toFixed(2)}</div><div class="label">Saved</div></div>
-    <div class="stat"><div class="num" id="reqs">${globalStats.totalRequests.toLocaleString()}</div><div class="label">Requests</div></div>
-    <div class="stat"><div class="num" id="loops">${globalStats.blockedLoops}</div><div class="label">Loops Killed</div></div>
+    <div class="stat"><div class="num" id="users">${fmtNum(agg.totalUsers)}</div><div class="label">Users</div></div>
+    <div class="stat"><div class="num" id="saved">${fmtMoney(agg.totalSaved)}</div><div class="label">Saved</div></div>
+    <div class="stat"><div class="num" id="reqs">${fmtNum(globalStats.totalRequests)}</div><div class="label">Requests</div></div>
+    <div class="stat"><div class="num" id="loops">${fmtNum(globalStats.blockedLoops)}</div><div class="label">Loops Killed</div></div>
   </div>
 
   <div class="actions">
@@ -293,7 +301,7 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
         <span class="feed-live-dot"></span>
         <h2>Live Activity</h2>
       </div>
-      <div class="feed-savings-total" id="feedSavings">$${agg.totalSaved.toFixed(2)} saved</div>
+      <div class="feed-savings-total" id="feedSavings">${fmtMoney(agg.totalSaved)} saved</div>
     </div>
     <div class="feed-list" id="feedList">
       ${ssrFeedRows || '<div class="feed-empty" style="color:var(--text-muted);font-size:0.82rem;padding:32px 20px;background:var(--bg);text-align:center;opacity:0.6">Listening for traffic...</div>'}
@@ -401,6 +409,12 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 </div>
 
 <script>
+function fmtM(v) {
+  return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function fmtN(v) {
+  return Math.round(v).toLocaleString('en-US');
+}
 function copyCmd() {
   navigator.clipboard.writeText('npx vibe-billing setup').then(function() {
     var btn = document.getElementById('copyBtn');
@@ -541,14 +555,14 @@ async function pollStats() {
     var r = await fetch(STATS_URL);
     if (!r.ok) return;
     var d = await r.json();
-    animateValue(document.getElementById('users'), prev.users, d.totalUsers, 1500, function(v) { return Math.round(v); });
-    animateValue(document.getElementById('saved'), prev.saved, d.totalSaved, 2000, function(v) { return '$' + v.toFixed(2); });
-    animateValue(document.getElementById('reqs'), prev.reqs, d.totalRequests, 1500, function(v) { return Math.round(v).toLocaleString(); });
-    animateValue(document.getElementById('loops'), prev.loops, d.blockedLoops, 1500, function(v) { return Math.round(v); });
+    animateValue(document.getElementById('users'), prev.users, d.totalUsers, 1500, fmtN);
+    animateValue(document.getElementById('saved'), prev.saved, d.totalSaved, 2000, fmtM);
+    animateValue(document.getElementById('reqs'), prev.reqs, d.totalRequests, 1500, fmtN);
+    animateValue(document.getElementById('loops'), prev.loops, d.blockedLoops, 1500, fmtN);
 
     // Update savings badge
     var badge = document.getElementById('feedSavings');
-    if (badge) badge.textContent = '$' + d.totalSaved.toFixed(2) + ' saved';
+    if (badge) badge.textContent = fmtM(d.totalSaved) + ' saved';
 
     prev = { users: d.totalUsers, saved: d.totalSaved, reqs: d.totalRequests, loops: d.blockedLoops };
     if (d.recentFeed) renderFeed(d.recentFeed);

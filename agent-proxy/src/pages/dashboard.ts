@@ -1,6 +1,10 @@
 import { getUserStats, UserBudget } from '../budgetGovernor';
 import { getUserSessions, SessionData } from '../sessionTracker';
 
+function fmtMoney(n: number): string {
+  return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 /**
  * Renders the per-user dashboard HTML.
  * Design: Light mode — matches landing page.
@@ -83,6 +87,7 @@ var DASH_USER = '${userId}';
 var DASH_URL = '/api/dashboard/' + DASH_USER;
 
 function statusCls(s) { return s === 'active' ? 'active' : 'expired'; }
+function fmtM(v) { return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
 async function pollDashboard() {
   try {
@@ -93,8 +98,8 @@ async function pollDashboard() {
     var s = d.stats;
     var el = function(id) { return document.getElementById(id); };
     el('d-reqs').textContent = s.totalRequests;
-    el('d-spend').textContent = '$' + s.totalSpend.toFixed(2);
-    el('d-saved').textContent = '$' + s.savedMoney.toFixed(2);
+    el('d-spend').textContent = fmtM(s.totalSpend);
+    el('d-saved').textContent = fmtM(s.savedMoney);
     el('d-loops').textContent = s.blockedLoops;
     el('d-tokens').textContent = s.totalTokens.toLocaleString();
     el('d-cached').textContent = Math.round(s.savedTokens).toLocaleString();
@@ -111,8 +116,8 @@ async function pollDashboard() {
         return '<tr>' +
           '<td class="s-id">' + sess.sessionId.slice(0, 8) + '</td>' +
           '<td>' + created + '</td>' +
-          '<td class="s-spend">$' + sess.totalSpend.toFixed(2) + '</td>' +
-          '<td class="s-saved">' + (sess.savedMoney > 0 ? '-$' + sess.savedMoney.toFixed(2) : '-') + '</td>' +
+          '<td class="s-spend">' + fmtM(sess.totalSpend) + '</td>' +
+          '<td class="s-saved">' + (sess.savedMoney > 0 ? '-' + fmtM(sess.savedMoney) : '-') + '</td>' +
           '<td>' + sess.totalRequests + '</td>' +
           '<td class="s-models" title="' + models + '">' + models + '</td>' +
           '<td><span class="s-status ' + sc + '">' + sess.status + '</span></td>' +
@@ -138,8 +143,8 @@ function renderUserStats(userId: string, stats: UserBudget): string {
 <p class="uid">${userId}</p>
 <div class="grid">
   <div class="card"><div class="val" id="d-reqs">${stats.totalRequests}</div><div class="lbl">Requests</div></div>
-  <div class="card"><div class="val" id="d-spend">$${stats.totalSpend.toFixed(2)}</div><div class="lbl">Spend</div></div>
-  <div class="card"><div class="val" id="d-saved">$${stats.savedMoney.toFixed(2)}</div><div class="lbl">Saved</div></div>
+  <div class="card"><div class="val" id="d-spend">${fmtMoney(stats.totalSpend)}</div><div class="lbl">Spend</div></div>
+  <div class="card"><div class="val" id="d-saved">${fmtMoney(stats.savedMoney)}</div><div class="lbl">Saved</div></div>
   <div class="card"><div class="val" id="d-loops">${stats.blockedLoops}</div><div class="lbl">Loops Blocked</div></div>
   <div class="card"><div class="val" id="d-tokens">${stats.totalTokens.toLocaleString()}</div><div class="lbl">Tokens</div></div>
   <div class="card"><div class="val" id="d-cached">${Math.round(stats.savedTokens).toLocaleString()}</div><div class="lbl">Cached</div></div>

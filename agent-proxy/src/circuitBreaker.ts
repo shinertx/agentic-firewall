@@ -1,5 +1,4 @@
 import crypto from 'crypto';
-import { globalStats } from './stats';
 import { isRedisAvailable, getRedisClient } from './redis';
 import { CB_TTL_MS, CB_WINDOW_SIZE, CB_THRESHOLD } from './config';
 
@@ -17,6 +16,7 @@ const memoryStore = new Map<string, Session>();
 const TTL_MS = CB_TTL_MS;
 const WINDOW_SIZE = CB_WINDOW_SIZE;
 const THRESHOLD = CB_THRESHOLD;
+const MAX_SESSIONS = 2000;
 
 // Periodic cleanup of stale sessions to prevent unbounded memory growth
 setInterval(() => {
@@ -26,6 +26,16 @@ setInterval(() => {
         if (session.entries.length === 0) {
             memoryStore.delete(key);
         }
+    }
+    // Hard cap: evict oldest sessions if still over limit
+    if (memoryStore.size > MAX_SESSIONS) {
+        const sorted = [...memoryStore.entries()].sort((a, b) => {
+            const aLast = a[1].entries[a[1].entries.length - 1]?.timestamp ?? 0;
+            const bLast = b[1].entries[b[1].entries.length - 1]?.timestamp ?? 0;
+            return aLast - bLast;
+        });
+        const toRemove = sorted.slice(0, memoryStore.size - MAX_SESSIONS);
+        for (const [key] of toRemove) memoryStore.delete(key);
     }
 }, 60_000).unref();
 
@@ -134,7 +144,6 @@ export async function checkCircuitBreaker(ip: string, body: any, apiKey?: string
         if (redisResult) {
             if (redisResult.blocked) {
                 console.log(`[FIREWALL] Circuit Breaker triggered via Redis for session ${sessionKey}! Agent stuck in loop.`);
-                globalStats.blockedLoops++;
                 return { blocked: true, reason: 'Agentic Firewall: Loop detected. Terminating connection to prevent wasted tokens.', hash, identicalCount: redisResult.identicalCount };
             }
             return { blocked: false, hash, identicalCount: redisResult.identicalCount };
@@ -169,10 +178,6 @@ export async function checkCircuitBreaker(ip: string, body: any, apiKey?: string
         const allSame = lastN.every(e => e.hash === lastN[0].hash);
         if (allSame) {
             console.log(`[FIREWALL] Circuit Breaker triggered for session ${sessionKey}! Agent stuck in loop.`);
-
-            // Increment blocked loops counter
-            globalStats.blockedLoops++;
-
             return { blocked: true, reason: 'Agentic Firewall: Loop detected. Terminating connection to prevent wasted tokens.', hash, identicalCount };
         }
     }

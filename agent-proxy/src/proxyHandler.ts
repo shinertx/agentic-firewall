@@ -1,9 +1,9 @@
 import { Request, Response } from 'express';
 import { checkCircuitBreaker } from './circuitBreaker';
 import { attemptShadowRouterFailover, attemptCrossProviderFailover } from './shadowRouter';
-import { getInputCost, CACHE_SAVINGS_RATE } from './pricing';
+import { getInputCost, getOutputCost, CACHE_READ_DISCOUNT, CACHE_CREATION_SURCHARGE } from './pricing';
 import { generateCacheKey } from './tokenCounter';
-import { getUserId, checkBudget, recordUserSpend, recordUserLoop, getOrCreateUser } from './budgetGovernor';
+import { getUserId, checkBudget, recordUserSpend, recordUserLoop, reconcileUserSpend } from './budgetGovernor';
 import { checkNoProgress } from './noProgress';
 import { smartRoute } from './smartRouter';
 import { trimContext } from './contextTrimmer';
@@ -12,6 +12,7 @@ import { getCachedResponse, setCachedResponse } from './responseCache';
 import { parseUsageFromChunks } from './usageParser';
 import { acquireSlot, releaseSlot, autoTuneFromHeaders, QueueFullError, QueueTimeoutError } from './requestQueue';
 import { globalStats, recordActivity } from './stats';
+import { resolveSessionId, getOrCreateSession, recordSessionSpend, recordSessionLoop, reconcileSessionSpend } from './sessionTracker';
 import { CDN_MIN_CHARS_ANTHROPIC, CDN_MIN_TOKENS_OPENAI } from './config';
 
 // Explicit Interfaces for Edge Case Handling
@@ -270,6 +271,8 @@ export async function handleProxyRequest(req: Request, res: Response) {
     let originalBodyStr = req.body ? JSON.stringify(req.body) : "";
     const apiKey = (req.headers['x-api-key'] || req.headers['authorization'] || '') as string;
     const userId = getUserId(apiKey);
+    const sessionId = resolveSessionId(req);
+    getOrCreateSession(sessionId, userId);
     let requestHash = '';
     let compResult = { compressed: false, savedTokens: 0, compressionRatio: 1, cacheHit: false, ollamaLatencyMs: 0 };
 
@@ -278,6 +281,7 @@ export async function handleProxyRequest(req: Request, res: Response) {
         const cb = await checkCircuitBreaker(ip, req.body, apiKey || undefined);
         if (cb.blocked) {
             recordUserLoop(userId);
+            recordSessionLoop(sessionId);
             const model = req.body?.model || 'unknown';
             const stopMsg = `The Agentic Firewall detected a loop: the last 3 requests were identical. This request has been blocked to prevent waste. I need to try a different approach or ask the user for guidance instead of retrying the same operation.`;
 
@@ -573,8 +577,18 @@ export async function handleProxyRequest(req: Request, res: Response) {
             }
             const writeOk = res.write(value);
             if (!writeOk) {
-                // Backpressure — wait for drain before continuing
-                await new Promise<void>(resolve => res.once('drain', resolve));
+                // Backpressure — wait for drain or client disconnect (whichever comes first)
+                await new Promise<void>(resolve => {
+                    const onDrain = () => { res.off('close', onClose); resolve(); };
+                    const onClose = () => { res.off('drain', onDrain); resolve(); };
+                    res.once('drain', onDrain);
+                    res.once('close', onClose);
+                });
+                if (res.destroyed || res.writableEnded) {
+                    reader.cancel();
+                    streamError = true;
+                    break;
+                }
             }
         }
     } catch (err) {
@@ -595,6 +609,12 @@ export async function handleProxyRequest(req: Request, res: Response) {
     // Auto-tune rate limits from provider response headers
     autoTuneFromHeaders(provider, response.headers);
 
+    // Pre-compute CDN status so reconciliation can use it
+    const optimizedStr = optimizedBody ? JSON.stringify(optimizedBody) : "";
+    const proxyModified = optimizedStr !== originalBodyStr;
+    const clientHasCaching = hasExistingCacheControl(req.body);
+    const isCDN = statusText === 'Pass-through' && (proxyModified || clientHasCaching);
+
     // Parse real token usage from the response stream
     const usage = parseUsageFromChunks(chunks, provider);
     if (usage) {
@@ -602,12 +622,41 @@ export async function handleProxyRequest(req: Request, res: Response) {
         globalStats.realOutputTokens += usage.outputTokens;
         globalStats.realCachedTokens += usage.cachedTokens;
 
-        // Track estimation accuracy
+        // Track estimation accuracy (per-model)
         const estimated = Math.round(originalBodyStr.length / 4);
         const actual = usage.inputTokens + usage.cachedTokens + usage.cacheCreationTokens;
         if (actual > 0) {
             globalStats.estimationErrorSum += Math.abs(estimated - actual) / actual;
             globalStats.estimationSamples++;
+
+            // Per-model calibration
+            const modelKey = optimizedBody?.model || 'unknown';
+            const entry = globalStats.perModelEstimation[modelKey] || { errorSum: 0, samples: 0 };
+            entry.errorSum += Math.abs(estimated - actual) / actual;
+            entry.samples++;
+            globalStats.perModelEstimation[modelKey] = entry;
+        }
+
+        // Reconcile user and session spend with real token counts
+        const displayModelForReconcile = optimizedBody?.model || 'unknown';
+        reconcileUserSpend(userId, displayModelForReconcile, estimated, usage.inputTokens, usage.outputTokens, isCDN);
+        reconcileSessionSpend(sessionId, displayModelForReconcile, estimated, usage.inputTokens, usage.outputTokens, isCDN);
+
+        // Track real output token cost in globalStats
+        const outputCostPerM = getOutputCost(displayModelForReconcile);
+        globalStats.realOutputSpend += (usage.outputTokens / 1_000_000) * outputCostPerM;
+
+        // Reconcile CDN savings with cache-aware math when real data available
+        if (isCDN && (usage.cachedTokens > 0 || usage.cacheCreationTokens > 0)) {
+            const inputCostPerM = getInputCost(displayModelForReconcile);
+            // Cache reads save 90% of input cost
+            const cacheReadSavings = (usage.cachedTokens / 1_000_000) * inputCostPerM * CACHE_READ_DISCOUNT;
+            // Cache creation costs 125% (25% surcharge) — net negative savings
+            const cacheCreationExtra = (usage.cacheCreationTokens / 1_000_000) * inputCostPerM * CACHE_CREATION_SURCHARGE;
+            // The estimated savings was already added above; adjust with the real delta
+            const estimatedSavings = (estimated / 1_000_000) * inputCostPerM * CACHE_READ_DISCOUNT;
+            const realSavings = cacheReadSavings - cacheCreationExtra;
+            globalStats.savedMoney += (realSavings - estimatedSavings);
         }
     }
 
@@ -636,19 +685,15 @@ export async function handleProxyRequest(req: Request, res: Response) {
 
         const estimatedPromptTokens = Math.max(Math.round(originalBodyStr.length / 4), 1000);
 
-        const optimizedStr = optimizedBody ? JSON.stringify(optimizedBody) : "";
-        const proxyModified = optimizedStr !== originalBodyStr;
-        const clientHasCaching = hasExistingCacheControl(req.body);
-        const isCDN = statusText === 'Pass-through' && (proxyModified || clientHasCaching);
-
         if (isCDN) {
             statusText = compResult.compressed ? 'CDN + Compressed' : 'Context CDN Hit';
             statusColor = 'text-emerald-400 bg-emerald-400/10';
 
-            const inputCostPerMillionTokens = getInputCost(displayModel);
-            const baseCost = (estimatedPromptTokens / 1_000_000) * inputCostPerMillionTokens;
-            const savingsCost = baseCost * CACHE_SAVINGS_RATE;
-            const savedTokens = estimatedPromptTokens * CACHE_SAVINGS_RATE;
+            // Estimate savings — will be reconciled with real usage when available
+            const inputCostPerM = getInputCost(displayModel);
+            const baseCost = (estimatedPromptTokens / 1_000_000) * inputCostPerM;
+            const savingsCost = baseCost * CACHE_READ_DISCOUNT;
+            const savedTokens = estimatedPromptTokens * CACHE_READ_DISCOUNT;
 
             globalStats.savedTokens += savedTokens;
             globalStats.savedMoney += savingsCost;
@@ -658,11 +703,12 @@ export async function handleProxyRequest(req: Request, res: Response) {
         }
 
         recordUserSpend(userId, displayModel, estimatedPromptTokens, isCDN);
+        recordSessionSpend(sessionId, displayModel, estimatedPromptTokens, isCDN);
 
         // Compute per-request savings for the live feed
         let savedAmount = '';
         if (isCDN && estimatedPromptTokens) {
-            const cost = (estimatedPromptTokens / 1_000_000) * getInputCost(displayModel) * CACHE_SAVINGS_RATE;
+            const cost = (estimatedPromptTokens / 1_000_000) * getInputCost(displayModel) * CACHE_READ_DISCOUNT;
             savedAmount = cost >= 0.01 ? cost.toFixed(2) : cost.toFixed(4);
         }
 

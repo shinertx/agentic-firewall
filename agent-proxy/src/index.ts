@@ -98,10 +98,12 @@ app.get('/api/stats', rateLimitPublic, (req: Request, res: Response) => {
 });
 
 // CLI registration telemetry (legacy — kept for backward compat with old CLI versions)
+const MAX_REGISTRATIONS = 500;
 const registrations: any[] = [];
 app.post('/api/register', express.json(), (req: Request, res: Response) => {
     const ping = { ...req.body, ip: req.ip, receivedAt: new Date().toISOString() };
     registrations.push(ping);
+    if (registrations.length > MAX_REGISTRATIONS) registrations.splice(0, registrations.length - MAX_REGISTRATIONS);
     console.log(`[REGISTER] 📥 Setup complete from ${req.ip} — ${ping.platform}/${ping.arch} node ${ping.node} v${ping.version}`);
     // Bridge to install tracker so old CLI versions get tracked too
     if (ping.platform) {
@@ -211,6 +213,7 @@ import { getCacheStats } from './responseCache';
 import { getCompressionStats } from './promptCompressor';
 import { recordTelemetryEvent, getInstallStats, getInstallBreakdown, getNpmStats, getUniqueInstallCount, exportInstallData, importInstallData, loadInstallsFromRedis, saveInstallsToRedis } from './installTracker';
 import { isRedisAvailable } from './redis';
+import { startTelemetry, flushTelemetry } from './telemetryReporter';
 
 // Load persisted user data on startup
 import fs from 'fs';
@@ -257,6 +260,12 @@ setTimeout(async () => {
     await loadInstallsFromRedis();
 }, 1500);
 
+// Start opt-in telemetry reporting (only activates when TELEMETRY_ENABLED=true)
+startTelemetry(
+    () => globalStats,
+    () => Object.keys(getQueueStats()),
+);
+
 // Persist user + session data every 30 seconds
 // When Redis is available, sync to Redis (individual writes already happen per-mutation, this is a safety net).
 // When Redis is unavailable, fall back to file persistence.
@@ -299,7 +308,16 @@ app.get('/api/aggregate', requireAdmin, (req: Request, res: Response) => {
     const avgEstErr = globalStats.estimationSamples > 0
         ? Math.round((globalStats.estimationErrorSum / globalStats.estimationSamples) * 1000) / 10
         : 0;
-    res.json({ ...agg, ...np, ...globalStats, uniqueInstalls: getUniqueInstallCount(), queue: queueStats, cache: cacheStats, compression: compressionStats, avgEstimationErrorPct: avgEstErr });
+    // Compute per-model estimation error averages
+    const perModelEstErr: Record<string, { avgErrorPct: number; samples: number }> = {};
+    for (const [model, data] of Object.entries(globalStats.perModelEstimation)) {
+        perModelEstErr[model] = {
+            avgErrorPct: data.samples > 0 ? Math.round((data.errorSum / data.samples) * 1000) / 10 : 0,
+            samples: data.samples,
+        };
+    }
+
+    res.json({ ...agg, ...np, ...globalStats, uniqueInstalls: getUniqueInstallCount(), queue: queueStats, cache: cacheStats, compression: compressionStats, avgEstimationErrorPct: avgEstErr, perModelEstimation: perModelEstErr });
 });
 
 // Session tracking API
@@ -392,3 +410,7 @@ const server = app.listen(Number(PORT), BIND_HOST, () => {
 server.keepAliveTimeout = 1000 * 60 * 30;
 server.headersTimeout = 1000 * 60 * 31;
 server.timeout = 1000 * 60 * 30;
+
+// Flush telemetry on graceful shutdown
+process.on('SIGTERM', () => flushTelemetry(globalStats, Object.keys(getQueueStats())));
+process.on('SIGINT', () => flushTelemetry(globalStats, Object.keys(getQueueStats())));

@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { getInputCost } from './pricing';
+import { getInputCost, getOutputCost, CACHE_READ_DISCOUNT } from './pricing';
 import { isRedisAvailable, getRedisClient } from './redis';
 
 /**
@@ -104,9 +104,8 @@ export function recordUserSpend(userId: string, model: string, estimatedTokens: 
     user.lastSeen = new Date().toISOString();
 
     if (isCDN) {
-        const saved = spend * 0.9; // Cache saves ~90%
-        user.savedMoney += saved;
-        user.savedTokens += estimatedTokens * 0.9;
+        user.savedMoney += spend * CACHE_READ_DISCOUNT;
+        user.savedTokens += estimatedTokens * CACHE_READ_DISCOUNT;
     }
 
     syncUserToRedis(userId, user);
@@ -150,7 +149,7 @@ export function getAggregateStats() {
 
 /**
  * Reconcile user spend when real usage data arrives from the provider.
- * Adjusts the spend recorded by the heuristic estimate.
+ * Adjusts the spend recorded by the heuristic estimate, including output token costs.
  */
 export function reconcileUserSpend(
     userId: string,
@@ -162,19 +161,24 @@ export function reconcileUserSpend(
 ): void {
     const user = getOrCreateUser(userId);
     const inputCostPerM = getInputCost(model);
+    const outputCostPerM = getOutputCost(model);
 
+    // Original estimate only counted input tokens
     const estimatedSpend = (estimatedTokens / 1_000_000) * inputCostPerM;
-    const realSpend = (realInputTokens / 1_000_000) * inputCostPerM;
+    // Real spend includes both input and output at their respective rates
+    const realInputSpend = (realInputTokens / 1_000_000) * inputCostPerM;
+    const realOutputSpend = (realOutputTokens / 1_000_000) * outputCostPerM;
+    const realSpend = realInputSpend + realOutputSpend;
     const delta = realSpend - estimatedSpend;
 
     user.totalSpend += delta;
-    user.totalTokens += (realInputTokens - estimatedTokens);
+    user.totalTokens += (realInputTokens + realOutputTokens - estimatedTokens);
 
     if (isCDN) {
-        const estimatedSaved = estimatedSpend * 0.9;
-        const realSaved = realSpend * 0.9;
+        const estimatedSaved = estimatedSpend * CACHE_READ_DISCOUNT;
+        const realSaved = realInputSpend * CACHE_READ_DISCOUNT;
         user.savedMoney += (realSaved - estimatedSaved);
-        user.savedTokens += (realInputTokens * 0.9) - (estimatedTokens * 0.9);
+        user.savedTokens += (realInputTokens * CACHE_READ_DISCOUNT) - (estimatedTokens * CACHE_READ_DISCOUNT);
     }
 
     syncUserToRedis(userId, user);

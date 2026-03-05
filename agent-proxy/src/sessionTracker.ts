@@ -1,6 +1,6 @@
 import { Request } from 'express';
 import crypto from 'crypto';
-import { getInputCost } from './pricing';
+import { getInputCost, getOutputCost, CACHE_READ_DISCOUNT } from './pricing';
 import { isRedisAvailable, getRedisClient } from './redis';
 
 export interface SessionData {
@@ -122,8 +122,8 @@ export function recordSessionSpend(
     session.models[model] = (session.models[model] || 0) + 1;
 
     if (isCDN) {
-        session.savedMoney += spend * 0.9;
-        session.savedTokens += estimatedTokens * 0.9;
+        session.savedMoney += spend * CACHE_READ_DISCOUNT;
+        session.savedTokens += estimatedTokens * CACHE_READ_DISCOUNT;
     }
 
     syncSessionToRedis(sessionId, session);
@@ -154,17 +154,22 @@ export function reconcileSessionSpend(
     const session = sessions.get(sessionId);
     if (!session) return;
 
-    const costPerToken = getInputCost(model) / 1_000_000;
-    const realTokens = realInputTokens + realOutputTokens;
-    const delta = realTokens - estimatedTokens;
+    const inputCostPerToken = getInputCost(model) / 1_000_000;
+    const outputCostPerToken = getOutputCost(model) / 1_000_000;
 
-    session.totalSpend += delta * costPerToken;
-    session.totalTokens += delta;
+    const estimatedSpend = estimatedTokens * inputCostPerToken;
+    const realSpend = (realInputTokens * inputCostPerToken) + (realOutputTokens * outputCostPerToken);
+    const spendDelta = realSpend - estimatedSpend;
+    const tokenDelta = (realInputTokens + realOutputTokens) - estimatedTokens;
+
+    session.totalSpend += spendDelta;
+    session.totalTokens += tokenDelta;
 
     if (isCDN) {
-        const deltaSpend = delta * costPerToken;
-        session.savedMoney += deltaSpend * 0.9;
-        session.savedTokens += delta * 0.9;
+        const estimatedSaved = estimatedSpend * CACHE_READ_DISCOUNT;
+        const realSaved = (realInputTokens * inputCostPerToken) * CACHE_READ_DISCOUNT;
+        session.savedMoney += (realSaved - estimatedSaved);
+        session.savedTokens += (realInputTokens * CACHE_READ_DISCOUNT) - (estimatedTokens * CACHE_READ_DISCOUNT);
     }
 
     syncSessionToRedis(sessionId, session);

@@ -1,5 +1,7 @@
 // Per-provider request queue with token bucket rate limiting and semaphore concurrency control.
 
+import { QUEUE_TIMEOUT_MS } from './config';
+
 type Provider = 'anthropic' | 'openai' | 'gemini' | 'nvidia';
 
 export class QueueFullError extends Error {
@@ -56,7 +58,6 @@ const DEFAULT_CONFIGS: Record<string, QueueConfig> = {
     nvidia: { maxConcurrent: 5, requestsPerMinute: 20, maxQueueSize: 10 },
 };
 
-const QUEUE_TIMEOUT_MS = 30_000;
 const CLEANUP_INTERVAL_MS = 5_000;
 
 const providerStates = new Map<string, ProviderQueueState>();

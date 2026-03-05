@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getInputCost, DEFAULT_COST_PER_MILLION_TOKENS, CACHE_SAVINGS_RATE } from '../src/pricing';
+import { getInputCost, getOutputCost, DEFAULT_COST_PER_MILLION_TOKENS, DEFAULT_OUTPUT_COST_PER_MILLION_TOKENS, CACHE_SAVINGS_RATE, CACHE_READ_DISCOUNT, CACHE_CREATION_SURCHARGE } from '../src/pricing';
 
 describe('Pricing Module', () => {
 
@@ -61,8 +61,37 @@ describe('Pricing Module', () => {
         expect(getInputCost('CLAUDE-SONNET-4-6')).toBe(3.00);
     });
 
+    // === Output pricing ===
+    it('should return Claude Opus output pricing ($75/M)', () => {
+        expect(getOutputCost('claude-opus-4-6')).toBe(75.00);
+    });
+
+    it('should return Claude Sonnet output pricing ($15/M)', () => {
+        expect(getOutputCost('claude-sonnet-4-6')).toBe(15.00);
+    });
+
+    it('should return GPT-4o output pricing ($10/M)', () => {
+        expect(getOutputCost('gpt-4o')).toBe(10.00);
+    });
+
+    it('should return default output cost for unknown models', () => {
+        expect(getOutputCost('totally-unknown-model-xyz')).toBe(DEFAULT_OUTPUT_COST_PER_MILLION_TOKENS);
+    });
+
+    it('output cost should be higher than input cost for all major models', () => {
+        const models = ['claude-opus-4-6', 'claude-sonnet-4-6', 'gpt-4o', 'gpt-5.2', 'gemini-2.5-pro'];
+        for (const model of models) {
+            expect(getOutputCost(model)).toBeGreaterThan(getInputCost(model));
+        }
+    });
+
     // === Constants ===
     it('should export CACHE_SAVINGS_RATE as 0.90', () => {
         expect(CACHE_SAVINGS_RATE).toBe(0.90);
+    });
+
+    it('should export cache pricing constants', () => {
+        expect(CACHE_READ_DISCOUNT).toBe(0.90);
+        expect(CACHE_CREATION_SURCHARGE).toBe(0.25);
     });
 });

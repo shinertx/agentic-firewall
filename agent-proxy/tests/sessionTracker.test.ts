@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../src/pricing', () => ({
     getInputCost: vi.fn().mockReturnValue(3.0),
+    getOutputCost: vi.fn().mockReturnValue(15.0),
+    CACHE_READ_DISCOUNT: 0.90,
 }));
 
 import {

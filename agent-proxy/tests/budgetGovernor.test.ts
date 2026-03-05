@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { getUserId, checkBudget, recordUserSpend, getOrCreateUser, getAggregateStats, exportUserData, importUserData } from '../src/budgetGovernor';
+import { getUserId, checkBudget, recordUserSpend, reconcileUserSpend, getOrCreateUser, getAggregateStats, exportUserData, importUserData } from '../src/budgetGovernor';
 
 describe('Budget Governor', () => {
     // Each test uses a unique fake key to avoid cross-contamination
@@ -70,6 +70,46 @@ describe('Budget Governor', () => {
             const user = getOrCreateUser(userId);
             expect(user.savedMoney).toBeGreaterThan(0);
             expect(user.savedTokens).toBeGreaterThan(0);
+        });
+    });
+
+    describe('reconcileUserSpend', () => {
+        it('should adjust spend upward when real usage exceeds estimate (includes output cost)', () => {
+            const userId = 'test-reconcile-up';
+            recordUserSpend(userId, 'claude-sonnet-4', 10_000, false);
+            const user = getOrCreateUser(userId);
+            const spendBefore = user.totalSpend;
+            const tokensBefore = user.totalTokens;
+
+            // Real: 12k input + 2k output, estimated was 10k input-only
+            reconcileUserSpend(userId, 'claude-sonnet-4', 10_000, 12_000, 2_000, false);
+
+            expect(user.totalSpend).toBeGreaterThan(spendBefore);
+            expect(user.totalTokens).toBe(tokensBefore + 4_000); // 14k - 10k
+        });
+
+        it('should adjust spend downward when real usage is less than estimate', () => {
+            const userId = 'test-reconcile-down';
+            recordUserSpend(userId, 'claude-sonnet-4', 50_000, false);
+            const user = getOrCreateUser(userId);
+            const spendBefore = user.totalSpend;
+
+            // Real: 20k input + 0 output, estimated was 50k
+            reconcileUserSpend(userId, 'claude-sonnet-4', 50_000, 20_000, 0, false);
+
+            expect(user.totalSpend).toBeLessThan(spendBefore);
+        });
+
+        it('should adjust CDN savings when reconciling', () => {
+            const userId = 'test-reconcile-cdn';
+            recordUserSpend(userId, 'claude-sonnet-4', 10_000, true);
+            const user = getOrCreateUser(userId);
+            const savedBefore = user.savedMoney;
+
+            // Real: 15k input, estimated was 10k — savings should increase
+            reconcileUserSpend(userId, 'claude-sonnet-4', 10_000, 15_000, 0, true);
+
+            expect(user.savedMoney).toBeGreaterThan(savedBefore);
         });
     });
 

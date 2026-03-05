@@ -164,8 +164,10 @@ export const globalStats = {
     realInputTokens: 0,
     realOutputTokens: 0,
     realCachedTokens: 0,
+    realOutputSpend: 0,
     estimationErrorSum: 0,
     estimationSamples: 0,
+    perModelEstimation: {} as Record<string, { errorSum: number; samples: number }>,
     // Spec 3: Response Caching
     responseCacheHits: 0,
     responseCacheMisses: 0,
