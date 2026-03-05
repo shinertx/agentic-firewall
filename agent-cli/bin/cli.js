@@ -21,7 +21,7 @@ const crypto = require('crypto');
 const { execSync } = require('child_process');
 const readline = require('readline');
 
-const VERSION = '0.5.13';
+const VERSION = '0.5.14';
 const PROXY_URL = 'http://localhost:4000';
 const PROXY_API = `${PROXY_URL}/api/stats`;
 
