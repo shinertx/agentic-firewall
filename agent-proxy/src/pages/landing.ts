@@ -140,15 +140,41 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   <p style="margin-top:8px;font-size:0.75rem"><a href="https://github.com/shinertx/agentic-firewall" target="_blank" style="color:var(--text-secondary);text-decoration:none;margin:0 8px">GitHub</a> • <a href="https://www.npmjs.com/package/vibe-billing" target="_blank" style="color:var(--text-secondary);text-decoration:none;margin:0 8px">npm</a></p>
 </div>
 <script>
+// Animate a number from current to target over duration ms
+function animateValue(el, start, end, duration, format) {
+  if (start === end) return;
+  const range = end - start;
+  const startTime = performance.now();
+  function step(now) {
+    const elapsed = now - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    // Ease-out cubic for a satisfying deceleration
+    const eased = 1 - Math.pow(1 - progress, 3);
+    const current = start + range * eased;
+    el.textContent = format(current);
+    if (progress < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+// Track previous values for smooth transitions
+let prev = {
+  users: ${agg.totalUsers},
+  saved: ${agg.totalSaved},
+  reqs: ${globalStats.totalRequests},
+  loops: ${globalStats.blockedLoops}
+};
+
 setInterval(async () => {
   try {
     const r = await fetch('/api/public-stats');
     if (!r.ok) return;
     const d = await r.json();
-    document.getElementById('users').textContent = d.totalUsers;
-    document.getElementById('saved').textContent = '$' + d.totalSaved.toFixed(2);
-    document.getElementById('reqs').textContent = d.totalRequests.toLocaleString();
-    document.getElementById('loops').textContent = d.blockedLoops;
+    animateValue(document.getElementById('users'), prev.users, d.totalUsers, 1500, v => Math.round(v));
+    animateValue(document.getElementById('saved'), prev.saved, d.totalSaved, 2000, v => '$' + v.toFixed(2));
+    animateValue(document.getElementById('reqs'), prev.reqs, d.totalRequests, 1500, v => Math.round(v).toLocaleString());
+    animateValue(document.getElementById('loops'), prev.loops, d.blockedLoops, 1500, v => Math.round(v));
+    prev = { users: d.totalUsers, saved: d.totalSaved, reqs: d.totalRequests, loops: d.blockedLoops };
   } catch {}
 }, 5000);
 </script>
