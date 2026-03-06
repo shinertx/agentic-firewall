@@ -16,7 +16,8 @@ dotenv.config({ path: firewallEnvPath });
 import { initAdminCredentials, requireAdminAuth, requireAdminPage, validateCredentials, createSession, destroySession, parseCookies, hasCredentialsConfigured } from './adminAuth';
 import { classifyEnvironment } from './environmentDetector';
 import { renderAdminLogin } from './pages/adminLogin';
-import { renderAdminDashboard, type AdminDashboardData } from './pages/admin';
+import { renderAdminDashboard } from './pages/admin';
+import { buildAdminDashboardData, type AdminDashboardData } from './adminDashboardData';
 
 // Initialize admin credentials from env vars
 initAdminCredentials();
@@ -342,69 +343,37 @@ app.post('/admin/logout', (req: Request, res: Response) => {
     res.redirect('/admin/login');
 });
 
-app.get('/admin', requireAdminPage, async (req: Request, res: Response) => {
+async function loadAdminDashboardData(): Promise<AdminDashboardData> {
     const stats = getInstallStats();
     let npmStats = { weekly: 0, monthly: 0 };
     try { npmStats = await getNpmStats(); } catch {}
+    const aggregate = getAggregateStats();
+    const noProgress = getNoProgressStats();
+    const queueStats = getQueueStats();
+    const cacheStats = getCacheStats();
+    const compressionStats = getCompressionStats();
 
-    const data: AdminDashboardData = {
-        npmWeekly: npmStats.weekly,
-        npmMonthly: npmStats.monthly,
-        uniqueInstalls: stats.uniqueInstalls,
-        totalPings: stats.totalInstalls,
-        environmentBreakdown: stats.environmentBreakdown,
-        platformBreakdown: stats.platformBreakdown,
-        archBreakdown: stats.archBreakdown,
-        versionBreakdown: stats.versionBreakdown,
+    return buildAdminDashboardData({
+        installStats: stats,
+        npmStats,
         dailyTimeline: getDailyInstallTimeline(30),
-        recentInstalls: stats.installs
-            .sort((a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime())
-            .slice(0, 20)
-            .map(r => ({
-                machineId: r.machineId,
-                platform: r.platform,
-                arch: r.arch,
-                lastVersion: r.lastVersion,
-                environment: r.environment || 'unknown',
-                firstSeen: r.firstSeen,
-                lastSeen: r.lastSeen,
-                totalPings: r.totalPings,
-            })),
-    };
+        aggregate,
+        globalStats,
+        noProgress,
+        queueStats,
+        cacheStats,
+        compressionStats,
+    });
+}
 
+app.get('/admin', requireAdminPage, async (req: Request, res: Response) => {
+    const data = await loadAdminDashboardData();
     res.setHeader('Content-Type', 'text/html');
     res.send(renderAdminDashboard(data));
 });
 
 app.get('/api/admin/stats', requireAdminAuth, async (req: Request, res: Response) => {
-    const stats = getInstallStats();
-    let npmStats = { weekly: 0, monthly: 0 };
-    try { npmStats = await getNpmStats(); } catch {}
-
-    res.json({
-        npmWeekly: npmStats.weekly,
-        npmMonthly: npmStats.monthly,
-        uniqueInstalls: stats.uniqueInstalls,
-        totalPings: stats.totalInstalls,
-        environmentBreakdown: stats.environmentBreakdown,
-        platformBreakdown: stats.platformBreakdown,
-        archBreakdown: stats.archBreakdown,
-        versionBreakdown: stats.versionBreakdown,
-        dailyTimeline: getDailyInstallTimeline(30),
-        recentInstalls: stats.installs
-            .sort((a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime())
-            .slice(0, 20)
-            .map(r => ({
-                machineId: r.machineId,
-                platform: r.platform,
-                arch: r.arch,
-                lastVersion: r.lastVersion,
-                environment: r.environment || 'unknown',
-                firstSeen: r.firstSeen,
-                lastSeen: r.lastSeen,
-                totalPings: r.totalPings,
-            })),
-    });
+    res.json(await loadAdminDashboardData());
 });
 
 // Landing page (extracted to src/pages/landing.ts)
