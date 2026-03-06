@@ -4,6 +4,8 @@
   "description": "Studio-level marketing engine for JockeyVC products. It scans for high-intent pain signals, drafts product-aware replies, and serves a lightweight review dashboard.",
   "main": "index.js",
   "scripts": {
+    "mirror:vibebilling": "bash scripts/push_to_vibebilling_mirror.sh",
+    "sync:canonical": "bash scripts/pull_from_canonical_repo.sh",
     "validate:registry": "python3 scripts/validate_registry.py",
     "sync:drive-registry": "python3 scripts/sync_drive_registry.py",
     "test": "echo \"Error: no test specified\" && exit 1"
