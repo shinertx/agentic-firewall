@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { applyContextCDN, normalizeCacheControlTTLs, LLMRequest } from '../src/proxyHandler';
+import {
+    applyContextCDN,
+    injectAnthropicOAuthBeta,
+    injectOpenAIStreamUsage,
+    normalizeCacheControlTTLs,
+    LLMRequest,
+} from '../src/proxyHandler';
 
 describe('applyContextCDN', () => {
 
@@ -215,5 +221,76 @@ describe('normalizeCacheControlTTLs', () => {
         expect(body.tools?.[1].cache_control.ttl).toBe('5m');
         expect(body.system[0].cache_control.ttl).toBe('5m');
         expect(body.messages?.[0].content[0].cache_control.ttl).toBe('5m');
+    });
+});
+
+describe('provider-specific request mutations', () => {
+    it('adds the Anthropic OAuth beta header for OAuth bearer tokens', () => {
+        const headers = {
+            authorization: 'Bearer sk-ant-oat-test',
+        };
+
+        const changed = injectAnthropicOAuthBeta(headers);
+
+        expect(changed).toBe(true);
+        expect(headers['anthropic-beta']).toBe('oauth-2025-04-20');
+    });
+
+    it('preserves existing Anthropic beta flags when appending the OAuth beta header', () => {
+        const headers = {
+            authorization: 'Bearer sk-ant-oat-test',
+            'anthropic-beta': 'prompt-caching-2024-07-31',
+        };
+
+        const changed = injectAnthropicOAuthBeta(headers);
+
+        expect(changed).toBe(true);
+        expect(headers['anthropic-beta']).toBe('prompt-caching-2024-07-31,oauth-2025-04-20');
+    });
+
+    it('does not add the Anthropic OAuth beta header for standard API keys', () => {
+        const headers = {
+            authorization: 'Bearer sk-ant-api03-plain-key',
+        };
+
+        const changed = injectAnthropicOAuthBeta(headers);
+
+        expect(changed).toBe(false);
+        expect(headers['anthropic-beta']).toBeUndefined();
+    });
+
+    it('adds OpenAI stream usage only for streaming requests', () => {
+        const body: LLMRequest = {
+            stream: true,
+            messages: [{ role: 'user', content: 'hello' }],
+        };
+
+        const changed = injectOpenAIStreamUsage(body, true, '/v1/chat/completions');
+
+        expect(changed).toBe(true);
+        expect(body.stream_options?.include_usage).toBe(true);
+    });
+
+    it('does not add OpenAI stream usage for non-streaming requests', () => {
+        const body: LLMRequest = {
+            messages: [{ role: 'user', content: 'hello' }],
+        };
+
+        const changed = injectOpenAIStreamUsage(body, true, '/v1/chat/completions');
+
+        expect(changed).toBe(false);
+        expect(body.stream_options).toBeUndefined();
+    });
+
+    it('does not add OpenAI stream usage for the responses endpoint', () => {
+        const body: LLMRequest = {
+            stream: true,
+            input: 'hello',
+        } as LLMRequest;
+
+        const changed = injectOpenAIStreamUsage(body, true, '/v1/responses');
+
+        expect(changed).toBe(false);
+        expect(body.stream_options).toBeUndefined();
     });
 });

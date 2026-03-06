@@ -3,33 +3,35 @@ set -euo pipefail
 
 # Configuration
 SERVER="meme-snipe-v19-vm"
-DEST_DIR="~/agentic-firewall"
+DEST_DIR="/home/benjijmac/agentic-firewall"
 PROFILE="${1:-}" # Pass "staging" to deploy staging too
 
-echo "🚀 Deploying Agentic Firewall to $SERVER..."
+echo "🚀 Deploying origin/main on $SERVER..."
 
-# Step 1: Sync the codebase
-echo "📦 Syncing files..."
-rsync -avz --delete \
-  --exclude 'node_modules' \
-  --exclude '.git' \
-  --exclude 'dist' \
-  --exclude '.env' \
-  --exclude '.env.staging' \
-  --exclude 'agent-proxy/stats.json' \
-  --exclude 'agent-proxy/users.json' \
-  --exclude 'agent-proxy/installs.json' \
-  ./ "$SERVER:$DEST_DIR"
+ssh "$SERVER" "PROFILE='$PROFILE' DEST_DIR='$DEST_DIR' bash -s" <<'DEPLOY'
+set -euo pipefail
 
-# Step 2: Build and restart containers
-echo "🐳 Building and starting Docker containers..."
-if [ "$PROFILE" = "staging" ]; then
-  ssh "$SERVER" "cd $DEST_DIR && docker compose --profile staging up -d --build"
-else
-  ssh "$SERVER" "cd $DEST_DIR && docker compose up -d --build"
+cd "$DEST_DIR"
+
+echo "📦 Syncing VM checkout to origin/main..."
+git fetch origin main
+git reset --hard origin/main
+echo "Deploying commit $(git rev-parse --short HEAD)"
+
+REMAINING_DRIFT="$(git status --short)"
+if [ -n "$REMAINING_DRIFT" ]; then
+  echo "⚠️  Repo still has local drift after reset:"
+  echo "$REMAINING_DRIFT"
 fi
 
-# Step 3: Wait for health checks
+echo "🐳 Building and starting Docker containers..."
+if [ "$PROFILE" = "staging" ]; then
+  docker compose --profile staging up -d --build
+else
+  docker compose up -d --build
+fi
+DEPLOY
+
 echo "⏳ Waiting for health checks..."
 sleep 10
 

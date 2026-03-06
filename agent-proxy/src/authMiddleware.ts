@@ -41,6 +41,23 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
                 }
             });
         }
+
+        const localToken = process.env.LOCAL_TOKEN;
+        if (localToken) {
+            const requestToken = req.headers['x-firewall-token'] as string;
+            if (requestToken !== localToken) {
+                console.log(`[AUTH] Invalid local token from ${req.ip}`);
+                return res.status(401).json({
+                    error: {
+                        type: 'authentication_error',
+                        message: 'Invalid local token. Set x-firewall-token header to match LOCAL_TOKEN env var.',
+                    }
+                });
+            }
+        }
+
+        // In local mode, provider keys can be injected from local environment variables.
+        return next();
     }
 
     // Check for API key in standard headers (Required for PUBLIC mode to prevent open proxies)
@@ -57,21 +74,6 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
                     'If running locally, run: npx vibe-billing setup'
             }
         });
-    }
-
-    // Optional local token validation (if LOCAL_TOKEN env var is configured)
-    const localToken = process.env.LOCAL_TOKEN;
-    if (localToken) {
-        const requestToken = req.headers['x-firewall-token'] as string;
-        if (requestToken !== localToken) {
-            console.log(`[AUTH] Invalid local token from ${req.ip}`);
-            return res.status(401).json({
-                error: {
-                    type: 'authentication_error',
-                    message: 'Invalid local token. Set x-firewall-token header to match LOCAL_TOKEN env var.',
-                }
-            });
-        }
     }
 
     next();

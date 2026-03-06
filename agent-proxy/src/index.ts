@@ -458,9 +458,10 @@ app.get('/api/dashboard/:userId', rateLimitPublic, (req: Request, res: Response)
 // Health endpoint — reports mode and configured providers
 app.get('/health', (req: Request, res: Response) => {
     const { valid, missing } = validateAllKeys();
+    const isPublicMode = process.env.PUBLIC_MODE !== 'false' && process.env.PUBLIC_MODE !== '0';
     res.json({
         status: 'ok',
-        mode: 'local',
+        mode: isPublicMode ? 'public' : 'local',
         version: '0.6.0',
         providers: valid.map(v => v.toLowerCase()),
         missingProviders: missing.map(m => m.toLowerCase()),

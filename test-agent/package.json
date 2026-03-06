@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "npx tsx index.ts",
+    "tier1:smoke": "npx tsx tier1/smoke.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
