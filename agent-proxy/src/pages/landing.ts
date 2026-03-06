@@ -52,20 +52,20 @@ export function renderLandingPage(publicStats: PublicStatsSnapshot): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Agent Firewall — Agent Runtime Control</title>
-<meta name="description" content="Keep autonomous AI agents under control. Loop detection, prompt caching, budget enforcement for Claude Code, OpenClaw, and any LLM agent.">
+<title>Agent Firewall — See Agent Waste Before It Hits Your Bill</title>
+<meta name="description" content="Scan agent logs for wasted spend, then route traffic through Agent Firewall for loop detection, caching, and budget enforcement.">
 
 <!-- Social / Open Graph -->
 <meta property="og:type" content="website">
-<meta property="og:title" content="Agent Firewall — Agent Runtime Control">
-<meta property="og:description" content="Loop detection, prompt caching, budget enforcement for Claude Code, OpenAI, Gemini, and any LLM agent. Save 30-60% on API costs.">
+<meta property="og:title" content="Agent Firewall — See Agent Waste Before It Hits Your Bill">
+<meta property="og:description" content="Scan agent logs for wasted spend, then route traffic through Agent Firewall for loop detection, caching, and budget enforcement.">
 <meta property="og:url" content="https://api.jockeyvc.com">
 <meta property="og:site_name" content="Agent Firewall">
 
 <!-- Twitter Card -->
 <meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="Agent Firewall — Agent Runtime Control">
-<meta name="twitter:description" content="Loop detection, prompt caching, budget enforcement for Claude Code, OpenAI, Gemini, and any LLM agent.">
+<meta name="twitter:title" content="Agent Firewall — See Agent Waste Before It Hits Your Bill">
+<meta name="twitter:description" content="Scan agent logs for wasted spend, then route traffic through Agent Firewall for loop detection, caching, and budget enforcement.">
 
 <!-- Favicon (inline SVG data URI — no external file needed) -->
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%234f46e5'/><text x='50' y='72' font-size='60' text-anchor='middle' fill='white' font-family='system-ui'>AF</text></svg>">
@@ -97,7 +97,7 @@ export function renderLandingPage(publicStats: PublicStatsSnapshot): string {
 body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
 
 /* Nav */
-.nav{display:flex;justify-content:space-between;align-items:center;padding:16px 32px;border-bottom:1px solid var(--border);max-width:1100px;margin:0 auto}
+.nav{display:flex;justify-content:space-between;align-items:center;padding:16px 32px;border-bottom:1px solid var(--border);max-width:1120px;margin:0 auto}
 .nav .logo{font-weight:700;font-size:1rem;color:var(--text);display:flex;align-items:center;gap:8px}
 .nav .logo span{font-size:1.1rem}
 .nav-links{display:flex;gap:20px}
@@ -105,17 +105,18 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .nav a:hover{color:var(--text)}
 
 /* Hero */
-.hero{text-align:center;padding:80px 24px 64px;max-width:680px;margin:0 auto;position:relative}
+.hero{padding:72px 24px 56px;max-width:1120px;margin:0 auto;position:relative;display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:40px;align-items:center}
 .hero::before{content:'';position:absolute;top:-80px;left:50%;transform:translateX(-50%);width:800px;height:500px;background:radial-gradient(ellipse at center,rgba(79,70,229,0.12) 0%,rgba(79,70,229,0.06) 35%,rgba(79,70,229,0.02) 55%,transparent 75%);pointer-events:none;z-index:0}
 .hero>*{position:relative;z-index:1}
+.hero-copy{max-width:620px}
 .badge{display:inline-flex;align-items:center;gap:6px;padding:4px 14px;border-radius:100px;border:1px solid var(--border);font-size:0.8rem;color:var(--text-secondary);margin-bottom:24px;font-weight:500}
 .badge .dot{width:6px;height:6px;border-radius:50%;background:#22c55e;animation:pulse 2s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
 .hero h1{font-size:clamp(2.2rem,4.5vw,3.2rem);font-weight:800;letter-spacing:-0.035em;line-height:1.15;margin-bottom:16px;color:var(--text)}
-.hero .sub{color:var(--text-secondary);font-size:1.1rem;max-width:480px;margin:0 auto 40px;line-height:1.6}
+.hero .sub{color:var(--text-secondary);font-size:1.05rem;max-width:560px;margin:0 0 30px;line-height:1.6}
 
 /* Stats Grid */
-.stats{display:grid;grid-template-columns:repeat(4,1fr);max-width:560px;margin:0 auto 40px;border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);max-width:600px;margin:0 0 28px;border:1px solid var(--border);border-radius:12px;overflow:hidden}
 .stat{padding:24px 16px;text-align:center;border-right:1px solid var(--border);transition:background 0.2s}
 .stat:last-child{border-right:none}
 .stat:hover{background:var(--bg-secondary)}
@@ -123,7 +124,8 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .stat .label{color:var(--text-muted);font-size:0.7rem;margin-top:4px;text-transform:uppercase;letter-spacing:0.06em;font-weight:600}
 
 /* CTA area */
-.actions{display:flex;flex-direction:column;align-items:center;gap:12px}
+.actions{display:flex;flex-direction:column;align-items:flex-start;gap:12px}
+.action-row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
 .code{background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:10px 20px;font-family:'SF Mono','Fira Code',Consolas,monospace;font-size:0.85rem;color:var(--text);display:inline-flex;align-items:center;gap:8px;user-select:all;transition:border-color 0.2s;position:relative}
 .code:hover{border-color:var(--border-hover)}
 .code .prefix{color:var(--text-muted)}
@@ -132,6 +134,31 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .copy-btn.copied{color:var(--green)}
 .cta{display:inline-block;background:var(--accent);color:#fff;padding:12px 28px;border-radius:8px;font-size:0.9rem;font-weight:600;text-decoration:none;transition:all 0.2s;letter-spacing:-0.01em}
 .cta:hover{background:var(--accent-hover);transform:translateY(-1px);box-shadow:0 4px 12px rgba(79,70,229,0.25)}
+.hero-caption{font-size:0.82rem;color:var(--text-muted);line-height:1.5}
+.hero-caption code{font-family:'SF Mono','Fira Code',Consolas,monospace;background:var(--bg-secondary);border:1px solid var(--border);padding:2px 6px;border-radius:6px;color:var(--text-secondary)}
+
+/* Hero terminal */
+.hero-terminal{width:100%}
+.terminal{background:#0f172a;border:1px solid #1e293b;border-radius:16px;overflow:hidden;box-shadow:0 24px 60px rgba(15,23,42,0.18)}
+.terminal-bar{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #1e293b;background:#111827}
+.terminal-dots{display:flex;gap:6px}
+.terminal-dots span{width:9px;height:9px;border-radius:50%;display:block}
+.terminal-dots span:nth-child(1){background:#f87171}
+.terminal-dots span:nth-child(2){background:#fbbf24}
+.terminal-dots span:nth-child(3){background:#34d399}
+.terminal-label{font-size:0.76rem;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;color:#94a3b8}
+.terminal-body{padding:18px 18px 16px;font-family:'SF Mono','Fira Code',Consolas,monospace;font-size:0.82rem;line-height:1.65;color:#e5e7eb}
+.terminal-line{display:flex;align-items:baseline;justify-content:space-between;gap:16px;white-space:pre-wrap}
+.terminal-line + .terminal-line{margin-top:4px}
+.terminal-line.dim{color:#94a3b8}
+.terminal-line.gap{height:10px}
+.terminal-line.heading{color:#f8fafc;font-weight:700}
+.terminal-line.highlight{color:#86efac;font-weight:700}
+.terminal-line.fix{color:#c7d2fe}
+.terminal-prompt{color:#818cf8}
+.terminal-key{color:#cbd5e1}
+.terminal-value{color:#f8fafc;font-weight:600}
+.terminal-foot{margin-top:14px;padding-top:12px;border-top:1px solid #1e293b;font-size:0.75rem;color:#94a3b8;line-height:1.5}
 
 /* ─── Live Activity Feed ─── */
 .feed-section{border-top:1px solid var(--border);padding:64px 24px;background:var(--bg)}
@@ -260,6 +287,16 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   .steps{grid-template-columns:1fr;gap:32px}
   .steps::before,.steps::after{display:none}
   .compare-grid{grid-template-columns:1fr}
+  .action-row{justify-content:center}
+  .hero-caption{text-align:center}
+}
+@media(max-width:900px){
+  .hero{grid-template-columns:1fr;gap:28px;text-align:center}
+  .hero-copy{max-width:700px;margin:0 auto}
+  .hero .sub{margin:0 auto 30px}
+  .stats{max-width:560px;margin:0 auto 28px}
+  .actions{align-items:center}
+  .hero-terminal{max-width:560px;margin:0 auto}
 }
 </style>
 </head>
@@ -268,26 +305,58 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 <nav class="nav">
   <div class="logo"><span>🛡️</span> Agent Firewall</div>
   <div class="nav-links">
+    <a href="#how">How It Works</a>
     <a href="#activity">Live Feed</a>
     <a href="#features">Features</a>
   </div>
 </nav>
 
 <div class="hero">
-  <div class="badge"><span class="dot"></span>Live — proxying agent traffic now</div>
-  <h1>Stop agents from burning your money</h1>
-  <p class="sub">One command to add loop detection, prompt caching, shadow routing, and budget enforcement to any AI agent.</p>
+  <div class="hero-copy">
+    <div class="badge"><span class="dot"></span>Live now — scanning logs and proxying agent traffic</div>
+    <h1>See how much your agents are wasting</h1>
+    <p class="sub">Run one command to scan local agent logs for retry loops, context re-sends, and expensive model overuse. If the waste is real, route traffic through the firewall in minutes.</p>
 
-  <div class="stats">
-    <div class="stat"><div class="num" id="users">${fmtNum(publicStats.totalUsers)}</div><div class="label">Users</div></div>
-    <div class="stat"><div class="num" id="saved">${fmtMoney(publicStats.totalSaved)}</div><div class="label">Saved</div></div>
-    <div class="stat"><div class="num" id="reqs">${fmtNum(publicStats.totalRequests)}</div><div class="label">Requests</div></div>
-    <div class="stat"><div class="num" id="loops">${fmtNum(publicStats.blockedLoops)}</div><div class="label">Loops Killed</div></div>
+    <div class="stats">
+      <div class="stat"><div class="num" id="users">${fmtNum(publicStats.totalUsers)}</div><div class="label">Users</div></div>
+      <div class="stat"><div class="num" id="saved">${fmtMoney(publicStats.totalSaved)}</div><div class="label">Saved</div></div>
+      <div class="stat"><div class="num" id="reqs">${fmtNum(publicStats.totalRequests)}</div><div class="label">Requests</div></div>
+      <div class="stat"><div class="num" id="loops">${fmtNum(publicStats.blockedLoops)}</div><div class="label">Loops Killed</div></div>
+    </div>
+
+    <div class="actions">
+      <div class="action-row">
+        <div class="code"><span class="prefix">$</span> npx vibe-billing scan <button class="copy-btn" id="copyBtn" onclick="copyCmd()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span id="copyLabel">Copy</span></button></div>
+        <a href="https://github.com/shinertx/agentic-firewall" target="_blank" class="cta">View on GitHub</a>
+      </div>
+      <div class="hero-caption">Start with the scan. If the waste is real, fix it with <code>npx vibe-billing setup</code>.</div>
+    </div>
   </div>
 
-  <div class="actions">
-    <div class="code"><span class="prefix">$</span> npx vibe-billing setup <button class="copy-btn" id="copyBtn" onclick="copyCmd()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span id="copyLabel">Copy</span></button></div>
-    <a href="https://github.com/shinertx/agentic-firewall" target="_blank" class="cta">View on GitHub</a>
+  <div class="hero-terminal">
+    <div class="terminal">
+      <div class="terminal-bar">
+        <div class="terminal-dots"><span></span><span></span><span></span></div>
+        <div class="terminal-label">Example Scan Output</div>
+      </div>
+      <div class="terminal-body">
+        <div class="terminal-line"><span><span class="terminal-prompt">$</span> npx vibe-billing scan</span></div>
+        <div class="terminal-line dim"><span>Analyzing your agent usage for waste patterns and savings opportunities...</span></div>
+        <div class="terminal-line gap"></div>
+        <div class="terminal-line heading"><span>Agent Waste Report</span></div>
+        <div class="terminal-line"><span class="terminal-key">Runs analyzed:</span><span class="terminal-value">184</span></div>
+        <div class="terminal-line"><span class="terminal-key">Retry loops:</span><span class="terminal-value">6</span></div>
+        <div class="terminal-line"><span class="terminal-key">Context re-sends:</span><span class="terminal-value">34</span></div>
+        <div class="terminal-line"><span class="terminal-key">Overkill model usage:</span><span class="terminal-value">51</span></div>
+        <div class="terminal-line gap"></div>
+        <div class="terminal-line"><span class="terminal-key">Total agent spend:</span><span class="terminal-value">$381.42</span></div>
+        <div class="terminal-line highlight"><span class="terminal-key">Estimated wasted spend:</span><span class="terminal-value">$312.76</span></div>
+        <div class="terminal-line gap"></div>
+        <div class="terminal-line fix"><span class="terminal-key">Fix with:</span></div>
+        <div class="terminal-line"><span><span class="terminal-prompt">$</span> npx vibe-billing setup</span></div>
+        <div class="terminal-foot">Reads local Claude Code and OpenClaw logs first. No signup required to see the waste.</div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -309,27 +378,27 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 <div class="how-section" id="how">
   <div class="how">
     <div class="how-header">
-      <h2>Up and running in 60 seconds</h2>
-      <p>One command. No config files. Works with every agent.</p>
+      <h2>From scan to safe mode in 60 seconds</h2>
+      <p>Find the waste first. Route traffic second. Keep the agent under control after that.</p>
     </div>
     <div class="steps">
       <div class="step">
         <div class="step-num">1</div>
-        <h3>Install</h3>
-        <p>Run a single command. It detects your OS, installs the proxy, and configures your shell.</p>
-        <div class="step-code">npx vibe-billing setup</div>
+        <h3>Scan</h3>
+        <p>Analyze local transcripts and see retry loops, context re-sends, and overkill model usage before you install anything.</p>
+        <div class="step-code">npx vibe-billing scan</div>
       </div>
       <div class="step">
         <div class="step-num">2</div>
-        <h3>Agent connects</h3>
-        <p>Your agent's API calls route through the firewall automatically. Zero code changes needed.</p>
-        <div class="step-code">Agent &rarr; Firewall &rarr; LLM</div>
+        <h3>Setup</h3>
+        <p>Run one command to patch configs, verify the connection, and route agent traffic through the firewall.</p>
+        <div class="step-code">npx vibe-billing setup</div>
       </div>
       <div class="step">
         <div class="step-num">3</div>
-        <h3>Save money</h3>
-        <p>Prompt caching, loop detection, and budget caps kick in immediately. Watch your bill drop.</p>
-        <div class="step-code">avg. 83% savings</div>
+        <h3>Stay in control</h3>
+        <p>Prompt caching, loop detection, budget caps, and smarter routing kick in once traffic is flowing.</p>
+        <div class="step-code">Agent &rarr; Firewall &rarr; LLM</div>
       </div>
     </div>
   </div>
@@ -413,7 +482,7 @@ function fmtN(v) {
   return Math.round(v).toLocaleString('en-US');
 }
 function copyCmd() {
-  navigator.clipboard.writeText('npx vibe-billing setup').then(function() {
+  navigator.clipboard.writeText('npx vibe-billing scan').then(function() {
     var btn = document.getElementById('copyBtn');
     var label = document.getElementById('copyLabel');
     btn.classList.add('copied');
