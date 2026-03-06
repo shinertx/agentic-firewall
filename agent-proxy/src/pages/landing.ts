@@ -1,5 +1,4 @@
-import { getAggregateStats } from '../budgetGovernor';
-import { globalStats } from '../stats';
+import type { PublicStatsSnapshot } from '../publicStats';
 
 /**
  * Renders the public landing page HTML with live aggregate stats.
@@ -36,12 +35,10 @@ function fmtMoney(n: number): string {
   return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-export function renderLandingPage(): string {
-  const agg = getAggregateStats();
-
+export function renderLandingPage(publicStats: PublicStatsSnapshot): string {
   // Pre-render a generous batch so JS can trim to fit the viewport on load
   const MAX_SSR_ROWS = 14;
-  const feedItems = globalStats.recentActivity.slice(0, MAX_SSR_ROWS);
+  const feedItems = publicStats.recentFeed.slice(0, MAX_SSR_ROWS);
   const ssrFeedRows = feedItems.map((a: any) => {
     const saved = a.saved ? `<div class="feed-saved">-$${a.saved}</div>` : '<div class="feed-saved"></div>';
     const ttft = a.ttftMs ? `<div class="feed-ttft">${a.ttftMs < 1000 ? a.ttftMs + 'ms' : (a.ttftMs / 1000).toFixed(1) + 's'}</div>` : '<div class="feed-ttft"></div>';
@@ -282,10 +279,10 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   <p class="sub">One command to add loop detection, prompt caching, shadow routing, and budget enforcement to any AI agent.</p>
 
   <div class="stats">
-    <div class="stat"><div class="num" id="users">${fmtNum(agg.totalUsers)}</div><div class="label">Users</div></div>
-    <div class="stat"><div class="num" id="saved">${fmtMoney(agg.totalSaved)}</div><div class="label">Saved</div></div>
-    <div class="stat"><div class="num" id="reqs">${fmtNum(globalStats.totalRequests)}</div><div class="label">Requests</div></div>
-    <div class="stat"><div class="num" id="loops">${fmtNum(globalStats.blockedLoops)}</div><div class="label">Loops Killed</div></div>
+    <div class="stat"><div class="num" id="users">${fmtNum(publicStats.totalUsers)}</div><div class="label">Users</div></div>
+    <div class="stat"><div class="num" id="saved">${fmtMoney(publicStats.totalSaved)}</div><div class="label">Saved</div></div>
+    <div class="stat"><div class="num" id="reqs">${fmtNum(publicStats.totalRequests)}</div><div class="label">Requests</div></div>
+    <div class="stat"><div class="num" id="loops">${fmtNum(publicStats.blockedLoops)}</div><div class="label">Loops Killed</div></div>
   </div>
 
   <div class="actions">
@@ -301,7 +298,7 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
         <span class="feed-live-dot"></span>
         <h2>Live Activity</h2>
       </div>
-      <div class="feed-savings-total" id="feedSavings">${fmtMoney(agg.totalSaved)} saved</div>
+      <div class="feed-savings-total" id="feedSavings">${fmtMoney(publicStats.totalSaved)} saved</div>
     </div>
     <div class="feed-list" id="feedList">
       ${ssrFeedRows || '<div class="feed-empty" style="color:var(--text-muted);font-size:0.82rem;padding:32px 20px;background:var(--bg);text-align:center;opacity:0.6">Listening for traffic...</div>'}
@@ -397,8 +394,8 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
       <div class="feature"><div class="icon">🚫</div><h3>Budget Governor</h3><p>Set per-session spend caps. Agents get a 402 when they hit the limit — hard kill, not a suggestion.</p></div>
       <div class="feature"><div class="icon">🧠</div><h3>No-Progress Detection</h3><p>Fingerprints tool failures. Same error 5 times? Stopped automatically.</p></div>
       <div class="feature"><div class="icon">📊</div><h3>Per-User Dashboard</h3><p>Every user gets a personal savings dashboard with spend tracking and loop history.</p></div>
-      <div class="feature"><div class="icon">🧩</div><h3>Smart Router</h3><p>Classifies request complexity with local AI. Simple tasks auto-downgrade from Opus to Haiku — 73% faster responses.${globalStats.smartRouteDowngrades > 0 ? ` <strong>${globalStats.smartRouteDowngrades} downgrades</strong> so far.` : ''}</p></div>
-      <div class="feature"><div class="icon">🗜️</div><h3>Prompt Compression</h3><p>Compresses oversized system prompts and long histories via local AI before sending to the provider. Fewer tokens = faster + cheaper.${globalStats.compressionCalls > 0 ? ` <strong>${globalStats.compressionCalls} compressions</strong>, ~${Math.round(globalStats.compressedTokensSaved / 1000)}k tokens saved.` : ''}</p></div>
+      <div class="feature"><div class="icon">🧩</div><h3>Smart Router</h3><p>Classifies request complexity with local AI. Simple tasks auto-downgrade from Opus to Haiku — 73% faster responses.${publicStats.smartRouteDowngrades > 0 ? ` <strong>${publicStats.smartRouteDowngrades} downgrades</strong> so far.` : ''}</p></div>
+      <div class="feature"><div class="icon">🗜️</div><h3>Prompt Compression</h3><p>Compresses oversized system prompts and long histories via local AI before sending to the provider. Fewer tokens = faster + cheaper.${publicStats.compressionCalls > 0 ? ` <strong>${publicStats.compressionCalls} compressions</strong>, ~${Math.round(publicStats.compressedTokensSaved / 1000)}k tokens saved.` : ''}</p></div>
     </div>
   </div>
 </div>
@@ -443,10 +440,10 @@ function animateValue(el, start, end, duration, format) {
 }
 
 var prev = {
-  users: ${agg.totalUsers},
-  saved: ${agg.totalSaved},
-  reqs: ${globalStats.totalRequests},
-  loops: ${globalStats.blockedLoops}
+  users: ${publicStats.totalUsers},
+  saved: ${publicStats.totalSaved},
+  reqs: ${publicStats.totalRequests},
+  loops: ${publicStats.blockedLoops}
 };
 
 function statusClass(s) {

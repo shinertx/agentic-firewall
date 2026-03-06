@@ -168,35 +168,7 @@ app.get('/api/public-stats', rateLimitPublic, async (req: Request, res: Response
         npmTotal = 0;
     }
 
-    const totalUsers = Math.max(agg.totalUsers, uniqueInstalls + npmTotal) + 612; // +612 baseline to account for historical NPM installs that were wiped prior to volume persistence
-
-    // Slice the 14 most recent activities for the public feed (anonymized: model, tokens, status, saved)
-    const recentFeed = globalStats.recentActivity.slice(0, 14).map((a: any) => ({
-        time: a.time,
-        model: a.model,
-        tokens: a.tokens,
-        status: a.status,
-        saved: a.saved || '',
-        ttftMs: a.ttftMs || 0,
-    }));
-
-    const avgTtftMs = globalStats.timedRequests > 0 ? Math.round(globalStats.totalTtftMs / globalStats.timedRequests) : 0;
-    const avgEstimationError = globalStats.estimationSamples > 0
-        ? Math.round((globalStats.estimationErrorSum / globalStats.estimationSamples) * 1000) / 10
-        : 0;
-
-    res.json({
-        totalUsers: totalUsers,
-        totalSaved: agg.totalSaved,
-        totalRequests: globalStats.totalRequests,
-        blockedLoops: globalStats.blockedLoops,
-        avgTtftMs,
-        smartRouteDowngrades: globalStats.smartRouteDowngrades,
-        compressionCalls: globalStats.compressionCalls,
-        avgEstimationErrorPct: avgEstimationError,
-        estimationSamples: globalStats.estimationSamples,
-        recentFeed,
-    });
+    res.json(buildPublicStats(agg, uniqueInstalls, npmTotal, globalStats));
 });
 
 // npm download stats (public — cached, querying public npm API)
@@ -221,6 +193,7 @@ import { getCompressionStats } from './promptCompressor';
 import { recordTelemetryEvent, getInstallStats, getInstallBreakdown, getNpmStats, getUniqueInstallCount, getDailyInstallTimeline, exportInstallData, importInstallData, loadInstallsFromRedis, saveInstallsToRedis } from './installTracker';
 import { isRedisAvailable } from './redis';
 import { startTelemetry, flushTelemetry } from './telemetryReporter';
+import { buildPublicStats } from './publicStats';
 
 // Load persisted user data on startup
 import fs from 'fs';
@@ -435,9 +408,19 @@ app.get('/api/admin/stats', requireAdminAuth, async (req: Request, res: Response
 });
 
 // Landing page (extracted to src/pages/landing.ts)
-app.get('/', (req: Request, res: Response) => {
+app.get('/', async (req: Request, res: Response) => {
+    const agg = getAggregateStats();
+    const uniqueInstalls = getUniqueInstallCount();
+    let npmTotal = 0;
+    try {
+        const npmStats = await getNpmStats();
+        npmTotal = npmStats ? npmStats.weekly : 0;
+    } catch {
+        npmTotal = 0;
+    }
+
     res.setHeader('Content-Type', 'text/html');
-    res.send(renderLandingPage());
+    res.send(renderLandingPage(buildPublicStats(agg, uniqueInstalls, npmTotal, globalStats)));
 });
 
 // Per-user dashboard (extracted to src/pages/dashboard.ts)
