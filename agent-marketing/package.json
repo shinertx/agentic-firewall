@@ -1,9 +1,11 @@
 {
-  "name": "jenni-marketing-agents",
+  "name": "jockeyvc-studio-marketing",
   "version": "1.0.0",
-  "description": "This folder generates an outreach queue that markets the **Jenni Chrome extension** (\"check local stock, get it today\") by: - finding high-intent posts (mostly Reddit right now) about items being sold out / needing restock / shipping delays - drafting suggested replies that include the Chrome Web Store link - producing a click-through Markdown dashboard for manual posting",
+  "description": "Studio-level marketing engine for JockeyVC products. It scans for high-intent pain signals, drafts product-aware replies, and serves a lightweight review dashboard.",
   "main": "index.js",
   "scripts": {
+    "validate:registry": "python3 scripts/validate_registry.py",
+    "sync:drive-registry": "python3 scripts/sync_drive_registry.py",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

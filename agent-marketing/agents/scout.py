@@ -1,7 +1,7 @@
 """
 Scout Agent — Studio-Level Product-Aware Lead Scanner.
 Scans subreddits via RSS for pain-keyword matches across ALL studio products.
-Each lead is tagged with the product_id it matched.
+Each lead is tagged with the product_id and surface_id it matched.
 """
 import requests
 import json
@@ -9,6 +9,7 @@ import time
 import xml.etree.ElementTree as ET
 from datetime import datetime
 import os
+import sys
 import logging
 import fcntl
 from dotenv import load_dotenv
@@ -17,16 +18,21 @@ load_dotenv()
 
 logger = logging.getLogger("studio.scout")
 
-PRODUCTS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "products.json")
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.append(PROJECT_ROOT)
+
+from registry import load_surface_targets  # noqa: E402
+
 OUTPUT_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "leads.json")
 
 
-def load_products():
-    """Load product registry. Every agent reads from the same file."""
+def load_surfaces():
+    """Load normalized marketing surfaces from the shared registry."""
     try:
-        with open(PRODUCTS_FILE, 'r') as f:
-            data = json.load(f)
-            return data.get("products", [])
+        products, registry_path = load_surface_targets()
+        logger.info("Loaded product registry from %s", registry_path)
+        return products
     except Exception as e:
         logger.error("Failed to load products.json: %s", e)
         return []
@@ -36,24 +42,31 @@ class ScoutAgent:
     def __init__(self):
         self.leads = []
         self.seen_ids = set()
-        self.products = load_products()
+        self.surfaces = load_surfaces()
 
-        # Build a merged keyword → product mapping
-        self.keyword_map = {}  # keyword_string -> [product_ids]
+        # Build a merged keyword → surface mapping
+        self.keyword_map = {}  # keyword_string -> [surface_ids]
+        self.surface_map = {}
         self.all_subreddits = set()
 
-        for product in self.products:
-            for kw in product.get("keywords", []):
+        for surface in self.surfaces:
+            self.surface_map[surface["id"]] = surface
+
+            for kw in surface.get("keywords", []):
                 kw_lower = kw.lower()
                 if kw_lower not in self.keyword_map:
                     self.keyword_map[kw_lower] = []
-                self.keyword_map[kw_lower].append(product["id"])
+                self.keyword_map[kw_lower].append(surface["id"])
 
-            for sub in product.get("subreddits", []):
+            for sub in surface.get("subreddits", []):
                 self.all_subreddits.add(sub)
 
-        logger.info("Loaded %d products with %d keywords across %d subreddits",
-                     len(self.products), len(self.keyword_map), len(self.all_subreddits))
+        logger.info(
+            "Loaded %d surfaces with %d keywords across %d subreddits",
+            len(self.surfaces),
+            len(self.keyword_map),
+            len(self.all_subreddits),
+        )
 
     def load_existing(self):
         if os.path.exists(OUTPUT_FILE):
@@ -100,40 +113,56 @@ class ScoutAgent:
 
                 t_lower = (str(title) + " " + str(text)).lower()
 
-                # Match against ALL product keywords
-                matched_products = set()
+                # Match against ALL surface keywords
+                matched_surfaces = set()
                 matched_keywords = []
 
-                for kw, product_ids in self.keyword_map.items():
+                for kw, surface_ids in self.keyword_map.items():
                     if kw in t_lower:
                         matched_keywords.append(kw)
-                        for pid_match in product_ids:
-                            matched_products.add(pid_match)
+                        for surface_id in surface_ids:
+                            matched_surfaces.add(surface_id)
 
-                if matched_products:
+                if matched_surfaces:
                     # Intent scoring
                     score = len(matched_keywords)  # base: how many keywords matched
                     if any(w in t_lower for w in ["bill", "cost", "$", "expensive", "burned"]):
                         score += 3
                     if any(w in t_lower for w in ["loop", "stuck", "spinning", "infinite"]):
                         score += 2
-                    if len(matched_products) > 1:
-                        score += 2  # bonus for multi-product relevance
+                    if any(w in t_lower for w in ["same day", "same-day", "pickup", "local inventory"]):
+                        score += 2
+                    if len(matched_surfaces) > 1:
+                        score += 2  # bonus for multi-surface relevance
 
-                    # Pick the best product to promote (highest keyword overlap)
-                    product_scores = {}
+                    # Pick the best surface to promote (highest keyword overlap).
+                    # Exclude surfaces whose negative keywords are present.
+                    surface_scores = {}
                     for kw in matched_keywords:
-                        for p_id in self.keyword_map[kw]:
-                            product_scores[p_id] = product_scores.get(p_id, 0) + 1
-                    best_product = max(product_scores, key=product_scores.get)
+                        for surface_id in self.keyword_map[kw]:
+                            surface = self.surface_map[surface_id]
+                            if any(exclusion.lower() in t_lower for exclusion in surface.get("negative_keywords", [])):
+                                continue
+                            surface_scores[surface_id] = surface_scores.get(surface_id, 0) + 1
+
+                    if not surface_scores:
+                        continue
+
+                    best_surface_id = max(surface_scores, key=surface_scores.get)
+                    best_surface = self.surface_map[best_surface_id]
+                    matched_product_ids = sorted({self.surface_map[surface_id]["product_id"] for surface_id in surface_scores})
 
                     lead = {
                         "id": pid,
                         "source": "Reddit",
                         "subreddit": subreddit,
                         "keywords": matched_keywords,
-                        "product_id": best_product,
-                        "all_matching_products": list(matched_products),
+                        "product_id": best_surface["product_id"],
+                        "product_name": best_surface["product_name"],
+                        "surface_id": best_surface["id"],
+                        "surface_name": best_surface["name"],
+                        "all_matching_products": matched_product_ids,
+                        "all_matching_surfaces": sorted(surface_scores.keys()),
                         "title": title,
                         "selftext": str(text)[:500],
                         "url": permalink,
@@ -141,8 +170,14 @@ class ScoutAgent:
                         "status": "new",
                         "intent_score": score,
                     }
-                    logger.info("LEAD: [%s] %s (products: %s, score: %d)",
-                                best_product, lead['title'][:50], list(matched_products), score)
+                    logger.info(
+                        "LEAD: [%s/%s] %s (surfaces: %s, score: %d)",
+                        best_surface["product_id"],
+                        best_surface["id"],
+                        lead["title"][:50],
+                        sorted(surface_scores.keys()),
+                        score,
+                    )
                     self.leads.append(lead)
                     self.seen_ids.add(pid)
 
@@ -150,7 +185,7 @@ class ScoutAgent:
             logger.exception("Exception scanning r/%s: %s", subreddit, e)
 
     def run(self):
-        logger.info("Studio Scout Agent starting — scanning for %d products...", len(self.products))
+        logger.info("Studio Scout Agent starting — scanning for %d surfaces...", len(self.surfaces))
         self.load_existing()
 
         for sub in sorted(self.all_subreddits):

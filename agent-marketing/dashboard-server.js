@@ -9,6 +9,16 @@ app.use(cors());
 app.use(express.static(__dirname));
 
 const BASE = __dirname;
+const DRIVE_PRODUCTS_FILE = path.join(
+    process.env.HOME || '',
+    'Google Drive',
+    'My Drive',
+    'JockeyVC Studio',
+    'Marketing OS',
+    '01_Portfolio_Registry',
+    'products.json'
+);
+const LOCAL_PRODUCTS_FILE = path.join(BASE, 'data', 'products.json');
 
 function safeRead(file) {
     try {
@@ -22,6 +32,20 @@ function safeReadText(file) {
     } catch { return ''; }
 }
 
+function resolveRegistrySource() {
+    const candidates = [
+        process.env.STUDIO_PRODUCTS_FILE,
+        LOCAL_PRODUCTS_FILE,
+    ].filter(Boolean);
+
+    for (const candidate of candidates) {
+        if (fs.existsSync(candidate)) {
+            return candidate;
+        }
+    }
+    return LOCAL_PRODUCTS_FILE;
+}
+
 function getLogStats(logFile) {
     try {
         const log = fs.readFileSync(path.join(BASE, logFile), 'utf8');
@@ -31,7 +55,7 @@ function getLogStats(logFile) {
         const lastCycle = cycleMatch ? parseInt(cycleMatch[cycleMatch.length - 1].match(/\d+/)[0]) : 0;
         const failures = (log.match(/ERROR/g) || []).length;
         const successPosts = (log.match(/Successfully posted/g) || []).length;
-        const lastActivity = lines.filter(l => l.includes(' - jenni.')).pop() || '';
+        const lastActivity = lines[lines.length - 1] || '';
         return { lastCycle, failures, successPosts, lastActivity, recentLogs: lastLines.slice(-30) };
     } catch { return { lastCycle: 0, failures: 0, successPosts: 0, lastActivity: '', recentLogs: [] }; }
 }
@@ -57,6 +81,7 @@ app.get('/api/status', (req, res) => {
     const logStats = getLogStats('logs/orchestrator.log');
     const pm2 = getPm2Status();
     const tmux = getTmuxStatus();
+    const registrySource = resolveRegistrySource();
 
     const countByStatus = (arr) => {
         const counts = {};
@@ -97,6 +122,12 @@ app.get('/api/status', (req, res) => {
         drafts: {
             total: drafts.length,
             pending: drafts.filter(d => d.status === 'draft').length,
+        },
+        registry: {
+            source: registrySource,
+            driveAvailable: fs.existsSync(DRIVE_PRODUCTS_FILE),
+            drivePath: DRIVE_PRODUCTS_FILE,
+            runtimePath: LOCAL_PRODUCTS_FILE,
         },
         processes: {
             pm2: pm2.filter(p => p.name.includes('firewall')).map(p => ({

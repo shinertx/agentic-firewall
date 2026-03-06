@@ -30,7 +30,8 @@ class PosterAgent:
     def __init__(self):
         self.drafts = []
         self.reddit = None
-        self.auto_post = os.getenv("JENNI_AUTO_POST", "false").lower() == "true"
+        auto_post_value = os.getenv("STUDIO_AUTO_POST", os.getenv("JENNI_AUTO_POST", "false"))
+        self.auto_post = auto_post_value.lower() == "true"
         self.max_retries = 2
 
         if praw:
@@ -139,7 +140,7 @@ class PosterAgent:
                     time.sleep(sleep_time)
         else:
             if not self.auto_post:
-                logger.info("Auto-Poster is DISABLED. Set JENNI_AUTO_POST=true to enable.")
+                logger.info("Auto-Poster is DISABLED. Set STUDIO_AUTO_POST=true to enable. JENNI_AUTO_POST is still supported as a legacy fallback.")
             if not self.reddit:
                 logger.warning("Reddit client not available.")
 

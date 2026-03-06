@@ -1,10 +1,11 @@
 """
 Engager Agent — Studio-Level Product-Aware Reply Generator.
-Reads leads tagged with product_id, looks up the product in the registry,
-and generates contextual replies promoting the right product.
+Reads leads tagged with product_id and surface_id, looks up the product in
+the registry, and generates contextual replies promoting the right surface.
 """
 import json
 import os
+import sys
 from datetime import datetime
 import logging
 import fcntl
@@ -20,15 +21,20 @@ logger = logging.getLogger("studio.engager")
 
 LEAD_FILES = ["data/leads.json", "data/leads_youtube.json"]
 OUTPUT_FILE = "data/draft_replies.json"
-PRODUCTS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "products.json")
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.append(PROJECT_ROOT)
+
+from registry import find_surface, load_products_map  # noqa: E402
 
 
 def load_products():
     """Load product registry into a dict keyed by product id."""
     try:
-        with open(PRODUCTS_FILE, 'r') as f:
-            data = json.load(f)
-            return {p["id"]: p for p in data.get("products", [])}
+        products, registry_path = load_products_map()
+        logger.info("Loaded product registry from %s", registry_path)
+        return products
     except Exception as e:
         logger.error("Failed to load products.json: %s", e)
         return {}
@@ -37,39 +43,50 @@ def load_products():
 # System prompts per reply_style
 STYLE_PROMPTS = {
     "empathetic-technical": (
-        "You are a software engineer who built {name}, a universal reverse proxy that works with Anthropic, OpenAI, Google Gemini, and NVIDIA NIM. {tagline} "
+        "You are a software engineer who built {surface_name}, part of the {product_name} product line. {tagline} "
         "Read the user's post. Write a 2-3 sentence empathetic, highly technical reply "
         "that addresses their specific pain point. Explicitly mention that it works for whatever provider they are using. Output ONLY the raw reply text."
     ),
     "helpful-free-tool": (
-        "You are a developer who built a free, open-source CLI called {name}. {tagline} "
+        "You are a developer who built a free, open-source tool called {surface_name}. {tagline} "
         "Read the user's Reddit post. Write a 2-3 sentence helpful reply offering your free tool. "
         "Mention it's free, runs locally, no signup. Be casual and helpful. Output ONLY the raw reply text."
     ),
     "technical-benchmark": (
-        "You are the builder of {name}, a proxy that compresses AI agent context windows. {tagline} "
+        "You are the builder of {surface_name}, a proxy that compresses AI agent context windows. {tagline} "
         "Read the user's Reddit post. Write a 2-3 sentence technical reply with specific numbers "
         "(70% compression, preserves last 4 messages). Be concise. Output ONLY the raw reply text."
     ),
     "business-focused": (
-        "You are a founder who built {name}. {tagline} "
+        "You are a founder who built {surface_name}. {tagline} "
         "Read the user's Reddit post. Write a 2-3 sentence business-focused reply about cost governance. "
         "Mention per-agent budget limits and real-time spend tracking. Output ONLY the raw reply text."
     ),
     "pain-aware": (
-        "You are a founder who built {name} because AI support agents kept marking tickets 'resolved' "
+        "You are a founder who built {surface_name} because AI support agents kept marking tickets 'resolved' "
         "when the customer issue wasn't actually fixed. {tagline} "
         "Read the user's post. Write a 2-3 sentence empathetic reply connecting to their pain. Output ONLY the raw reply text."
     ),
-    "helpful-fellow-seller": (
-        "You are an Amazon seller who built {name} to help with product research. {tagline} "
-        "Read the user's post. Write a 2-3 sentence helpful reply from a fellow seller perspective. Output ONLY the raw reply text."
+    "consumer-local-availability": (
+        "You built {surface_name}, a shopper-facing tool under the {product_name} product line. {tagline} "
+        "Read the user's post. Write a 2-3 sentence helpful reply that sounds like a real person, not a marketer. "
+        "Mention nearby store availability, same-day pickup or delivery, and keep it concrete. Output ONLY the raw reply text."
+    ),
+    "commerce-infrastructure": (
+        "You are the founder of {surface_name}, infrastructure under the {product_name} brand. {tagline} "
+        "Read the user's post. Write a 2-3 sentence crisp reply for merchants, operators, or partners. "
+        "Focus on routing online demand to nearby in-stock inventory without a rip-and-replace migration. Output ONLY the raw reply text."
+    ),
+    "merchant-recovery": (
+        "You built {surface_name} for merchants dealing with out-of-stock and slow-ship demand. {tagline} "
+        "Read the user's post. Write a 2-3 sentence merchant-focused reply explaining how lost demand can be recovered into a same-day or local sale. "
+        "Mention low-lift adoption and no heavy integration. Output ONLY the raw reply text."
     ),
     "openclaw-scanner-hook": (
-        "You are a developer exploring AI agents. Read the user's post complaining about OpenClaw or Claude bills/loops. "
-        "Write exactly 2-3 casual sentences. Start by validating their pain (e.g., 'your agent probably got stuck in a loop'). "
-        "Then, tell them they can check exactly how much money they wasted by running `npx vibe-billing scan` in their terminal. "
-        "Explicitly mention that the tool analyzes their local OpenClaw logs. Output ONLY the raw reply text. DO NOT use hashtags. Use EXACTLY the command `npx vibe-billing scan` without modification."
+        "You are a developer replying to another developer about OpenClaw loops or runaway spend. "
+        "Write exactly 2 casual sentences. Keep it direct and human. "
+        "Validate the pain in the first sentence, then mention that running `{cta}` shows exactly where the wasted spend went from local logs. "
+        "Output ONLY the raw reply text. DO NOT use hashtags. DO NOT sound like a marketer."
     ),
 }
 
@@ -102,31 +119,53 @@ class EngagerAgent:
         return []
 
     def get_product_context(self, lead):
-        """Look up the product this lead matched and return its details."""
+        """Look up the product and surface this lead matched."""
         product_id = lead.get("product_id")
 
-        # Legacy leads without product_id default to agentic-firewall
+        # Legacy leads without product_id default to Vibe Billing.
         if not product_id:
-            product_id = "agentic-firewall"
+            product_id = "vibe-billing"
 
         product = self.products.get(product_id)
         if not product:
-            logger.warning("Unknown product_id: %s — falling back to firewall", product_id)
-            product = self.products.get("agentic-firewall", {
-                "name": "Agentic Firewall",
-                "tagline": "Kill infinite loops. Cut API waste by 40%.",
-                "url": "https://api.jockeyvc.com",
-                "landing": "https://ai.jockeyvc.com",
-                "reply_style": "empathetic-technical"
+            logger.warning("Unknown product_id: %s — falling back to Vibe Billing", product_id)
+            product = self.products.get("vibe-billing", {
+                "id": "vibe-billing",
+                "name": "Vibe Billing",
+                "brand_name": "Agentic Firewall",
+                "default_surface": "agentic-firewall-runtime",
+                "surfaces": [
+                    {
+                        "id": "agentic-firewall-runtime",
+                        "product_id": "vibe-billing",
+                        "product_name": "Vibe Billing",
+                        "brand_name": "Agentic Firewall",
+                        "name": "Agentic Firewall",
+                        "tagline": "Kill infinite loops. Cut API waste by 40%.",
+                        "url": "https://api.jockeyvc.com",
+                        "landing": "https://api.jockeyvc.com",
+                        "reply_style": "empathetic-technical",
+                        "reply_template": (
+                            "I built {surface_name} for exactly this. It sits between your agent and the model provider, "
+                            "kills loops, and tracks every dollar. {tagline} Check it out: {landing}"
+                        ),
+                        "cta": "npx vibe-billing setup",
+                        "aliases": [],
+                    }
+                ],
             })
 
-        return product
+        surface = find_surface(product, lead.get("surface_id"), lead.get("product_id"))
+        return product, surface
 
     def generate_reply(self, lead):
-        product = self.get_product_context(lead)
-        product_name = product.get("name", "our tool")
-        product_url = product.get("landing", product.get("url", ""))
-        reply_style = product.get("reply_style", "empathetic-technical")
+        product, surface = self.get_product_context(lead)
+        product_name = product.get("name", "our product")
+        brand_name = product.get("brand_name", product_name)
+        surface_name = surface.get("name", brand_name)
+        product_url = surface.get("landing", surface.get("url", ""))
+        reply_style = surface.get("reply_style", "empathetic-technical")
+        cta = surface.get("cta", surface.get("npm", ""))
 
         # Try LLM generation first
         openai_key = os.getenv("OPENAI_API_KEY") or os.getenv("NVIDIA_API_KEY")
@@ -143,8 +182,12 @@ class EngagerAgent:
 
                 system_prompt = STYLE_PROMPTS.get(reply_style, STYLE_PROMPTS["empathetic-technical"])
                 system_prompt = system_prompt.format(
-                    name=product_name,
-                    tagline=product.get("tagline", "")
+                    name=surface_name,
+                    surface_name=surface_name,
+                    product_name=product_name,
+                    brand_name=brand_name,
+                    tagline=surface.get("tagline", ""),
+                    cta=cta,
                 )
 
                 context = f"Title: {lead.get('title', '')}\nBody: {lead.get('selftext', '')}"
@@ -166,15 +209,19 @@ class EngagerAgent:
             except Exception as e:
                 logger.error("LLM generation failed (falling back to template): %s", e)
 
-        # Fallback to product reply_template
+        # Fallback to surface reply_template
         if not llm_reply:
-            template = product.get("reply_template", "{name} might help: {url}")
+            template = surface.get("reply_template", "{surface_name} might help: {landing}")
             llm_reply = template.format(
-                name=product_name,
-                tagline=product.get("tagline", ""),
+                name=surface_name,
+                surface_name=surface_name,
+                product_name=product_name,
+                brand_name=brand_name,
+                tagline=surface.get("tagline", ""),
                 url=product_url,
-                landing=product.get("landing", product_url),
-                npm=product.get("npm", "")
+                landing=product_url,
+                npm=surface.get("npm", ""),
+                cta=cta,
             )
             if reply_style != "openclaw-scanner-hook":
                 llm_reply += f" (disclosure: I built it)"
@@ -183,8 +230,10 @@ class EngagerAgent:
             "lead_id": lead.get("id"),
             "target_url": lead.get("url"),
             "lead_text": lead.get("title"),
-            "product_id": lead.get("product_id", "agentic-firewall"),
+            "product_id": product.get("id", lead.get("product_id", "vibe-billing")),
             "product_name": product_name,
+            "surface_id": surface.get("id"),
+            "surface_name": surface_name,
             "suggested_reply": llm_reply,
             "status": "draft",
             "generated_at": datetime.now().isoformat()
@@ -201,8 +250,12 @@ class EngagerAgent:
             if lead.get('status') == 'new' and lead.get("id") not in existing_ids:
                 draft = self.generate_reply(lead)
                 self.drafts.append(draft)
-                logger.info("Drafted [%s] reply for: %s",
-                            draft.get("product_name", "?"), lead.get('title', '')[:30])
+                logger.info(
+                    "Drafted [%s/%s] reply for: %s",
+                    draft.get("product_name", "?"),
+                    draft.get("surface_name", "?"),
+                    lead.get('title', '')[:30],
+                )
 
         abs_output = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), OUTPUT_FILE)
         os.makedirs(os.path.dirname(abs_output), exist_ok=True)

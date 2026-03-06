@@ -1,220 +1,391 @@
 {
-    "products": [
+  "version": 2,
+  "products": [
+    {
+      "id": "vibe-billing",
+      "aliases": [
+        "agentic-firewall"
+      ],
+      "name": "Vibe Billing",
+      "brand_name": "Agentic Firewall",
+      "core_thesis": "Stop agent loops, prompt waste, and runaway API spend before it hits the bill.",
+      "default_surface": "agentic-firewall-runtime",
+      "surfaces": [
         {
-            "id": "agentic-firewall",
-            "name": "Agentic Firewall",
-            "tagline": "Kill infinite loops. Cut API waste by 40%.",
-            "url": "https://api.jockeyvc.com",
-            "landing": "https://ai.jockeyvc.com",
-            "keywords": [
-                "api bill",
-                "huge openai bill",
-                "huge anthropic bill",
-                "agent loop",
-                "infinite loop",
-                "agent stuck",
-                "rate limit",
-                "429",
-                "cost runaway",
-                "agent burned my money",
-                "agent spent too much",
-                "tool call loop",
-                "agent spinning",
-                "agent keeps failing",
-                "claude code expensive",
-                "devin expensive",
-                "auto-gpt loop"
-            ],
-            "subreddits": [
-                "OpenAI",
-                "ClaudeAI",
-                "AutoGPT",
-                "LangChain",
-                "LocalLLaMA",
-                "OpenClaw"
-            ],
-            "reply_style": "empathetic-technical",
-            "reply_template": "I built a proxy called {name} that sits between your agent and ANY provider (Anthropic, OpenAI, Gemini, NIM) — it detects loops, kills runaway calls, and tracks every dollar. {tagline} Check it out: {landing}"
+          "id": "agentic-firewall-runtime",
+          "aliases": [
+            "agentic-firewall"
+          ],
+          "name": "Agentic Firewall",
+          "surface_type": "runtime",
+          "audience": "AI developers and teams running autonomous agents",
+          "tagline": "Kill infinite loops. Cut API waste by 40%.",
+          "url": "https://api.jockeyvc.com",
+          "landing": "https://api.jockeyvc.com",
+          "cta": "npx vibe-billing setup",
+          "keywords": [
+            "api bill",
+            "huge openai bill",
+            "huge anthropic bill",
+            "agent loop",
+            "infinite loop",
+            "agent stuck",
+            "rate limit",
+            "429",
+            "cost runaway",
+            "agent burned my money",
+            "agent spent too much",
+            "tool call loop",
+            "agent spinning",
+            "agent keeps failing",
+            "claude code expensive",
+            "devin expensive",
+            "auto-gpt loop",
+            "vibe billing",
+            "prompt caching"
+          ],
+          "negative_keywords": [
+            "shopify out of stock",
+            "back in stock",
+            "amazon same day pickup"
+          ],
+          "subreddits": [
+            "OpenAI",
+            "ClaudeAI",
+            "AutoGPT",
+            "LangChain",
+            "LocalLLaMA",
+            "OpenClaw"
+          ],
+          "reply_style": "empathetic-technical",
+          "reply_template": "I built {surface_name} for exactly this. It sits between your agent and any provider, kills loops, adds prompt caching, and tracks every dollar. {tagline} If you want to try it, run `{cta}` or check {landing}"
         },
         {
-            "id": "waste-scanner",
-            "name": "Waste Scanner",
-            "tagline": "Free CLI — see exactly how much your agents waste in 30 seconds.",
-            "url": "https://scan.jockeyvc.com",
-            "npm": "npx @jockeyvc/waste-scan",
-            "keywords": [
-                "api costs",
-                "expensive api",
-                "token costs",
-                "reduce openai costs",
-                "reduce anthropic costs",
-                "save money openai",
-                "openai billing",
-                "anthropic billing",
-                "too expensive",
-                "cost optimization"
-            ],
-            "subreddits": [
-                "OpenAI",
-                "ClaudeAI",
-                "programming",
-                "webdev",
-                "MachineLearning"
-            ],
-            "reply_style": "helpful-free-tool",
-            "reply_template": "I made a free CLI that scans your agent logs and shows you exactly where the money goes — duplicate reads, loops, overkill model usage. Run `{npm}` and it generates a 'Grief Report' in 30 seconds. No signup, fully local."
+          "id": "waste-scanner-cli",
+          "aliases": [
+            "waste-scanner"
+          ],
+          "name": "Waste Scanner",
+          "surface_type": "cli",
+          "audience": "Developers who want a free waste report before changing infra",
+          "tagline": "Free CLI - see exactly how much your agents waste in 30 seconds.",
+          "url": "https://scan.jockeyvc.com",
+          "landing": "https://scan.jockeyvc.com",
+          "cta": "npx @jockeyvc/waste-scan",
+          "npm": "npx @jockeyvc/waste-scan",
+          "keywords": [
+            "api costs",
+            "expensive api",
+            "token costs",
+            "reduce openai costs",
+            "reduce anthropic costs",
+            "save money openai",
+            "openai billing",
+            "anthropic billing",
+            "too expensive",
+            "cost optimization"
+          ],
+          "subreddits": [
+            "OpenAI",
+            "ClaudeAI",
+            "programming",
+            "webdev",
+            "MachineLearning"
+          ],
+          "reply_style": "helpful-free-tool",
+          "reply_template": "I made a free CLI that scans your agent logs and shows you exactly where the money goes - duplicate reads, loops, and overkill model usage. Run `{cta}` and it generates a report in 30 seconds. No signup, fully local."
         },
         {
-            "id": "context-shredder",
-            "name": "Context Shredder",
-            "tagline": "70% fewer tokens. Same results.",
-            "url": "https://shredder.jockeyvc.com",
-            "keywords": [
-                "token limit",
-                "context window",
-                "too many tokens",
-                "prompt caching",
-                "long conversation",
-                "context length",
-                "max tokens",
-                "truncated context",
-                "conversation too long",
-                "token usage",
-                "context overflow"
-            ],
-            "subreddits": [
-                "ClaudeAI",
-                "OpenAI",
-                "LocalLLaMA",
-                "LangChain",
-                "programming"
-            ],
-            "reply_style": "technical-benchmark",
-            "reply_template": "I built {name} — a proxy that compresses your conversation history into a high-density 'State Digest' before it hits the API. {tagline} It preserves your last 4 messages intact and extracts goals/decisions/errors from older ones. Drop-in replacement, one line config change."
-        },
-        {
-            "id": "agentic-cfo",
-            "name": "Agentic CFO",
-            "tagline": "Budget governance for AI agents — never get a surprise bill again.",
-            "url": "https://cfo.jockeyvc.com",
-            "keywords": [
-                "budget",
-                "spend limit",
-                "api budget",
-                "billing alert",
-                "cost control",
-                "spending too much",
-                "runaway costs",
-                "unexpected bill",
-                "api spending",
-                "cost governance",
-                "budget exceeded"
-            ],
-            "subreddits": [
-                "OpenAI",
-                "ClaudeAI",
-                "startups",
-                "SaaS",
-                "Entrepreneur"
-            ],
-            "reply_style": "business-focused",
-            "reply_template": "I built {name} — it sits between your agents and the API, scores every call 0-10 for necessity, and hard-blocks anything over budget. {tagline} Set per-agent dollar limits and get Slack alerts before you hit them."
-        },
-        {
-            "id": "resolution-arbitrator",
-            "name": "Resolution Arbitrator",
-            "tagline": "Verify your AI actually resolved tickets — don't trust the close button.",
-            "url": "https://resolve.jockeyvc.com",
-            "keywords": [
-                "support agent ai",
-                "ticket resolution",
-                "customer service ai",
-                "zendesk ai",
-                "intercom ai",
-                "freshdesk ai",
-                "ai closing tickets",
-                "false resolution",
-                "support quality",
-                "csat dropping"
-            ],
-            "subreddits": [
-                "customerservice",
-                "SaaS",
-                "startups",
-                "artificial",
-                "Entrepreneur"
-            ],
-            "reply_style": "pain-aware",
-            "reply_template": "I built {name} because I saw the same thing — AI agents marking tickets 'resolved' when the customer's actual question wasn't answered. It runs 5 signal checks (deflection, action presence, follow-up avoidance, etc.) and overrules false resolutions before they close."
-        },
-        {
-            "id": "jenni",
-            "name": "JENNi",
-            "tagline": "AI-powered Amazon product research.",
-            "url": "https://jenni.jockeyvc.com",
-            "keywords": [
-                "amazon fba",
-                "product research",
-                "amazon seller",
-                "private label",
-                "amazon niche",
-                "fba tools",
-                "jungle scout alternative",
-                "helium 10 alternative",
-                "amazon arbitrage",
-                "wholesale amazon"
-            ],
-            "subreddits": [
-                "AmazonSeller",
-                "FulfillmentByAmazon",
-                "Entrepreneur",
-                "ecommerce"
-            ],
-            "reply_style": "helpful-fellow-seller",
-            "reply_template": "I built {name} to help with exactly this — it uses AI to analyze Amazon categories, find low-competition niches, and estimate margins before you commit inventory. {tagline}"
-        },
-        {
-            "id": "judgment-to-cash",
-            "name": "Judgment-to-Cash",
-            "tagline": "Turn your Bexar County default judgment into recovered dollars.",
-            "url": "https://judgment-to-cash.jockeyvc.com",
-            "keywords": [
-                "bexar county judgment",
-                "default judgment recovery",
-                "collect judgment texas",
-                "writ of garnishment bexar",
-                "abstract of judgment bexar",
-                "judgment collection attorney"
-            ],
-            "subreddits": [
-                "legaladvice",
-                "sanantonio",
-                "Entrepreneur",
-                "smallbusiness"
-            ],
-            "reply_style": "helpful-legal-tech",
-            "reply_template": "My team built {name} to automate exactly this for Bexar County default judgments. We underwrite the collectability for free, e-file the enforcement (like garnishments), and only take a fee if we recover funds. {tagline} You can assign it here: {url}"
-        },
-        {
-            "id": "vibe-billing-openclaw",
-            "name": "Vibe Billing OpenClaw Scanner",
-            "tagline": "Free CLI — check your OpenClaw logs to see exactly how much money you wasted.",
-            "url": "https://scan.jockeyvc.com",
-            "npm": "npx vibe-billing scan",
-            "keywords": [
-                "openclaw",
-                "claude bill",
-                "agent cost",
-                "agent stuck in loop"
-            ],
-            "subreddits": [
-                "OpenAI",
-                "ClaudeAI",
-                "LocalLLaMA",
-                "OpenClaw"
-            ],
-            "reply_style": "openclaw-scanner-hook",
-            "reply_template": "Hey, your agent probably got stuck in a loop. You can check exactly how much you wasted by running `{npm}` in your terminal. It analyzes your local OpenClaw logs directly."
+          "id": "openclaw-scanner",
+          "aliases": [
+            "vibe-billing-openclaw"
+          ],
+          "name": "Vibe Billing OpenClaw Scanner",
+          "surface_type": "cli",
+          "audience": "OpenClaw users debugging loops and waste",
+          "tagline": "Free CLI - check your OpenClaw logs to see exactly how much money you wasted.",
+          "url": "https://scan.jockeyvc.com",
+          "landing": "https://scan.jockeyvc.com",
+          "cta": "npx vibe-billing scan",
+          "npm": "npx vibe-billing scan",
+          "keywords": [
+            "openclaw",
+            "claude bill",
+            "agent cost",
+            "agent stuck in loop",
+            "openclaw loop",
+            "openclaw expensive"
+          ],
+          "subreddits": [
+            "OpenAI",
+            "ClaudeAI",
+            "LocalLLaMA",
+            "OpenClaw"
+          ],
+          "reply_style": "openclaw-scanner-hook",
+          "reply_template": "Your agent probably got stuck in a loop. Run `{cta}` and it will analyze your local OpenClaw logs so you can see exactly where the money went."
         }
-    ]
+      ]
+    },
+    {
+      "id": "context-shredder",
+      "name": "Context Shredder",
+      "core_thesis": "Compress bloated agent context without losing the state that matters.",
+      "surfaces": [
+        {
+          "id": "context-shredder-core",
+          "name": "Context Shredder",
+          "surface_type": "infra",
+          "audience": "Developers hitting context limits and token bloat",
+          "tagline": "70% fewer tokens. Same results.",
+          "url": "https://shredder.jockeyvc.com",
+          "landing": "https://shredder.jockeyvc.com",
+          "keywords": [
+            "token limit",
+            "context window",
+            "too many tokens",
+            "prompt caching",
+            "long conversation",
+            "context length",
+            "max tokens",
+            "truncated context",
+            "conversation too long",
+            "token usage",
+            "context overflow"
+          ],
+          "subreddits": [
+            "ClaudeAI",
+            "OpenAI",
+            "LocalLLaMA",
+            "LangChain",
+            "programming"
+          ],
+          "reply_style": "technical-benchmark",
+          "reply_template": "I built {surface_name} - a proxy that compresses your conversation history into a high-density state digest before it hits the API. {tagline} It preserves your last 4 messages intact and extracts goals, decisions, and errors from older ones."
+        }
+      ]
+    },
+    {
+      "id": "agentic-cfo",
+      "name": "Agentic CFO",
+      "core_thesis": "Give every agent a hard budget and governance layer before spend gets away from you.",
+      "surfaces": [
+        {
+          "id": "agentic-cfo-core",
+          "name": "Agentic CFO",
+          "surface_type": "governance",
+          "audience": "Founders and operators who need spend controls",
+          "tagline": "Budget governance for AI agents - never get a surprise bill again.",
+          "url": "https://cfo.jockeyvc.com",
+          "landing": "https://cfo.jockeyvc.com",
+          "keywords": [
+            "budget",
+            "spend limit",
+            "api budget",
+            "billing alert",
+            "cost control",
+            "spending too much",
+            "runaway costs",
+            "unexpected bill",
+            "api spending",
+            "cost governance",
+            "budget exceeded"
+          ],
+          "subreddits": [
+            "OpenAI",
+            "ClaudeAI",
+            "startups",
+            "SaaS",
+            "Entrepreneur"
+          ],
+          "reply_style": "business-focused",
+          "reply_template": "I built {surface_name} - it sits between your agents and the API, scores every call for necessity, and hard-blocks anything over budget. {tagline} Set per-agent dollar limits and get alerted before spend runs away."
+        }
+      ]
+    },
+    {
+      "id": "resolution-arbitrator",
+      "name": "Resolution Arbitrator",
+      "core_thesis": "Verify that AI support actually solved the customer problem before the ticket closes.",
+      "surfaces": [
+        {
+          "id": "resolution-arbitrator-core",
+          "name": "Resolution Arbitrator",
+          "surface_type": "support-ops",
+          "audience": "Support leaders using AI in ticket resolution",
+          "tagline": "Verify your AI actually resolved tickets - do not trust the close button.",
+          "url": "https://resolve.jockeyvc.com",
+          "landing": "https://resolve.jockeyvc.com",
+          "keywords": [
+            "support agent ai",
+            "ticket resolution",
+            "customer service ai",
+            "zendesk ai",
+            "intercom ai",
+            "freshdesk ai",
+            "ai closing tickets",
+            "false resolution",
+            "support quality",
+            "csat dropping"
+          ],
+          "subreddits": [
+            "customerservice",
+            "SaaS",
+            "startups",
+            "artificial",
+            "Entrepreneur"
+          ],
+          "reply_style": "pain-aware",
+          "reply_template": "I built {surface_name} because AI support agents kept marking tickets resolved when the customer issue was not actually fixed. It runs signal checks before close and overrules false resolutions. {tagline}"
+        }
+      ]
+    },
+    {
+      "id": "jenni",
+      "name": "JENNi",
+      "brand_name": "JENNi",
+      "core_thesis": "Turn out-of-stock and slow-shipping demand into same-day or in-stock conversions through local inventory.",
+      "default_surface": "jennipro-site",
+      "surfaces": [
+        {
+          "id": "jenni-chrome-extension",
+          "aliases": [
+            "chrome-extension"
+          ],
+          "name": "JENNi Chrome Extension",
+          "surface_type": "consumer-extension",
+          "audience": "Shoppers who need an item today while browsing Amazon",
+          "tagline": "See local same-day pickup and delivery options right on Amazon product pages.",
+          "url": "https://jenni.jockeyvc.com",
+          "landing": "https://jenni.jockeyvc.com",
+          "keywords": [
+            "amazon same day",
+            "amazon same-day",
+            "amazon same day delivery",
+            "same day pickup",
+            "available locally",
+            "local availability",
+            "need it today",
+            "amazon shipping slow",
+            "amazon delivery too slow",
+            "chrome extension amazon",
+            "same day delivery amazon"
+          ],
+          "negative_keywords": [
+            "amazon fba",
+            "jungle scout",
+            "helium 10",
+            "private label"
+          ],
+          "subreddits": [
+            "Amazon",
+            "chrome_extensions",
+            "sideproject",
+            "ecommerce",
+            "Entrepreneur"
+          ],
+          "reply_style": "consumer-local-availability",
+          "reply_template": "I built a Chrome extension called {surface_name} that checks the Amazon product page you are already on and shows whether nearby stores have the same item in stock for pickup or same-day delivery. {tagline} You can try it here: {landing}"
+        },
+        {
+          "id": "jennipro-site",
+          "aliases": [
+            "jenni-pro"
+          ],
+          "name": "JENNi Pro",
+          "surface_type": "merchant-site",
+          "audience": "Merchants, partners, and operators who want same-day inventory routing",
+          "tagline": "Connect real-time online demand to idle local inventory without ripping out your stack.",
+          "url": "https://jennipro.com",
+          "landing": "https://jennipro.com",
+          "keywords": [
+            "local inventory api",
+            "same day fulfillment",
+            "inventory routing",
+            "commerce infrastructure",
+            "local delivery api",
+            "inventory graph",
+            "order routing",
+            "idle inventory",
+            "inventory rail",
+            "same day commerce"
+          ],
+          "subreddits": [
+            "shopify",
+            "ecommerce",
+            "Entrepreneur",
+            "startups",
+            "SaaS"
+          ],
+          "reply_style": "commerce-infrastructure",
+          "reply_template": "We built {surface_name} to route online demand to nearby in-stock inventory so merchants can offer same-day or faster fulfillment without a heavy rebuild. {tagline} You can see the overview here: {landing}"
+        },
+        {
+          "id": "jenni-shopify-recovery",
+          "aliases": [
+            "shopify-out-of-stock"
+          ],
+          "name": "JENNi Shopify Recovery",
+          "surface_type": "merchant-recovery",
+          "audience": "Shopify merchants losing revenue to back-in-stock and slow-ship flows",
+          "tagline": "Turn out-of-stock and slow-ship moments into same-day local recovery.",
+          "url": "https://jennipro.com",
+          "landing": "https://jennipro.com",
+          "keywords": [
+            "shopify out of stock",
+            "back in stock",
+            "notify me when available",
+            "shopify back in stock",
+            "out of stock email",
+            "restock alert",
+            "shopify same day delivery",
+            "same day shopify",
+            "lost sales",
+            "slow shipping shopify"
+          ],
+          "subreddits": [
+            "shopify",
+            "ecommerce",
+            "smallbusiness",
+            "Entrepreneur",
+            "SaaS"
+          ],
+          "reply_style": "merchant-recovery",
+          "reply_template": "We built {surface_name} for stores that keep losing revenue when shoppers hit back-in-stock or slow-shipping flows. {tagline} It helps recover that demand into a same-day or in-stock alternative without a heavy integration. Start here: {landing}"
+        }
+      ]
+    },
+    {
+      "id": "judgment-to-cash",
+      "name": "Judgment-to-Cash",
+      "core_thesis": "Convert enforceable default judgments into collected dollars with an execution workflow, not more legal dead ends.",
+      "surfaces": [
+        {
+          "id": "judgment-to-cash-core",
+          "name": "Judgment-to-Cash",
+          "surface_type": "legal-ops",
+          "audience": "Creditors trying to enforce a Bexar County default judgment",
+          "tagline": "Turn your Bexar County default judgment into recovered dollars.",
+          "url": "https://judgment-to-cash.jockeyvc.com",
+          "landing": "https://judgment-to-cash.jockeyvc.com",
+          "keywords": [
+            "bexar county judgment",
+            "default judgment recovery",
+            "collect judgment texas",
+            "writ of garnishment bexar",
+            "abstract of judgment bexar",
+            "judgment collection attorney"
+          ],
+          "subreddits": [
+            "legaladvice",
+            "sanantonio",
+            "Entrepreneur",
+            "smallbusiness"
+          ],
+          "reply_style": "pain-aware",
+          "reply_template": "My team built {surface_name} to automate exactly this for Bexar County default judgments. We underwrite collectability for free, file the enforcement, and only take a fee if we recover funds. {tagline} You can start here: {landing}"
+        }
+      ]
+    }
+  ]
 }

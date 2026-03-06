@@ -24,7 +24,7 @@ This file is the **master org chart** for all AI agents working on this project.
 | **Dashboard Engineer** | `agent-dashboard/` | React monitoring UI, live traffic feed, stats cards, charts |
 | **QA & Testing** | `stress_tests/`, `test-agent/`, `agent-proxy/tests/` | Unit tests, integration tests, stress tests, pre-deploy validation |
 | **DevOps** | `deploy.sh`, PM2/Caddy config | Deployment, server management, uptime monitoring, CI/CD |
-| **Marketing** | `agent-marketing/` | Content, social media automation, competitive research, landing page |
+| **Marketing** | `agent-marketing/` | Content, product registry, social media automation, competitive research. Public landing pages may live in product repos and require handoff when implemented outside `agent-marketing/`. |
 | **CLI/SDK** | `agent-cli/`, `agentic-firewall-cli/`, `agent-mcp/` | npm package, CLI installer, MCP server integration |
 
 ### Ownership Rules

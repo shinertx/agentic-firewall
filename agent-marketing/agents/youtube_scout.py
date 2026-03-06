@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 _env_path = Path(__file__).parent.parent / ".env"
 load_dotenv(dotenv_path=_env_path, override=True)
 
-logger = logging.getLogger("jenni.youtube_scout")
+logger = logging.getLogger("studio.youtube_scout")
 
 OUTPUT_FILE = "data/leads_youtube.json"
 QUERIES = [
