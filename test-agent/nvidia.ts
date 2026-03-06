@@ -1,7 +1,6 @@
 import OpenAI from 'openai';
 
-// Route through the Agentic Firewall via the secure HTTPS endpoint
-const PROXY_URL = 'https://api.jockeyvc.com/v1';
+const PROXY_URL = `${(process.env.FIREWALL_BASE_URL || process.env.VIBE_BILLING_PROXY_URL || 'http://127.0.0.1:4000').replace(/\/+$/, '')}/v1`;
 
 const openai = new OpenAI({
     apiKey: 'dummy_nvidia_key',

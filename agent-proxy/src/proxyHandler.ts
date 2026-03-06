@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { Request, Response as ExpressResponse } from 'express';
 import { checkCircuitBreaker } from './circuitBreaker';
 import { attemptShadowRouterFailover, attemptCrossProviderFailover } from './shadowRouter';
 import { getInputCost, getOutputCost, CACHE_READ_DISCOUNT, CACHE_CREATION_SURCHARGE } from './pricing';
@@ -8,13 +8,14 @@ import { checkNoProgress } from './noProgress';
 import { smartRoute } from './smartRouter';
 import { optimizeToolResults } from './toolResultOptimizer';
 import { trimContext } from './contextTrimmer';
-import { compressPrompt } from './promptCompressor';
+import { compressPrompt, type CompressionResult } from './promptCompressor';
 import { getCachedResponse, setCachedResponse } from './responseCache';
 import { parseUsageFromChunks } from './usageParser';
 import { acquireSlot, releaseSlot, autoTuneFromHeaders, QueueFullError, QueueTimeoutError } from './requestQueue';
 import { globalStats, recordActivity } from './stats';
 import { resolveSessionId, getOrCreateSession, recordSessionSpend, recordSessionLoop, reconcileSessionSpend } from './sessionTracker';
 import { CDN_MIN_CHARS_ANTHROPIC, CDN_MIN_TOKENS_OPENAI } from './config';
+import { getLocalUserId, getProviderHeaderConfig, getProviderKey, type Provider } from './keyVault';
 
 // Explicit Interfaces for Edge Case Handling
 export interface LLMRequest {
@@ -204,12 +205,14 @@ export function applyContextCDN(body: LLMRequest, isGemini: boolean, reqUrl: str
     return { modified, body };
 }
 
-export async function handleProxyRequest(req: Request, res: Response) {
+export async function handleProxyRequest(req: Request, res: ExpressResponse) {
+    const isPublicMode = process.env.PUBLIC_MODE !== 'false' && process.env.PUBLIC_MODE !== '0';
     const hasGoogKey = req.query.key || req.headers['x-goog-api-key'];
     const isGemini = !!(req.originalUrl.includes('/v1beta/models') || (req.originalUrl.includes('/v1/models') && hasGoogKey));
     const isNvidia = req.originalUrl.includes('integrate.api.nvidia.com') || (req.body?.model && (typeof req.body.model === 'string') && (req.body.model.startsWith('meta/') || req.body.model.startsWith('nvidia/')));
     const isOpenAI = !isNvidia && (req.originalUrl.includes('/v1/chat/completions') || req.originalUrl.includes('/v1/responses') || req.originalUrl.includes('/v1/models') || (req.headers.host && req.headers.host.includes('openai.com')));
     const isCountTokens = req.originalUrl.includes('/v1/messages/count_tokens');
+    const provider: Provider = isGemini ? 'gemini' : isOpenAI ? 'openai' : isNvidia ? 'nvidia' : 'anthropic';
 
     let baseUrl = ANTHROPIC_BASE_URL;
     if (isGemini) baseUrl = GEMINI_BASE_URL;
@@ -232,6 +235,22 @@ export async function handleProxyRequest(req: Request, res: Response) {
         const currentBeta = headers['anthropic-beta'] || '';
         if (!currentBeta.includes('oauth-2025-04-20')) {
             headers['anthropic-beta'] = currentBeta ? `${currentBeta},oauth-2025-04-20` : 'oauth-2025-04-20';
+        }
+    }
+
+    if (!isPublicMode) {
+        const { headerName, headerPrefix } = getProviderHeaderConfig(provider);
+        const hasProviderKey = provider === 'gemini'
+            ? !!(req.query.key || headers[headerName])
+            : !!headers[headerName];
+
+        if (!hasProviderKey) {
+            const keyResult = getProviderKey(provider);
+            if ('error' in keyResult) {
+                res.status(400).json({ error: { message: keyResult.error } });
+                return;
+            }
+            headers[headerName] = `${headerPrefix}${keyResult.key}`;
         }
     }
 
@@ -271,11 +290,20 @@ export async function handleProxyRequest(req: Request, res: Response) {
     let optimizedBody = req.body;
     let originalBodyStr = req.body ? JSON.stringify(req.body) : "";
     const apiKey = (req.headers['x-api-key'] || req.headers['authorization'] || '') as string;
-    const userId = getUserId(apiKey);
+    const userId = !isPublicMode && !apiKey ? getLocalUserId() : getUserId(apiKey);
     const sessionId = resolveSessionId(req);
     getOrCreateSession(sessionId, userId);
     let requestHash = '';
-    let compResult = { compressed: false, savedTokens: 0, compressionRatio: 1, cacheHit: false, ollamaLatencyMs: 0 };
+    let compResult: CompressionResult = {
+        compressed: false,
+        body: optimizedBody,
+        originalTokens: 0,
+        compressedTokens: 0,
+        savedTokens: 0,
+        compressionRatio: 1,
+        cacheHit: false,
+        ollamaLatencyMs: 0,
+    };
 
     if (req.method !== 'GET' && req.method !== 'HEAD' && req.body && Object.keys(req.body).length > 0) {
         const ip = req.ip || '127.0.0.1';
@@ -496,7 +524,6 @@ export async function handleProxyRequest(req: Request, res: Response) {
     console.log(`[PROXY] => ${req.method} ${url}`);
 
     // Request queue — acquire a concurrency slot for this provider
-    const provider = isGemini ? 'gemini' : isOpenAI ? 'openai' : isNvidia ? 'nvidia' : 'anthropic';
     try {
         await acquireSlot(provider);
         globalStats.queuedRequests++;
@@ -515,7 +542,7 @@ export async function handleProxyRequest(req: Request, res: Response) {
     }
 
     const fetchStartMs = Date.now();
-    let response: Response;
+    let response: globalThis.Response;
     try {
         response = await fetch(url, init);
     } catch (fetchErr) {
@@ -549,7 +576,7 @@ export async function handleProxyRequest(req: Request, res: Response) {
     }
 
     // Forward response headers
-    response.headers.forEach((value, key) => {
+    response.headers.forEach((value: string, key: string) => {
         if (key.toLowerCase() !== 'transfer-encoding' && key.toLowerCase() !== 'content-encoding') {
             res.setHeader(key, value);
         }
@@ -625,6 +652,7 @@ export async function handleProxyRequest(req: Request, res: Response) {
     const proxyModified = optimizedStr !== originalBodyStr;
     const clientHasCaching = hasExistingCacheControl(req.body);
     const isCDN = statusText === 'Pass-through' && (proxyModified || clientHasCaching);
+    const requestSucceeded = response.ok;
 
     // Parse real token usage from the response stream
     const usage = parseUsageFromChunks(chunks, provider);
@@ -676,7 +704,7 @@ export async function handleProxyRequest(req: Request, res: Response) {
         const fullBody = Buffer.concat(chunks);
         const contentType = response.headers.get('content-type') || '';
         const responseHeaders: Record<string, string> = {};
-        response.headers.forEach((v, k) => {
+        response.headers.forEach((v: string, k: string) => {
             if (k.toLowerCase() !== 'transfer-encoding' && k.toLowerCase() !== 'content-encoding') {
                 responseHeaders[k] = v;
             }
@@ -696,7 +724,10 @@ export async function handleProxyRequest(req: Request, res: Response) {
 
         const estimatedPromptTokens = Math.max(Math.round(originalBodyStr.length / 4), 1000);
 
-        if (isCDN) {
+        if (!requestSucceeded && statusText === 'Pass-through') {
+            statusText = `Upstream ${response.status}`;
+            statusColor = 'text-red-400 bg-red-400/10';
+        } else if (isCDN && requestSucceeded) {
             statusText = compResult.compressed ? 'CDN + Compressed' : 'Context CDN Hit';
             statusColor = 'text-emerald-400 bg-emerald-400/10';
 
@@ -708,17 +739,19 @@ export async function handleProxyRequest(req: Request, res: Response) {
 
             globalStats.savedTokens += savedTokens;
             globalStats.savedMoney += savingsCost;
-        } else if (compResult.compressed) {
+        } else if (compResult.compressed && requestSucceeded) {
             statusText = 'Compressed';
             statusColor = 'text-cyan-400 bg-cyan-400/10';
         }
 
-        recordUserSpend(userId, displayModel, estimatedPromptTokens, isCDN);
-        recordSessionSpend(sessionId, displayModel, estimatedPromptTokens, isCDN);
+        if (requestSucceeded) {
+            recordUserSpend(userId, displayModel, estimatedPromptTokens, isCDN);
+            recordSessionSpend(sessionId, displayModel, estimatedPromptTokens, isCDN);
+        }
 
         // Compute per-request savings for the live feed
         let savedAmount = '';
-        if (isCDN && estimatedPromptTokens) {
+        if (isCDN && requestSucceeded && estimatedPromptTokens) {
             const cost = (estimatedPromptTokens / 1_000_000) * getInputCost(displayModel) * CACHE_READ_DISCOUNT;
             savedAmount = cost >= 0.01 ? cost.toFixed(2) : cost.toFixed(4);
         }

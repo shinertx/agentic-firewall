@@ -1,6 +1,6 @@
-# Agentic Firewall: Universal Agent Routing Guide
+# Vibe Billing / Agentic Firewall: Universal Agent Routing Guide
 
-This document is the canonical reference for routing any autonomous AI agent through the Agentic Firewall proxy. It covers every supported agent architecture, all four LLM providers, and verification steps to confirm traffic is flowing correctly.
+This document is the canonical reference for routing any autonomous AI agent through the Vibe Billing runtime layer and its Agentic Firewall proxy engine. It covers every supported agent architecture, all four LLM providers, and verification steps to confirm traffic is flowing correctly.
 
 > [!CAUTION]
 > If your agent bypasses this proxy, you pay full price on every API call, the Context CDN provides zero savings, and the Circuit Breaker cannot protect you from runaway loops. Verify your routing with the steps in Section 5.

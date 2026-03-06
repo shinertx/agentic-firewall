@@ -2,16 +2,18 @@ import os
 from openai import OpenAI
 from anthropic import Anthropic
 
+PROXY_URL = (os.environ.get("FIREWALL_BASE_URL") or os.environ.get("VIBE_BILLING_PROXY_URL") or "http://127.0.0.1:4000").rstrip("/")
+
 print("=== Python SDK Proxy Stress Test ===\n")
 
 openai_client = OpenAI(
     api_key=os.environ.get("OPENAI_API_KEY"),
-    base_url="https://api.jockeyvc.com/v1"
+    base_url=f"{PROXY_URL}/v1"
 )
 
 anthropic_client = Anthropic(
     api_key=os.environ.get("ANTHROPIC_API_KEY"),
-    base_url="https://api.jockeyvc.com"
+    base_url=PROXY_URL
 )
 
 # 1. OpenAI Small Request (Proof of routing)

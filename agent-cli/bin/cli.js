@@ -22,7 +22,8 @@ const { execSync } = require('child_process');
 const readline = require('readline');
 
 const VERSION = '0.5.42';
-const PROXY_URL = 'https://api.jockeyvc.com';
+const DEFAULT_PROXY_URL = 'https://api.jockeyvc.com';
+const PROXY_URL = (process.env.VIBE_BILLING_PROXY_URL || process.env.FIREWALL_BASE_URL || DEFAULT_PROXY_URL).replace(/\/+$/, '');
 const PROXY_API = `${PROXY_URL}/api/stats`;
 
 // ─── Install Identity ───────────────────────────────────
@@ -521,43 +522,53 @@ async function scan() {
 
     const totalSpend = totalInputCost + totalOutputCost;
 
-    // Track overkill usage (e.g., Sonnet vs Haiku ratio)
+    // Track overkill usage (e.g., Sonnet/Opus/GPT-4o where cheaper models often fit)
     let overkillCount = 0;
     for (const [model, count] of Object.entries(grandModels)) {
-        if (model.includes('sonnet') || model.includes('opus') || model.includes('gpt-4o')) {
+        if (model.includes('sonnet') || model.includes('opus') || model.includes('gpt-4o') || model.includes('gpt-5')) {
             overkillCount += count;
         }
     }
-    // Estimate context re-sends (rough heuristic based on wasted caching potential)
-    const contextResends = Math.floor(grandWastedTokens / 100_000);
 
-    // Results - EXACT format requested for PMF signal
-    log('');
-    log(`Agent Waste Report`);
-    log('');
-    log(`Runs analyzed: ${grandRequests.toLocaleString()}`);
-    log(`Retry loops: ${grandRetryLoops.toLocaleString()}`);
-    log(`Context re-sends: ${contextResends.toLocaleString()}`);
-    log(`Overkill model usage: ${overkillCount.toLocaleString()}`);
-    log('');
+    const avgRequestSpend = grandRequests > 0 ? totalSpend / grandRequests : 0;
+    const retryLoopWasteRaw = grandRetryLoops * Math.max(avgRequestSpend, 0.03);
+    const contextResendWasteRaw = potentialCacheSavings;
+    const overkillShare = grandRequests > 0 ? (overkillCount / grandRequests) : 0;
+    const overpoweredModelWasteRaw = totalInputCost * Math.min(0.35, overkillShare * 0.35);
+    const rawTotalAvoidable = retryLoopWasteRaw + contextResendWasteRaw + overpoweredModelWasteRaw;
+    const cappedAvoidable = Math.min(totalSpend, totalSpend * 0.85);
+    const scale = rawTotalAvoidable > 0 && rawTotalAvoidable > cappedAvoidable
+        ? cappedAvoidable / rawTotalAvoidable
+        : 1;
 
-    // Add realistic waste estimates to make it punchy (proving ~80% cheaper narrative natively)
-    const estimatedWastedSpend = totalSpend * 0.82;
+    const retryLoopWaste = retryLoopWasteRaw * scale;
+    const contextResendWaste = contextResendWasteRaw * scale;
+    const overpoweredModelWaste = overpoweredModelWasteRaw * scale;
+    const estimatedAvoidableSpend = retryLoopWaste + contextResendWaste + overpoweredModelWaste;
 
-    log(`Total agent spend: $${totalSpend.toFixed(2)}`);
-    log(`Estimated wasted spend: $${estimatedWastedSpend.toFixed(2)}`);
     log('');
-    log(`Fix with:`);
+    log(`Estimated avoidable spend: $${estimatedAvoidableSpend.toFixed(2)}`);
+    log('');
+    log(`Breakdown`);
+    log(`- Retry loops: $${retryLoopWaste.toFixed(2)}`);
+    log(`- Re-sent context: $${contextResendWaste.toFixed(2)}`);
+    log(`- Overpowered models: $${overpoweredModelWaste.toFixed(2)}`);
+    log('');
+    log(`Based on ${grandRequests.toLocaleString()} logged requests across ${totalFiles.toLocaleString()} transcript file(s).`);
+    log(`Observed retry loops: ${grandRetryLoops.toLocaleString()}`);
+    log(`Observed high-end model calls: ${overkillCount.toLocaleString()}`);
+    log('');
+    log(`Fix this now:`);
     log(`npx vibe-billing setup`);
     log('');
 }
 
 function showProxyWaste(stats) {
     log(`  ${c.bold}Proxy Data:${c.reset}`);
-    log(`  Requests proxied:  ${c.bold}${stats.totalRequests}${c.reset}`);
-    log(`  Money saved:       ${c.green}$${stats.savedMoney?.toFixed(4) || '0.0000'}${c.reset}`);
-    log(`  Tokens cached:     ${c.green}${(stats.savedTokens || 0).toLocaleString()}${c.reset}`);
-    log(`  Loops blocked:     ${c.red}${stats.blockedLoops || 0}${c.reset}`);
+    log(`  Requests protected: ${c.bold}${stats.totalRequests}${c.reset}`);
+    log(`  Estimated savings:  ${c.green}$${stats.savedMoney?.toFixed(4) || '0.0000'}${c.reset}`);
+    log(`  Cached tokens:      ${c.green}${(stats.savedTokens || 0).toLocaleString()}${c.reset}`);
+    log(`  Loops blocked:      ${c.red}${stats.blockedLoops || 0}${c.reset}`);
     log('');
     if (stats.blockedLoops > 0) {
         const loopWaste = (stats.blockedLoops * 50000 / 1_000_000) * 3.00;
@@ -719,7 +730,7 @@ async function setupOllama() {
 
 // ─── Setup Command ──────────────────────────────────────
 async function setup() {
-    header('Agent Firewall — Setup');
+    header('Vibe Billing — Setup');
     log(`${c.dim}Stop runaway agents. Save money. Stay in control.${c.reset}\n`);
 
     const { agents } = detectAgents();
@@ -800,7 +811,7 @@ async function setup() {
     try {
         const stats = await httpGet(PROXY_API);
         if (stats && typeof stats.totalRequests === 'number') {
-            s.stop(`${c.green}${icons.ok}${c.reset} Proxy live! ${stats.totalRequests} requests, $${stats.savedMoney?.toFixed(4) || '0'} saved.`);
+            s.stop(`${c.green}${icons.ok}${c.reset} Proxy live! ${stats.totalRequests} protected request(s), $${stats.savedMoney?.toFixed(4) || '0'} saved.`);
         } else {
             s.stop(`${c.yellow}${icons.warn}${c.reset} Proxy responded but data format unexpected.`);
         }
@@ -813,7 +824,7 @@ async function setup() {
     // Send registration ping (fire-and-forget telemetry)
     sendRegistrationPing();
 
-    header('Setup Complete!');
+    header('Setup Complete');
     log(`${c.green}${c.bold}  Your agents are now protected.${c.reset}\n`);
     log(`${c.dim}• Loop detection: kills stuck agents${c.reset}`);
     log(`${c.dim}• Prompt caching: up to 90% savings${c.reset}`);
@@ -827,7 +838,7 @@ async function setup() {
 
 // ─── Uninstall Command ──────────────────────────────────
 async function uninstall() {
-    header('Agent Firewall — Uninstall');
+    header('Vibe Billing — Uninstall');
 
     // Remove shell config block
     const shell = findShellConfig();
@@ -871,22 +882,24 @@ async function uninstall() {
     // Removing env vars from shell config (above) is sufficient.
 
     log('');
-    ok('Agent Firewall uninstalled. Your agents now connect directly to providers.');
+    ok('Vibe Billing uninstalled. Your agents now connect directly to providers.');
     log(`${c.dim}Run ${c.bold}npx vibe-billing setup${c.reset}${c.dim} to re-enable.${c.reset}\n`);
 }
 
 // ─── Status Command ─────────────────────────────────────
 async function status() {
-    header('Agent Firewall — Status');
+    header('Vibe Billing — Status');
     const s = spinner('Fetching proxy stats');
     try {
         const stats = await httpGet(PROXY_API);
         s.stop(`${c.green}${icons.ok}${c.reset} Connected`);
         log('');
-        log(`  ${c.bold}Requests:${c.reset}      ${stats.totalRequests}`);
-        log(`  ${c.bold}Money Saved:${c.reset}   $${stats.savedMoney?.toFixed(4) || '0.0000'}`);
-        log(`  ${c.bold}Tokens Saved:${c.reset}  ${(stats.savedTokens || 0).toLocaleString()}`);
-        log(`  ${c.bold}Loops Blocked:${c.reset} ${stats.blockedLoops || 0}`);
+        log(`  ${c.bold}Requests:${c.reset}            ${stats.totalRequests}`);
+        log(`  ${c.bold}Estimated Savings:${c.reset}   $${stats.savedMoney?.toFixed(4) || '0.0000'}`);
+        log(`  ${c.bold}Saved Tokens:${c.reset}       ${(stats.savedTokens || 0).toLocaleString()}`);
+        log(`  ${c.bold}Loops Blocked:${c.reset}     ${stats.blockedLoops || 0}`);
+        log(`  ${c.bold}Smart Downgrades:${c.reset}   ${stats.smartRouteDowngrades || 0}`);
+        log(`  ${c.bold}Response Cache Hits:${c.reset} ${stats.responseCacheHits || 0}`);
 
         const activity = stats.recentActivity || [];
         if (activity.length > 0) {
@@ -907,11 +920,13 @@ async function status() {
 
 // ─── Verify Command ─────────────────────────────────────
 async function verify() {
-    header('Agent Firewall — Verify');
+    header('Vibe Billing — Verify');
     const ov = process.env.OPENAI_BASE_URL || 'not set';
     const av = process.env.ANTHROPIC_BASE_URL || 'not set';
-    const ovOk = ov.includes('localhost:4000');
-    const avOk = av.includes('localhost:4000');
+    const expectedOpenAIBase = `${PROXY_URL}/v1`;
+    const expectedAnthropicBase = PROXY_URL;
+    const ovOk = ov === expectedOpenAIBase;
+    const avOk = av === expectedAnthropicBase;
     log(`  OPENAI_BASE_URL:    ${ovOk ? c.green : c.red}${ov}${c.reset}`);
     log(`  ANTHROPIC_BASE_URL: ${avOk ? c.green : c.red}${av}${c.reset}\n`);
 
@@ -959,7 +974,7 @@ async function runCmd() {
     log(`\n${c.dim}[Vibe Billing] Wrapping execution to monitor waste...${c.reset}\n`);
 
     // Fetch initial stats
-    let initialStats = { totalRequests: 0, savedMoney: 0, savedTokens: 0, blockedLoops: 0 };
+    let initialStats = { totalRequests: 0, savedMoney: 0, savedTokens: 0, blockedLoops: 0, smartRouteDowngrades: 0, responseCacheHits: 0 };
     try {
         const statsStr = await httpGet(PROXY_API);
         initialStats = statsStr;
@@ -991,27 +1006,21 @@ async function runCmd() {
         const finalStats = await httpGet(PROXY_API);
 
         // Calculate deltas
-        const requests = finalStats.totalRequests - initialStats.totalRequests;
-        const savedMoney = finalStats.savedMoney - initialStats.savedMoney;
-        const loops = finalStats.blockedLoops - initialStats.blockedLoops;
+        const requests = Math.max(0, finalStats.totalRequests - initialStats.totalRequests);
+        const savedMoney = Math.max(0, finalStats.savedMoney - initialStats.savedMoney);
+        const savedTokens = Math.max(0, (finalStats.savedTokens || 0) - (initialStats.savedTokens || 0));
+        const loops = Math.max(0, finalStats.blockedLoops - initialStats.blockedLoops);
+        const downgraded = Math.max(0, (finalStats.smartRouteDowngrades || 0) - (initialStats.smartRouteDowngrades || 0));
+        const cacheHits = Math.max(0, (finalStats.responseCacheHits || 0) - (initialStats.responseCacheHits || 0));
 
-        // We'll map "Downgraded steps" to loop blocks or overkill usage conceptually for the demo
-        const downgraded = Math.floor(loops * 1.5) + (requests > 5 ? 1 : 0);
-        // Estimate cache hits conceptually based on requests
-        const cacheHits = Math.floor(requests * 0.4);
+        log(`Vibe Billing Receipt\n`);
+        log(`Protected requests: ${requests}`);
+        log(`Saved tokens: ${savedTokens.toLocaleString()}`);
+        log(`Loop blocks: ${loops}`);
+        log(`Smart-route downgrades: ${downgraded}`);
+        log(`Response-cache hits: ${cacheHits}\n`);
 
-        log(`Agent Firewall Receipt\n`);
-        log(`Requests: ${requests}`);
-        log(`Cache hits: ${cacheHits}`);
-        log(`Loop prevented: ${loops > 0 ? 'yes' : 'no'}`);
-        log(`Downgraded steps: ${downgraded}\n`);
-
-        // Highlight the savings boldly!
-        let displaySavings = 0;
-        if (requests > 0) {
-            displaySavings = savedMoney > 0 ? savedMoney : (requests * 0.08);
-        }
-        log(`${c.bgGreen}${c.black}${c.bold} Saved: $${displaySavings.toFixed(2)} ${c.reset}\n`);
+        log(`${c.bgGreen}${c.black}${c.bold} Estimated savings: $${savedMoney.toFixed(2)} ${c.reset}\n`);
 
         log(`Replay options:`);
         log('');
@@ -1097,7 +1106,7 @@ async function reportCmd() {
 }
 
 async function doctorCmd() {
-    header('Agent Firewall — Doctor');
+    header('Vibe Billing — Doctor');
     let okCount = 0;
 
     const pSpin = spinner('Checking proxy connection');
@@ -1132,7 +1141,7 @@ async function doctorCmd() {
     }
 
     log('');
-    if (okCount > 0) ok('Agent Firewall detected ✓\\n  Your setup looks good!');
+    if (okCount > 0) ok('Vibe Billing detected ✓\\n  Your setup looks good!');
     else warn('Doctor checks failed. Try running npx vibe-billing setup.');
 }
 
@@ -1159,7 +1168,7 @@ switch (command) {
         log(`vibe-billing v${VERSION}`);
         break;
     case '--help': case '-h':
-        header('Agent Firewall');
+        header('Vibe Billing');
         log('  Keep autonomous AI agents under control.\n');
         log(`  ${c.bold}Usage:${c.reset} npx vibe-billing <command>\n`);
         log(`  ${c.bold}Commands:${c.reset}`);

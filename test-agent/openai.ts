@@ -1,14 +1,16 @@
 import OpenAI from 'openai';
 
-// Route through the Agentic Firewall via the secure HTTPS endpoint
+const proxyUrl = (process.env.FIREWALL_BASE_URL || process.env.VIBE_BILLING_PROXY_URL || 'http://127.0.0.1:4000').replace(/\/+$/, '');
+
+// Route through the Agentic Firewall via a configurable endpoint
 const openai = new OpenAI({
     apiKey: 'dummy_key', // You don't even need a real key to see the proxy catch it!
-    baseURL: 'https://api.jockeyvc.com/v1',
+    baseURL: `${proxyUrl}/v1`,
 });
 
 async function run() {
     console.log('Sending massive codebase dump (600k characters) to OpenAI...');
-    console.log('Routing through Agentic Firewall at https://api.jockeyvc.com\n');
+    console.log(`Routing through Agentic Firewall at ${proxyUrl}\n`);
 
     try {
         const msg = await openai.chat.completions.create({

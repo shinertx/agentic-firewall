@@ -1,4 +1,4 @@
-# AGENTS.md — VibeBilling Multi-Agent Coordination
+# AGENTS.md — Vibe Billing Coordination
 
 This file is the **master org chart** for all AI agents working on this project. Every agent must read this file before doing any work.
 
@@ -6,13 +6,14 @@ This file is the **master org chart** for all AI agents working on this project.
 
 ## Project Identity
 
-**Product:** Agentic Firewall — a reverse-proxy that prevents "Vibe Billing" by inserting prompt caching, loop detection, and failover between AI agents and LLM providers.
+**Product:** Vibe Billing — the runtime control layer for autonomous agents.
+**Engine:** Agentic Firewall — the proxy/runtime implementation inside this repo.
 
 **Production URL:** `https://api.jockeyvc.com`
-**Staging URL:** `https://staging.jockeyvc.com` (pending DNS)
-**Infrastructure:** GCP VM (`meme-snipe-v19-vm`), Docker Compose, Caddy (TLS)
-**CI/CD:** GitHub Actions → auto-deploy on merge to `main`
-**Repo:** Monorepo at `/Users/benjijmac/Documents/vibebilling`
+**Staging/Dev:** local-first on `http://127.0.0.1:4000`
+**Infrastructure:** local proxy, staging branch, optional remote deploy later
+**CI/CD:** do not assume production deploys from this branch
+**Repo:** Monorepo at `/Users/benjij_ai/Documents/agentic-firewall`
 
 ---
 

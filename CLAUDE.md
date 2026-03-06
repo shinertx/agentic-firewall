@@ -1,8 +1,8 @@
-# Agentic Firewall — Project Context for Claude Code
+# Vibe Billing / Agentic Firewall — Project Context for Claude Code
 
 ## What This Is
 
-The **Agentic Firewall** is a reverse-proxy server that sits between autonomous AI agents (OpenClaw, Claude Code, AutoGPT) and LLM providers (Anthropic, OpenAI, Gemini, NVIDIA). It solves **"Vibe Billing"** — where runaway agents waste thousands of dollars on redundant multi-million-token codebase reads, infinite retry loops, and overkill model selection.
+**Vibe Billing** is the product. **Agentic Firewall** is the proxy engine underneath it. The system sits between autonomous AI agents (OpenClaw, Claude Code, AutoGPT) and LLM providers (Anthropic, OpenAI, Gemini, NVIDIA) to stop waste, block runaway behavior, and keep agent runs under control.
 
 **Production URL:** `https://api.jockeyvc.com`  
 **Deployed on:** GCP VM (`meme-snipe-v19-vm`), managed by PM2, TLS via Caddy

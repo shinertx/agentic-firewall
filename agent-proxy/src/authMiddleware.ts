@@ -41,6 +41,11 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
                 }
             });
         }
+
+        // In local mode, provider keys are injected from this machine's env.
+        // Local callers should not need to attach provider credentials.
+        next();
+        return;
     }
 
     // Check for API key in standard headers (Required for PUBLIC mode to prevent open proxies)

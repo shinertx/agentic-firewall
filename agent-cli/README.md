@@ -1,6 +1,6 @@
 # vibe-billing
 
-**Agent Runtime Control** — Stop AI agents from getting stuck in loops and burning your money.
+**Runtime control for autonomous agents** — show agent waste, stop loops, and cap spend.
 
 ## Install
 
@@ -10,20 +10,17 @@ npx vibe-billing setup
 
 ## Proof of Savings
 
-Run `npx vibe-billing scan` to analyze your local agent logs and instantly see exactly how much money you've lost to API hallucinations. 
+Run `npx vibe-billing scan` to analyze your local agent logs and estimate avoidable spend.
 
 ```text
-Agent Waste Report
+Estimated avoidable spend: $38.72
 
-Runs analyzed: 142
-Retry loops: 18
-Context re-sends: 32
-Overkill model usage: 56
+Breakdown
+- Retry loops: $21.40
+- Re-sent context: $12.30
+- Overpowered models: $5.02
 
-Total agent spend: $124.50
-Estimated wasted spend: $102.09
-
-Fix with:
+Fix this now:
 npx vibe-billing setup
 ```
 
@@ -47,12 +44,12 @@ npx vibe-billing uninstall
 
 ## How It Works
 
-The firewall sits locally on your machine at `localhost:4000`. Every API request from your agent passes through it before hitting Anthropic or OpenAI.
+The Agentic Firewall engine sits locally on your machine at `localhost:4000`. Every API request from your agent passes through it before hitting Anthropic or OpenAI.
 
 1. **Loop detection** — If an agent submits the exact same request 3 times in a row, the proxy hard-kills the connection before you are billed for infinite loops.
 2. **Context caching** — The proxy auto-injects `ephemeral` caching headers into your payloads, yielding up to 80% cheaper system prompts on supported models.
 3. **No Config Needed** — `setup` handles the environment variables and `openclaw.json` bindings automatically.
 
 ```text
-Your Agent → Agent Firewall (localhost) → AI Provider
+Your Agent → Vibe Billing (Agentic Firewall) → AI Provider
 ```

@@ -1,17 +1,18 @@
 const OpenAI = require('openai');
 const Anthropic = require('@anthropic-ai/sdk');
+const PROXY_URL = (process.env.FIREWALL_BASE_URL || process.env.VIBE_BILLING_PROXY_URL || 'http://127.0.0.1:4000').replace(/\/+$/, '');
 
 async function runTests() {
     console.log("=== Node.js SDK Proxy Stress Test ===\n");
 
     const openai = new OpenAI({
         apiKey: process.env.OPENAI_API_KEY,
-        baseURL: 'https://api.jockeyvc.com/v1'
+        baseURL: `${PROXY_URL}/v1`
     });
 
     const anthropic = new Anthropic({
         apiKey: process.env.ANTHROPIC_API_KEY,
-        baseURL: 'https://api.jockeyvc.com'
+        baseURL: PROXY_URL
     });
 
     // 1. OpenAI Small Request (Proof of routing)

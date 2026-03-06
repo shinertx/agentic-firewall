@@ -1,8 +1,7 @@
 import OpenAI from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
 
-// Replace with your GCP server IP if testing remotely, or leave locally
-const PROXY_URL = 'https://api.jockeyvc.com';
+const PROXY_URL = (process.env.FIREWALL_BASE_URL || process.env.VIBE_BILLING_PROXY_URL || 'http://127.0.0.1:4000').replace(/\/+$/, '');
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || 'dummy', baseURL: `${PROXY_URL}/v1` });
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || 'dummy', baseURL: PROXY_URL });

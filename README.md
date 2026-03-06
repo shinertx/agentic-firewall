@@ -1,61 +1,70 @@
-# Agentic Firewall
+# Vibe Billing
 
-A reverse-proxy that sits between AI agents and LLM providers to prevent **Vibe Billing** — where runaway autonomous agents waste thousands of dollars on redundant context reads and infinite retry loops.
+`Vibe Billing` is the product. `Agentic Firewall` is the proxy engine underneath it.
 
-**Production:** `https://api.jockeyvc.com`
+The job of this repo is simple: make autonomous agents cheaper, safer, and easier to run unattended by adding:
 
-## Features
+- spend caps
+- loop blocking
+- repeated-context caching
+- cheaper/faster routing when safe
+- receipts that show what was saved
 
-| Feature | What It Does |
-|---|---|
-| **Context CDN** | Injects `cache_control: ephemeral` into Anthropic requests, triggering server-side prompt caching for up to 90% input cost reduction |
-| **Multi-Provider Routing** | Auto-detects and routes to Anthropic, OpenAI, Gemini, or NVIDIA based on request structure |
-| **Circuit Breaker** | SHA-256 hashes recent payloads per IP; blocks after 3 identical requests to stop infinite loops |
-| **Shadow Router** | Automatic Sonnet → Haiku failover on 429 rate-limit responses |
-| **ZSTD Decompression** | Handles Python SDK compressed payloads that crash standard proxies |
-| **30-Min Timeouts** | Prevents premature disconnection during long reasoning chains |
-
-## Use the CLI (NPM)
-
-The easiest way to see your waste and setup your proxy connection is the `vibe-billing` CLI tool.
+## Core CLI
 
 ```bash
-# See how much your agents are wasting
 npx vibe-billing scan
-
-# Route agents through the firewall to fix it
 npx vibe-billing setup
-
-# Wrap an agent to get a receipt of your savings
+npx vibe-billing status
 npx vibe-billing run <agent_cmd>
 ```
 
-## Running the Proxy Locally
+## Local Dev / Staging
+
+This workspace is set up for local and staging-style development, not production rollout.
+
+### 1. Proxy
 
 ```bash
-# Proxy server
-cd agent-proxy && npm install && npm run dev
-
-# Dashboard
-cd agent-dashboard && npm install && npm run dev
-
-# Tests
-cd agent-proxy && npm test
+cd /Users/benjij_ai/Documents/agentic-firewall/agent-proxy
+npm install
+cp .env.example .env
+PUBLIC_MODE=false PORT=4000 BIND_HOST=127.0.0.1 npm start
 ```
 
-## Monorepo Structure
+### 2. Dashboard
 
+```bash
+cd /Users/benjij_ai/Documents/agentic-firewall/agent-dashboard
+npm install
+cp .env.example .env.local
+npm run dev
 ```
-agent-proxy/       Core proxy server (Express / TypeScript)
-agent-dashboard/   React dashboard for live traffic monitoring
-agent-mcp/         MCP server exposing firewall status tool
-test-agent/        SDK integration tests
-stress_tests/      Exhaustive Node.js + Python test suites
+
+### 3. CLI against local proxy
+
+```bash
+VIBE_BILLING_PROXY_URL=http://127.0.0.1:4000 npx vibe-billing scan
+VIBE_BILLING_PROXY_URL=http://127.0.0.1:4000 npx vibe-billing status
 ```
 
-## Agent Routing
+## Repo Layout
 
-Point your agent's base URL to `https://api.jockeyvc.com` — see [Gemini.md](./Gemini.md) for the full routing guide.
+```text
+agent-cli/         npm CLI for scan/setup/status/run
+agent-proxy/       Agentic Firewall engine (Express / TypeScript)
+agent-dashboard/   React dashboard
+agent-mcp/         MCP surface for firewall status
+test-agent/        Local integration test agents
+stress_tests/      Exhaustive SDK tests
+```
+
+## Current Positioning
+
+- product: `Vibe Billing`
+- engine: `Agentic Firewall`
+- default dev mode: local-first
+- production deploys: separate concern from this branch/workspace
 
 ## License
 

@@ -1,8 +1,22 @@
-import { useState, useEffect, useRef } from 'react';
-import { Shield, Zap, RefreshCw, BarChart2, Download, TrendingUp, Users, Globe, Package } from 'lucide-react';
-import { motion, useMotionValue, useTransform, animate } from 'framer-motion';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Activity, Download, Globe, Package, Route, Shield, Wallet, Zap } from 'lucide-react';
+import { animate, useMotionValue, useTransform } from 'framer-motion';
 
-/* ── Animated number counter ──────────────────────────────── */
+const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '');
+const browserOrigin = typeof window !== 'undefined' ? trimTrailingSlash(window.location.origin) : '';
+const localProxyOrigin = 'http://127.0.0.1:4000';
+const defaultInstanceApiBase = import.meta.env.DEV ? localProxyOrigin : browserOrigin || localProxyOrigin;
+const instanceApiBase = trimTrailingSlash(import.meta.env.VITE_INSTANCE_API_BASE_URL || defaultInstanceApiBase);
+const communityApiBase = trimTrailingSlash(import.meta.env.VITE_COMMUNITY_API_BASE_URL || instanceApiBase);
+const displayFont = "'Space Grotesk', sans-serif";
+
+type FeedActivity = {
+  time?: string;
+  model?: string;
+  tokens?: number;
+  status?: string;
+};
+
 function AnimatedCounter({ target, prefix = '', suffix = '', decimals = 0 }: { target: number; prefix?: string; suffix?: string; decimals?: number }) {
   const count = useMotionValue(0);
   const rounded = useTransform(count, (v: number) =>
@@ -11,9 +25,9 @@ function AnimatedCounter({ target, prefix = '', suffix = '', decimals = 0 }: { t
   const ref = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
-    const controls = animate(count, target, { duration: 2.5, ease: 'easeOut' });
+    const controls = animate(count, target, { duration: 1.1, ease: 'easeOut' });
     return controls.stop;
-  }, [target]);
+  }, [count, target]);
 
   useEffect(() => {
     const unsub = rounded.on('change', (v: string) => {
@@ -25,320 +39,243 @@ function AnimatedCounter({ target, prefix = '', suffix = '', decimals = 0 }: { t
   return <span ref={ref}>{prefix}0{suffix}</span>;
 }
 
-/* ── Main App ─────────────────────────────────────────────── */
 function App() {
   const [stats, setStats] = useState({
     savedTokens: 0,
     savedMoney: 0,
     blockedLoops: 0,
     totalRequests: 0,
-    recentActivity: [] as any[]
+    smartRouteDowngrades: 0,
+    recentActivity: [] as FeedActivity[],
   });
-
-  // Real community metrics from server
   const [communityInstalls, setCommunityInstalls] = useState(0);
   const [communitySavings, setCommunitySavings] = useState(0);
   const [npmStats, setNpmStats] = useState({ weekly: 0, monthly: 0 });
-  const [installSources, setInstallSources] = useState<{
-    platformBreakdown: Record<string, number>;
-    archBreakdown: Record<string, number>;
-    versionBreakdown: Record<string, number>;
-  } | null>(null);
+  const [installSources, setInstallSources] = useState<Record<string, Record<string, number>> | null>(null);
 
-  // Fetch live proxy stats
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const res = await fetch('https://api.jockeyvc.com/api/stats');
+        const res = await fetch(`${instanceApiBase}/api/stats`);
         if (res.ok) {
           const data = await res.json();
-          if (data.totalRequests > 0) {
-            setStats(prev => ({ ...prev, ...data }));
-          }
+          setStats((prev) => ({ ...prev, ...data }));
         }
-      } catch {
-        // silently fail
-      }
+      } catch {}
     };
     fetchStats();
-    const interval = setInterval(fetchStats, 2000);
+    const interval = setInterval(fetchStats, 2500);
     return () => clearInterval(interval);
   }, []);
 
-  // Fetch real install + npm stats
   useEffect(() => {
     const fetchInstallData = async () => {
       try {
-        const breakdownRes = await fetch('https://api.jockeyvc.com/api/install-breakdown');
+        const breakdownRes = await fetch(`${communityApiBase}/api/install-breakdown`);
         if (breakdownRes.ok) {
           const data = await breakdownRes.json();
           setCommunityInstalls(data.uniqueInstalls || 0);
           setInstallSources({
-            platformBreakdown: data.platformBreakdown || {},
-            archBreakdown: data.archBreakdown || {},
-            versionBreakdown: data.versionBreakdown || {},
+            Platform: data.platformBreakdown || {},
+            Architecture: data.archBreakdown || {},
+            Version: data.versionBreakdown || {},
           });
         }
       } catch {}
-
       try {
-        const npmRes = await fetch('https://api.jockeyvc.com/api/npm-stats');
+        const npmRes = await fetch(`${communityApiBase}/api/npm-stats`);
         if (npmRes.ok) {
           const data = await npmRes.json();
           setNpmStats({ weekly: data.weekly || 0, monthly: data.monthly || 0 });
         }
       } catch {}
-
-      // Fetch aggregate for community savings
       try {
-        const aggRes = await fetch('https://api.jockeyvc.com/api/stats');
-        if (aggRes.ok) {
-          const data = await aggRes.json();
+        const statsRes = await fetch(`${communityApiBase}/api/stats`);
+        if (statsRes.ok) {
+          const data = await statsRes.json();
           setCommunitySavings(Math.round(data.savedMoney || 0));
         }
       } catch {}
     };
 
     fetchInstallData();
-    const interval = setInterval(fetchInstallData, 30_000);
+    const interval = setInterval(fetchInstallData, 30000);
     return () => clearInterval(interval);
   }, []);
 
+  const instanceCards = [
+    { title: 'Saved', value: stats.savedMoney < 1 ? `$${stats.savedMoney.toFixed(4)}` : `$${stats.savedMoney.toFixed(2)}`, note: 'Local instance counter', icon: <Wallet className="h-4 w-4 text-emerald-300" /> },
+    { title: 'Requests', value: stats.totalRequests.toLocaleString(), note: 'Protected by this proxy', icon: <Shield className="h-4 w-4 text-sky-300" /> },
+    { title: 'Loops', value: stats.blockedLoops.toLocaleString(), note: 'Hard stops issued', icon: <Activity className="h-4 w-4 text-rose-300" /> },
+    { title: 'Routes', value: (stats.smartRouteDowngrades || 0).toLocaleString(), note: 'Downgrades / failovers', icon: <Route className="h-4 w-4 text-amber-300" /> },
+  ];
+
+  const substrateCards = [
+    { title: 'Unique installs', value: <AnimatedCounter target={communityInstalls} />, note: 'CLI telemetry', icon: <Download className="h-4 w-4 text-sky-300" /> },
+    { title: 'npm weekly', value: <AnimatedCounter target={npmStats.weekly} />, note: npmStats.monthly > 0 ? `${npmStats.monthly.toLocaleString()} monthly` : 'Registry signal', icon: <Package className="h-4 w-4 text-violet-300" /> },
+    { title: 'Community saved', value: <AnimatedCounter target={communitySavings} prefix="$" />, note: 'Existing public counter', icon: <Zap className="h-4 w-4 text-emerald-300" /> },
+    { title: 'Backend', value: <span className="text-base text-[#177a52]">{instanceApiBase}</span>, note: 'Current instance target', icon: <Globe className="h-4 w-4 text-amber-300" /> },
+  ];
+
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white p-8 font-sans selection:bg-blue-500/30">
-      <div className="max-w-6xl mx-auto space-y-8">
-
-        {/* Header Section */}
-        <header className="flex items-center justify-between border-b border-white/10 pb-6">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-blue-500/10 rounded-xl border border-blue-500/20 shadow-[0_0_15px_rgba(59,130,246,0.15)]">
-              <Shield className="w-8 h-8 text-blue-400" />
-            </div>
-            <div>
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent">Agentic Firewall</h1>
-              <p className="text-gray-400 text-sm mt-1">Managed Governance Gateway</p>
-            </div>
-          </div>
-          <div className="flex gap-4">
-            <div className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 flex items-center gap-2 text-sm text-gray-300">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              Proxy Active on Port 4000
-            </div>
-          </div>
-        </header>
-
-        {/* ★ SOCIAL PROOF HERO BANNER ★ */}
-        <motion.section
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8 }}
-          className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-blue-600/20 via-purple-600/10 to-emerald-600/10"
-        >
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(59,130,246,0.15),transparent_50%)]"></div>
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_left,rgba(16,185,129,0.1),transparent_50%)]"></div>
-          <div className="relative p-10">
-            <div className="text-center mb-2">
-              <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold uppercase tracking-wider">
-                <Globe className="w-3.5 h-3.5" />
-                Live Community Metrics
-              </span>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mt-8">
-              {/* Unique Installs */}
-              <div className="text-center">
-                <div className="flex items-center justify-center gap-3 mb-3">
-                  <div className="p-2 bg-blue-500/15 rounded-lg">
-                    <Download className="w-5 h-5 text-blue-400" />
-                  </div>
-                  <span className="text-gray-400 text-sm font-medium uppercase tracking-wider">Unique Installs</span>
-                </div>
-                <p className="text-5xl font-extrabold tracking-tight bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent">
-                  <AnimatedCounter target={communityInstalls} />
-                </p>
-                <p className="text-gray-500 text-sm mt-2">Tracked via CLI telemetry</p>
-              </div>
-              {/* npm Weekly Downloads */}
-              <div className="text-center">
-                <div className="flex items-center justify-center gap-3 mb-3">
-                  <div className="p-2 bg-purple-500/15 rounded-lg">
-                    <Package className="w-5 h-5 text-purple-400" />
-                  </div>
-                  <span className="text-gray-400 text-sm font-medium uppercase tracking-wider">npm Weekly</span>
-                </div>
-                <p className="text-5xl font-extrabold tracking-tight bg-gradient-to-r from-purple-400 to-pink-300 bg-clip-text text-transparent">
-                  <AnimatedCounter target={npmStats.weekly} />
-                </p>
-                <p className="text-gray-500 text-sm mt-2 flex items-center justify-center gap-1.5">
-                  <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
-                  {npmStats.monthly > 0 ? `${npmStats.monthly.toLocaleString()} monthly` : 'via npm registry'}
-                </p>
-              </div>
-              {/* Community Savings */}
-              <div className="text-center">
-                <div className="flex items-center justify-center gap-3 mb-3">
-                  <div className="p-2 bg-emerald-500/15 rounded-lg">
-                    <Users className="w-5 h-5 text-emerald-400" />
-                  </div>
-                  <span className="text-gray-400 text-sm font-medium uppercase tracking-wider">Community Savings</span>
-                </div>
-                <p className="text-5xl font-extrabold tracking-tight bg-gradient-to-r from-emerald-400 to-green-300 bg-clip-text text-transparent">
-                  <AnimatedCounter target={communitySavings} prefix="$" />
-                </p>
-                <p className="text-gray-500 text-sm mt-2 flex items-center justify-center gap-1.5">
-                  <Zap className="w-3.5 h-3.5 text-yellow-400" />
-                  Prompt caching &amp; loop prevention
-                </p>
-              </div>
-              {/* Proxied Requests (global) */}
-              <div className="text-center">
-                <div className="flex items-center justify-center gap-3 mb-3">
-                  <div className="p-2 bg-yellow-500/15 rounded-lg">
-                    <Globe className="w-5 h-5 text-yellow-400" />
-                  </div>
-                  <span className="text-gray-400 text-sm font-medium uppercase tracking-wider">Total Requests</span>
-                </div>
-                <p className="text-5xl font-extrabold tracking-tight bg-gradient-to-r from-yellow-400 to-orange-300 bg-clip-text text-transparent">
-                  <AnimatedCounter target={stats.totalRequests} />
-                </p>
-                <p className="text-gray-500 text-sm mt-2">Proxied through firewall</p>
+    <div className="min-h-screen bg-transparent px-4 py-5 text-[#111512] sm:px-6">
+      <div className="mx-auto max-w-7xl space-y-4">
+        <section className="rounded-[22px] border border-[rgba(17,21,18,0.12)] bg-[rgba(255,252,247,0.8)] p-5 shadow-[0_18px_60px_rgba(42,41,36,0.08)] backdrop-blur">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="grid h-11 w-11 place-items-center rounded-xl bg-[#121916] font-bold text-[#f7f3ea]">VB</div>
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#7a867f]">Staging</div>
+                <h1 style={{ fontFamily: displayFont }} className="text-3xl font-bold tracking-[-0.05em]">Vibe Billing</h1>
               </div>
             </div>
-          </div>
-        </motion.section>
-
-        {/* Stats Grid (Your Instance) */}
-        <div>
-          <h2 className="text-xs font-semibold uppercase tracking-widest text-gray-500 mb-4">Your Instance</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <StatCard
-              title="Money Saved"
-              value={`$${stats.savedMoney < 1 ? stats.savedMoney.toFixed(4) : stats.savedMoney.toFixed(2)}`}
-              icon={<Zap className="w-5 h-5 text-yellow-400" />}
-              color="from-yellow-500/20 to-transparent border-yellow-500/20"
-            />
-            <StatCard
-              title="Tokens Cached"
-              value={(stats.savedTokens / 1000).toFixed(1) + 'k'}
-              icon={<BarChart2 className="w-5 h-5 text-blue-400" />}
-              color="from-blue-500/20 to-transparent border-blue-500/20"
-            />
-            <StatCard
-              title="Blocked Loops"
-              value={stats.blockedLoops.toString()}
-              icon={<RefreshCw className="w-5 h-5 text-red-400" />}
-              color="from-red-500/20 to-transparent border-red-500/20"
-            />
-            <StatCard
-              title="Proxied Requests"
-              value={stats.totalRequests.toString()}
-              icon={<Shield className="w-5 h-5 text-emerald-400" />}
-              color="from-emerald-500/20 to-transparent border-emerald-500/20"
-            />
-          </div>
-        </div>
-
-        {/* Install Sources */}
-        {installSources && Object.keys(installSources.platformBreakdown).length > 0 && (
-          <section className="bg-[#111] border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
-            <div className="p-6 border-b border-white/5 bg-white/[0.02]">
-              <h2 className="text-xl font-semibold">Install Sources</h2>
+            <div className="flex flex-wrap gap-2 text-sm text-[#4f5b54]">
+              <div className="rounded-xl border border-[rgba(17,21,18,0.12)] bg-white px-3 py-2">Local review</div>
+              <div className="rounded-xl border border-[rgba(23,122,82,0.16)] bg-[rgba(23,122,82,0.08)] px-3 py-2 text-[#177a52]">Live data</div>
             </div>
-            <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
-              <BreakdownCard title="Platform" data={installSources.platformBreakdown} />
-              <BreakdownCard title="Architecture" data={installSources.archBreakdown} />
-              <BreakdownCard title="CLI Version" data={installSources.versionBreakdown} />
-            </div>
-          </section>
-        )}
-
-        {/* Recent Activity */}
-        <section className="bg-[#111] border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
-          <div className="p-6 border-b border-white/5 bg-white/[0.02]">
-            <h2 className="text-xl font-semibold">Live Traffic Feed</h2>
-          </div>
-          <div className="p-0 overflow-x-auto">
-            <table className="w-full text-left text-sm text-gray-400 border-collapse">
-              <thead className="bg-[#0a0a0a] text-xs uppercase text-gray-500 border-b border-white/5">
-                <tr>
-                  <th className="px-6 py-4 font-medium whitespace-nowrap">Time</th>
-                  <th className="px-6 py-4 font-medium whitespace-nowrap">Model / Action</th>
-                  <th className="px-6 py-4 font-medium whitespace-nowrap">Tokens</th>
-                  <th className="px-6 py-4 font-medium whitespace-nowrap">Status/Result</th>
-                </tr>
-              </thead>
-              <tbody>
-                {stats.recentActivity.map((activity: any, i: number) => (
-                  <FeedRow key={i} {...activity} />
-                ))}
-                {stats.recentActivity.length === 0 && (
-                  <tr className="border-b border-white/5"><td colSpan={4} className="px-6 py-8 text-center text-gray-500">Waiting for agent traffic...</td></tr>
-                )}
-              </tbody>
-            </table>
           </div>
         </section>
-      </div>
-    </div>
-  )
-}
 
-function StatCard({ title, value, icon, color }: any) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      className={`p-6 rounded-2xl bg-gradient-to-b ${color} bg-[#111] border group hover:border-white/30 transition-all duration-500 relative overflow-hidden`}
-    >
-      <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full blur-3xl -mr-10 -mt-10 group-hover:bg-white/10 transition-colors"></div>
-      <div className="flex items-center gap-3 mb-4">
-        {icon}
-        <h3 className="text-gray-400 font-medium">{title}</h3>
-      </div>
-      <p className="text-4xl font-bold tracking-tight text-white">{value}</p>
-    </motion.div>
-  )
-}
-
-function FeedRow({ time, model, tokens, status, statusColor }: any) {
-  return (
-    <tr className="border-b border-white/5 hover:bg-white/[0.02] last:border-0 transition-colors">
-      <td className="px-6 py-4 whitespace-nowrap">{time}</td>
-      <td className="px-6 py-4 whitespace-nowrap text-gray-200 font-medium">{model}</td>
-      <td className="px-6 py-4 whitespace-nowrap">{tokens}</td>
-      <td className="px-6 py-4 whitespace-nowrap">
-        <span className={`px-3 py-1 rounded-full text-xs font-medium border border-current/20 ${statusColor}`}>
-          {status}
-        </span>
-      </td>
-    </tr>
-  )
-}
-
-function BreakdownCard({ title, data }: { title: string; data: Record<string, number> }) {
-  const total = Object.values(data).reduce((a, b) => a + b, 0);
-  const entries = Object.entries(data).sort((a, b) => b[1] - a[1]);
-
-  return (
-    <div>
-      <h3 className="text-sm font-medium text-gray-400 mb-3">{title}</h3>
-      <div className="space-y-2">
-        {entries.map(([key, count]) => {
-          const pct = total > 0 ? (count / total) * 100 : 0;
-          return (
-            <div key={key}>
-              <div className="flex justify-between text-sm mb-1">
-                <span className="text-gray-300">{key}</span>
-                <span className="text-gray-500">{count} ({pct.toFixed(0)}%)</span>
-              </div>
-              <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
-                <div className="h-full bg-blue-500/50 rounded-full" style={{ width: `${pct}%` }} />
-              </div>
+        <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+          <Panel title="Current state" description="Instance counters and recent activity.">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {instanceCards.map((card) => (
+                <MetricCard key={card.title} {...card} />
+              ))}
             </div>
-          );
-        })}
+          </Panel>
+
+          <Panel title="Commands" description="Common commands.">
+            <div className="space-y-3">
+              <CommandBlock title="Scan local waste" hint="First value" command="npx vibe-billing scan" />
+              <CommandBlock title="Attach the proxy" hint="Setup" command="npx vibe-billing setup" />
+              <CommandBlock title="Check runtime status" hint="Status" command="npx vibe-billing status" />
+              <CommandBlock title="Print the receipt" hint="After a run" command="npx vibe-billing receipt" />
+            </div>
+          </Panel>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-[1.15fr_1.25fr]">
+          <Panel title="Distribution" description="Install and usage counters.">
+            <div className="grid gap-3 md:grid-cols-2">
+              {substrateCards.map((card) => (
+                <MetricCard key={card.title} {...card} />
+              ))}
+            </div>
+            {installSources && (
+              <div className="mt-4 grid gap-3 lg:grid-cols-3">
+                {Object.entries(installSources).map(([title, data]) => (
+                  <BreakdownCard key={title} title={title} data={data} />
+                ))}
+              </div>
+            )}
+          </Panel>
+
+          <Panel title="Live proof" description="Recent protected traffic.">
+            <div className="overflow-x-auto rounded-[18px] border border-[rgba(17,21,18,0.12)]">
+              <table className="w-full border-collapse bg-white text-left text-sm text-[#4f5b54]">
+                <thead className="bg-[#faf6ee] text-[11px] uppercase tracking-[0.16em] text-[#7a867f]">
+                  <tr>
+                    <th className="px-4 py-3 font-semibold">Time</th>
+                    <th className="px-4 py-3 font-semibold">Model / Action</th>
+                    <th className="px-4 py-3 font-semibold">Tokens</th>
+                    <th className="px-4 py-3 font-semibold">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stats.recentActivity.map((activity, i) => (
+                    <FeedRow key={i} {...activity} />
+                  ))}
+                  {stats.recentActivity.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="px-4 py-10 text-center text-[#7a867f]">Waiting for agent traffic...</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Panel>
+        </div>
       </div>
     </div>
   );
 }
 
-export default App
+function Panel({ title, description, children }: { title: string; description: string; children: ReactNode }) {
+  return (
+    <section className="rounded-[24px] border border-[rgba(17,21,18,0.12)] bg-[rgba(255,252,247,0.8)] p-5 shadow-[0_18px_60px_rgba(42,41,36,0.08)] backdrop-blur">
+      <div className="mb-4 flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+        <h2 style={{ fontFamily: displayFont }} className="text-[1.15rem] font-bold tracking-[-0.04em]">{title}</h2>
+        <p className="max-w-2xl text-sm leading-6 text-[#7a867f]">{description}</p>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function MetricCard({ title, value, note, icon }: { title: string; value: ReactNode; note: string; icon: ReactNode }) {
+  return (
+    <div className="rounded-[18px] border border-[rgba(17,21,18,0.12)] bg-white p-4">
+      <div className="flex items-center gap-2 text-sm font-semibold text-[#4f5b54]">{icon}{title}</div>
+      <div style={{ fontFamily: displayFont }} className="mt-3 text-[1.8rem] font-bold tracking-[-0.05em] text-[#111512]">{value}</div>
+      <div className="mt-2 text-sm text-[#7a867f]">{note}</div>
+    </div>
+  );
+}
+
+function CommandBlock({ title, hint, command }: { title: string; hint: string; command: string }) {
+  return (
+    <div className="rounded-[18px] border border-[rgba(17,21,18,0.12)] bg-white p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <strong className="text-sm text-[#111512]">{title}</strong>
+        <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#7a867f]">{hint}</span>
+      </div>
+      <code className="block overflow-x-auto rounded-[14px] border border-[rgba(17,21,18,0.1)] bg-[#121916] px-4 py-3 text-sm text-[#f2f7f4]">$ {command}</code>
+    </div>
+  );
+}
+
+function BreakdownCard({ title, data }: { title: string; data: Record<string, number> }) {
+  const rows = Object.entries(data).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const max = Math.max(...rows.map(([, value]) => value), 1);
+  return (
+    <div className="rounded-[18px] border border-[rgba(17,21,18,0.12)] bg-white p-4">
+      <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#7a867f]">{title}</div>
+      <div className="space-y-3">
+        {rows.map(([label, value]) => (
+          <div key={label}>
+            <div className="mb-1 flex items-center justify-between gap-3 text-sm text-[#4f5b54]">
+              <span className="truncate">{label}</span>
+              <span className="font-mono text-[#111512]">{value.toLocaleString()}</span>
+            </div>
+            <div className="h-2 rounded-full bg-[#f1ece3]">
+              <div className="h-2 rounded-full bg-gradient-to-r from-[#177a52] to-[#2c66d0]" style={{ width: `${Math.max((value / max) * 100, 8)}%` }} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function FeedRow({ time, model, tokens, status }: FeedActivity) {
+  const tone =
+    status?.includes('Loop') || status?.includes('Blocked') || status?.includes('Budget')
+      ? 'border-[#a33a49]/20 bg-[#a33a49]/10 text-[#a33a49]'
+      : status?.includes('Compressed') || status?.includes('Cache')
+        ? 'border-[#177a52]/20 bg-[#177a52]/10 text-[#177a52]'
+        : status?.includes('Failover') || status?.includes('429') || status?.includes('Shadow')
+          ? 'border-[#9a5b14]/20 bg-[#9a5b14]/10 text-[#9a5b14]'
+          : 'border-[#2c66d0]/16 bg-[#2c66d0]/10 text-[#2c66d0]';
+
+  return (
+    <tr className="border-b border-[rgba(17,21,18,0.08)] last:border-0 hover:bg-[#fbf8f2]">
+      <td className="px-4 py-3 font-mono whitespace-nowrap">{time || '-'}</td>
+      <td className="px-4 py-3 font-medium text-[#111512] whitespace-nowrap">{model || '-'}</td>
+      <td className="px-4 py-3 font-mono whitespace-nowrap">{tokens ?? '-'}</td>
+      <td className="px-4 py-3 whitespace-nowrap"><span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${tone}`}>{status || 'Proxied'}</span></td>
+    </tr>
+  );
+}
+
+export default App;

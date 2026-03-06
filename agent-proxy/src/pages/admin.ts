@@ -118,48 +118,64 @@ export function renderAdminDashboard(data: AdminDashboardData): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Admin Dashboard — Agent Firewall</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%234f46e5'/><text x='50' y='72' font-size='60' text-anchor='middle' fill='white' font-family='system-ui'>AF</text></svg>">
+<title>Admin Dashboard — Vibe Billing</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%230f8f6f'/><text x='50' y='70' font-size='52' text-anchor='middle' fill='white' font-family='system-ui'>VB</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: 'Inter', system-ui, sans-serif; background: #f8fafc; color: #1e293b; }
+body {
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    background:
+      radial-gradient(circle at top left, rgba(52,211,153,0.08), transparent 30%),
+      radial-gradient(circle at top right, rgba(90,177,255,0.08), transparent 32%),
+      linear-gradient(180deg, #06100f 0%, #081412 38%, #07110f 100%);
+    color: #ecf4f1;
+}
 .topbar {
-    background: #fff;
-    border-bottom: 1px solid #e2e8f0;
-    padding: 12px 24px;
+    background: rgba(10, 19, 17, 0.94);
+    border-bottom: 1px solid rgba(157, 184, 173, 0.14);
+    padding: 16px 24px;
     display: flex;
     align-items: center;
     justify-content: space-between;
+    box-shadow: 0 24px 70px rgba(0,0,0,0.18);
+    backdrop-filter: blur(10px);
 }
 .topbar-left { display: flex; align-items: center; gap: 12px; }
 .topbar-logo {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 32px; height: 32px;
-    background: #4f46e5;
-    border-radius: 8px;
+    width: 36px; height: 36px;
+    background: linear-gradient(135deg, rgba(52,211,153,0.22), rgba(90,177,255,0.18));
+    border-radius: 12px;
     color: #fff;
     font-weight: 700;
     font-size: 13px;
+    border: 1px solid rgba(90,177,255,0.22);
 }
-.topbar h1 { font-size: 16px; font-weight: 600; }
+.topbar h1 {
+    font-size: 20px;
+    font-weight: 700;
+    font-family: 'Space Grotesk', sans-serif;
+    letter-spacing: -0.04em;
+}
 .topbar-right { display: flex; gap: 12px; align-items: center; }
-.topbar a { color: #64748b; text-decoration: none; font-size: 13px; }
-.topbar a:hover { color: #4f46e5; }
+.topbar a { color: #b5c8c1; text-decoration: none; font-size: 13px; }
+.topbar a:hover { color: #ecf4f1; }
 .logout-btn {
-    background: none;
-    border: 1px solid #e2e8f0;
-    border-radius: 6px;
-    padding: 6px 14px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(157, 184, 173, 0.14);
+    border-radius: 12px;
+    padding: 8px 14px;
     font-size: 13px;
     font-family: inherit;
-    color: #64748b;
+    color: #b5c8c1;
     cursor: pointer;
 }
-.logout-btn:hover { border-color: #cbd5e1; color: #1e293b; }
+.logout-btn:hover { border-color: rgba(157, 184, 173, 0.26); color: #ecf4f1; }
 
 .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
 
@@ -170,39 +186,41 @@ body { font-family: 'Inter', system-ui, sans-serif; background: #f8fafc; color: 
     margin-bottom: 24px;
 }
 .card {
-    background: #fff;
-    border: 1px solid #e2e8f0;
-    border-radius: 10px;
+    background: rgba(10, 19, 17, 0.94);
+    border: 1px solid rgba(157, 184, 173, 0.14);
+    border-radius: 20px;
     padding: 20px;
+    box-shadow: 0 24px 70px rgba(0,0,0,0.18);
 }
-.card-label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; margin-bottom: 6px; }
-.card-value { font-size: 28px; font-weight: 700; color: #1e293b; }
-.card-value.green { color: #10b981; }
+.card-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.18em; color: #7f968f; margin-bottom: 8px; font-weight: 700; }
+.card-value { font-size: 34px; font-weight: 700; color: #ecf4f1; font-family: 'Space Grotesk', sans-serif; letter-spacing: -0.05em; }
+.card-value.green { color: #34d399; }
 
 .section {
-    background: #fff;
-    border: 1px solid #e2e8f0;
-    border-radius: 10px;
+    background: rgba(10, 19, 17, 0.94);
+    border: 1px solid rgba(157, 184, 173, 0.14);
+    border-radius: 24px;
     padding: 20px;
     margin-bottom: 24px;
+    box-shadow: 0 24px 70px rgba(0,0,0,0.18);
 }
-.section h2 { font-size: 15px; font-weight: 600; margin-bottom: 16px; color: #334155; }
+.section h2 { font-size: 24px; font-weight: 700; margin-bottom: 16px; color: #ecf4f1; font-family: 'Space Grotesk', sans-serif; letter-spacing: -0.04em; }
 
 .env-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
-.env-label { width: 110px; font-size: 13px; display: flex; align-items: center; gap: 6px; }
+.env-label { width: 110px; font-size: 13px; display: flex; align-items: center; gap: 6px; color: #b5c8c1; }
 .env-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
-.env-bar-wrap { flex: 1; height: 20px; background: #f1f5f9; border-radius: 4px; overflow: hidden; }
+.env-bar-wrap { flex: 1; height: 20px; background: rgba(255,255,255,0.04); border-radius: 999px; overflow: hidden; }
 .env-bar { height: 100%; border-radius: 4px; transition: width 0.3s; }
-.env-count { width: 100px; text-align: right; font-size: 13px; color: #64748b; }
+.env-count { width: 100px; text-align: right; font-size: 13px; color: #b5c8c1; }
 
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
 @media (max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } }
 
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th { text-align: left; padding: 8px 12px; border-bottom: 2px solid #e2e8f0; font-weight: 600; color: #64748b; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
-td { padding: 8px 12px; border-bottom: 1px solid #f1f5f9; }
-tr:hover td { background: #f8fafc; }
-.mono { font-family: 'SF Mono', Monaco, monospace; font-size: 12px; }
+th { text-align: left; padding: 10px 12px; border-bottom: 1px solid rgba(157,184,173,0.14); font-weight: 700; color: #7f968f; font-size: 11px; text-transform: uppercase; letter-spacing: 0.18em; }
+td { padding: 10px 12px; border-bottom: 1px solid rgba(157,184,173,0.08); color: #b5c8c1; }
+tr:hover td { background: rgba(255,255,255,0.02); }
+.mono { font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
 
 .timeline {
     display: flex;
@@ -212,17 +230,20 @@ tr:hover td { background: #f8fafc; }
     padding-top: 10px;
 }
 .tl-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; }
-.tl-bar { width: 100%; min-height: 2px; background: #4f46e5; border-radius: 2px 2px 0 0; transition: height 0.3s; }
-.tl-label { font-size: 10px; color: #94a3b8; margin-top: 4px; min-height: 14px; }
+.tl-bar { width: 100%; min-height: 2px; background: linear-gradient(180deg, #34d399, #5ab1ff); border-radius: 999px 999px 0 0; transition: height 0.3s; }
+.tl-label { font-size: 10px; color: #7f968f; margin-top: 4px; min-height: 14px; }
 
-.refresh-note { font-size: 12px; color: #94a3b8; text-align: right; margin-bottom: 8px; }
+.refresh-note { font-size: 12px; color: #7f968f; text-align: right; margin-bottom: 8px; }
 </style>
 </head>
 <body>
 <div class="topbar">
     <div class="topbar-left">
-        <div class="topbar-logo">AF</div>
-        <h1>Admin Dashboard</h1>
+        <div class="topbar-logo">VB</div>
+        <div>
+            <div style="color:#7f968f;font-size:11px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;margin-bottom:2px">Admin surface</div>
+            <h1>Vibe Billing Admin</h1>
+        </div>
     </div>
     <div class="topbar-right">
         <a href="/">Home</a>
