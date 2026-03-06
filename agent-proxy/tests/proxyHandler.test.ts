@@ -226,7 +226,7 @@ describe('normalizeCacheControlTTLs', () => {
 
 describe('provider-specific request mutations', () => {
     it('adds the Anthropic OAuth beta header for OAuth bearer tokens', () => {
-        const headers = {
+        const headers: Record<string, string> = {
             authorization: 'Bearer sk-ant-oat-test',
         };
 
@@ -249,7 +249,7 @@ describe('provider-specific request mutations', () => {
     });
 
     it('does not add the Anthropic OAuth beta header for standard API keys', () => {
-        const headers = {
+        const headers: Record<string, string> = {
             authorization: 'Bearer sk-ant-api03-plain-key',
         };
 
