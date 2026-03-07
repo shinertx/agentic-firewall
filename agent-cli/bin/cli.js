@@ -272,6 +272,18 @@ function getOpenClawEnvBlock() {
     return `${MARKER}\nOPENAI_BASE_URL="${PROXY_URL}/v1"\nANTHROPIC_BASE_URL="${PROXY_URL}"\n${MARKER_END}`;
 }
 
+function stripOllamaEnv(content, shellType = 'posix') {
+    if (shellType === 'powershell') {
+        return content
+            .replace(/\n?\$env:OLLAMA_ENABLED = "true"\n?/g, '\n')
+            .replace(/\n?\$env:OLLAMA_MODEL = "[^"]+"\n?/g, '\n');
+    }
+
+    return content
+        .replace(/\n?export OLLAMA_ENABLED="true"\n?/g, '\n')
+        .replace(/\n?export OLLAMA_MODEL="[^"]+"\n?/g, '\n');
+}
+
 // ─── Agent Detection ────────────────────────────────────
 // Detects installed agents for display purposes.
 // OpenClaw routing is done via env vars (ANTHROPIC_BASE_URL / OPENAI_BASE_URL),
@@ -791,9 +803,6 @@ async function setup() {
         log(`  ${c.dim}ANTHROPIC_BASE_URL=${PROXY_URL}${c.reset}`);
     }
 
-    // ── Ollama Smart Router (optional) ──
-    await setupOllama();
-
     // Verify proxy connection
     log('');
     const s = spinner('Verifying proxy connection');
@@ -817,7 +826,6 @@ async function setup() {
     log(`${c.green}${c.bold}  Your agents are now protected.${c.reset}\n`);
     log(`${c.dim}• Loop detection: kills stuck agents${c.reset}`);
     log(`${c.dim}• Prompt caching: up to 90% savings${c.reset}`);
-    log(`${c.dim}• Smart routing: AI picks the right model for each request${c.reset}`);
     log(`${c.dim}• Budget control: cap spend per session${c.reset}`);
     log('');
     log(`  ${c.bold}Next:${c.reset} Launch any agent — it will route through the firewall automatically.`);
@@ -839,6 +847,7 @@ async function uninstall() {
             // Also remove legacy markers from users who installed with agent-firewall
             const legacyRegex = new RegExp(`\\n?${LEGACY_MARKER.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\s\\S]*?${LEGACY_MARKER_END.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\n?`, 'g');
             cleaned = cleaned.replace(legacyRegex, '\n');
+            cleaned = stripOllamaEnv(cleaned, shell.type);
             fs.writeFileSync(shell.path, cleaned);
             ok(`Removed env vars from ${c.dim}${path.basename(shell.path)}${c.reset}`);
             if (shell.type === 'posix') {
@@ -847,7 +856,18 @@ async function uninstall() {
                 info('Restart PowerShell to apply.');
             }
         } else {
-            ok('Shell config already clean.');
+            const cleaned = stripOllamaEnv(content, shell.type);
+            if (cleaned !== content) {
+                fs.writeFileSync(shell.path, cleaned);
+                ok(`Removed Smart Router env vars from ${c.dim}${path.basename(shell.path)}${c.reset}`);
+                if (shell.type === 'posix') {
+                    info(`Run ${c.bold}source ~/${path.basename(shell.path)}${c.reset} to apply.`);
+                } else {
+                    info('Restart PowerShell to apply.');
+                }
+            } else {
+                ok('Shell config already clean.');
+            }
         }
     }
 
