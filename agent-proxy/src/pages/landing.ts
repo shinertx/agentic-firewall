@@ -299,8 +299,8 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 <div class="hero">
   <div class="hero-copy">
     <div class="badge"><span class="dot"></span>Live now — scanning logs and proxying agent traffic</div>
-    <h1>See how much your agents are wasting</h1>
-    <p class="sub">Run one command to scan local agent logs for retry loops, context re-sends, and expensive model overuse. If the waste is real, route traffic through the firewall in minutes.</p>
+    <h1>Stop agents from burning your money</h1>
+    <p class="sub">Start with one command to scan local agent logs for waste. If the problem is real, add loop detection, prompt caching, shadow routing, and budget enforcement to any AI agent.</p>
 
     <div class="stats">
       <div class="stat"><div class="num" id="users">${fmtNum(publicStats.totalUsers)}</div><div class="label">Users</div></div>
