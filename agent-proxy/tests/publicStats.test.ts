@@ -26,6 +26,10 @@ describe('buildPublicStats', () => {
         expect(stats.totalSaved).toBe(3801.9);
         expect(stats.totalRequests).toBe(5195);
         expect(stats.blockedLoops).toBe(35);
+        expect(stats.avgResponseMs).toBe(5081);
+        expect(stats.recentSpeedupPct).toBe(0);
+        expect(stats.recentEstimatedTimeSavedMs).toBe(0);
+        expect(stats.recentCacheHitCount).toBe(0);
     });
 
     it('preserves the estimated user metric while exposing tracked users separately', () => {
@@ -45,7 +49,10 @@ describe('buildPublicStats', () => {
                 compressedTokensSaved: 42000,
                 estimationErrorSum: 0.25,
                 estimationSamples: 2,
-                recentActivity: [{ time: 'now', model: 'claude-opus-4-6', tokens: '70k', status: 'Context CDN Hit', saved: '0.94', ttftMs: 1200, totalMs: 2200 }],
+                recentActivity: [
+                    { time: 'now', model: 'gpt-4o-mini', tokens: '8k', status: 'Pass-through', saved: '', ttftMs: 900, totalMs: 3000 },
+                    { time: 'now', model: 'claude-opus-4-6', tokens: '70k', status: 'Context CDN Hit', saved: '0.94', ttftMs: 1200, totalMs: 2200 },
+                ],
             },
         );
 
@@ -55,9 +62,14 @@ describe('buildPublicStats', () => {
         expect(stats.totalUsers).toBe(35 + 3673 + HISTORICAL_INSTALL_BASELINE);
         expect(stats.estimatedUsers).toBe(stats.totalUsers);
         expect(stats.avgTtftMs).toBe(250);
+        expect(stats.avgResponseMs).toBe(700);
         expect(stats.avgEstimationErrorPct).toBe(12.5);
         expect(stats.compressedTokensSaved).toBe(42000);
-        expect(stats.recentFeed).toHaveLength(1);
-        expect(stats.recentFeed[0]?.saved).toBe('0.94');
+        expect(stats.recentLatencySampleSize).toBe(2);
+        expect(stats.recentSpeedupPct).toBe(27);
+        expect(stats.recentEstimatedTimeSavedMs).toBe(800);
+        expect(stats.recentCacheHitCount).toBe(1);
+        expect(stats.recentFeed).toHaveLength(2);
+        expect(stats.recentFeed[1]?.saved).toBe('0.94');
     });
 });

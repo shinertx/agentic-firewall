@@ -63,10 +63,10 @@ describe('buildAdminDashboardData', () => {
                 queueFullRejections: 2,
                 crossProviderFailovers: 3,
                 recentActivity: [
-                    { time: '6:48 PM', model: 'gpt-4o-mini', tokens: '2k', status: 'Pass-through', saved: '', ttftMs: 820, totalMs: 1300 },
+                    { time: '6:48 PM', model: 'gpt-4o-mini', tokens: '2k', status: 'Pass-through', saved: '', ttftMs: 820, totalMs: 3300 },
                     { time: '6:47 PM', model: 'claude-opus-4-6', tokens: '193k', status: '429 Rate Limited', saved: '', ttftMs: 1174, totalMs: 1520 },
                     { time: '6:41 PM', model: 'claude-haiku-4-5-20251001', tokens: '1k', status: 'Upstream 400', saved: '', ttftMs: 100, totalMs: 140 },
-                    { time: '6:40 PM', model: 'claude-opus-4-6', tokens: '80k', status: 'Context CDN Hit', saved: '1.08', ttftMs: 3359, totalMs: 4200 },
+                    { time: '6:40 PM', model: 'claude-opus-4-6', tokens: '80k', status: 'Context CDN Hit', saved: '1.08', ttftMs: 3359, totalMs: 1200 },
                 ],
             },
             noProgress: { totalFailures: 4, activeIdentifiers: 2 },
@@ -99,6 +99,11 @@ describe('buildAdminDashboardData', () => {
         expect(data.recentTtftP95Ms).toBe(3031);
         expect(data.recentCacheHitAvgTtftMs).toBe(3359);
         expect(data.recentPassThroughAvgTtftMs).toBe(820);
+        expect(data.recentCacheHitAvgResponseMs).toBe(1200);
+        expect(data.recentPassThroughAvgResponseMs).toBe(3300);
+        expect(data.recentSpeedupPct).toBe(64);
+        expect(data.recentEstimatedTimeSavedMs).toBe(2100);
+        expect(data.recentCacheHitCount).toBe(1);
         expect(data.queueIncidentCount).toBe(3);
         expect(data.responseCacheHits).toBe(7);
         expect(data.compressionAvgRatio).toBe(0.44);
@@ -168,6 +173,11 @@ describe('buildAdminDashboardData', () => {
         expect(data.recentTtftP95Ms).toBe(3359);
         expect(data.recentCacheHitAvgTtftMs).toBe(3359);
         expect(data.recentPassThroughAvgTtftMs).toBe(0);
+        expect(data.recentCacheHitAvgResponseMs).toBe(5100);
+        expect(data.recentPassThroughAvgResponseMs).toBe(0);
+        expect(data.recentSpeedupPct).toBe(0);
+        expect(data.recentEstimatedTimeSavedMs).toBe(0);
+        expect(data.recentCacheHitCount).toBe(1);
         expect(data.queueIncidentCount).toBe(0);
     });
 });

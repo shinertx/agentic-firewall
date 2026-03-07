@@ -16,6 +16,15 @@ function fmtMs(n: number): string {
     return `${fmtNum(n)} ms`;
 }
 
+function fmtDuration(n: number): string {
+    if (n <= 0) return '0s';
+    if (n >= 60_000) {
+        const minutes = n / 60_000;
+        return `${minutes.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} min`;
+    }
+    return `${(n / 1000).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} s`;
+}
+
 function fmtBytes(n: number): string {
     if (n <= 0) return '0 B';
     if (n >= 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
@@ -177,6 +186,8 @@ export function renderAdminDashboard(data: AdminDashboardData): string {
     ];
 
     const speedCards = [
+        { label: 'Recent Time Saved', value: data.recentEstimatedTimeSavedMs > 0 ? fmtDuration(data.recentEstimatedTimeSavedMs) : '-', hint: data.recentCacheHitCount > 0 ? `${fmtNum(data.recentCacheHitCount)} recent cache-hit requests` : 'Collecting optimized traffic', tone: data.recentEstimatedTimeSavedMs > 0 ? 'green' as const : undefined },
+        { label: 'Cache Speedup', value: data.recentSpeedupPct > 0 ? fmtPct(data.recentSpeedupPct) : '-', hint: data.recentCacheHitAvgResponseMs > 0 && data.recentPassThroughAvgResponseMs > 0 ? `${fmtMs(data.recentCacheHitAvgResponseMs)} vs ${fmtMs(data.recentPassThroughAvgResponseMs)}` : 'Waiting for pass-through and cache samples', tone: data.recentSpeedupPct > 0 ? 'green' as const : undefined },
         { label: 'Avg TTFT', value: fmtMs(data.avgTtftMs), hint: 'Across all timed requests' },
         { label: 'TTFT P50', value: data.recentLatencySampleSize > 0 ? fmtMs(data.recentTtftP50Ms) : '-', hint: `${fmtNum(data.recentLatencySampleSize)} recent samples` },
         { label: 'TTFT P95', value: data.recentLatencySampleSize > 0 ? fmtMs(data.recentTtftP95Ms) : '-', hint: 'Recent runtime tail latency', tone: data.recentTtftP95Ms > data.recentTtftP50Ms * 2 && data.recentTtftP95Ms > 0 ? 'amber' as const : undefined },

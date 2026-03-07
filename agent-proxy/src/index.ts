@@ -96,7 +96,10 @@ setInterval(() => {
 }, 120_000).unref();
 
 app.get('/api/stats', rateLimitPublic, (req: Request, res: Response) => {
-    res.json(globalStats);
+    res.json({
+        ...globalStats,
+        ...buildLatencySummary(globalStats),
+    });
 });
 
 // CLI registration telemetry (legacy — kept for backward compat with old CLI versions)
@@ -194,7 +197,7 @@ import { getCompressionStats } from './promptCompressor';
 import { recordTelemetryEvent, getInstallStats, getInstallBreakdown, getNpmStats, getUniqueInstallCount, getDailyInstallTimeline, exportInstallData, importInstallData, loadInstallsFromRedis, saveInstallsToRedis } from './installTracker';
 import { isRedisAvailable } from './redis';
 import { startTelemetry, flushTelemetry } from './telemetryReporter';
-import { buildPublicStats } from './publicStats';
+import { buildLatencySummary, buildPublicStats } from './publicStats';
 
 // Load persisted user data on startup
 import fs from 'fs';
