@@ -53,6 +53,7 @@ describe('buildAdminDashboardData', () => {
                 blockedLoops: 35,
                 timedRequests: 4,
                 totalTtftMs: 2000,
+                totalResponseMs: 7600,
                 smartRouteDowngrades: 0,
                 compressionCalls: 0,
                 compressedTokensSaved: 0,
@@ -62,9 +63,10 @@ describe('buildAdminDashboardData', () => {
                 queueFullRejections: 2,
                 crossProviderFailovers: 3,
                 recentActivity: [
-                    { time: '6:47 PM', model: 'claude-opus-4-6', tokens: '193k', status: '429 Rate Limited', saved: '', ttftMs: 1174 },
-                    { time: '6:41 PM', model: 'claude-haiku-4-5-20251001', tokens: '1k', status: 'Upstream 400', saved: '', ttftMs: 100 },
-                    { time: '6:40 PM', model: 'claude-opus-4-6', tokens: '80k', status: 'Context CDN Hit', saved: '1.08', ttftMs: 3359 },
+                    { time: '6:48 PM', model: 'gpt-4o-mini', tokens: '2k', status: 'Pass-through', saved: '', ttftMs: 820, totalMs: 1300 },
+                    { time: '6:47 PM', model: 'claude-opus-4-6', tokens: '193k', status: '429 Rate Limited', saved: '', ttftMs: 1174, totalMs: 1520 },
+                    { time: '6:41 PM', model: 'claude-haiku-4-5-20251001', tokens: '1k', status: 'Upstream 400', saved: '', ttftMs: 100, totalMs: 140 },
+                    { time: '6:40 PM', model: 'claude-opus-4-6', tokens: '80k', status: 'Context CDN Hit', saved: '1.08', ttftMs: 3359, totalMs: 4200 },
                 ],
             },
             noProgress: { totalFailures: 4, activeIdentifiers: 2 },
@@ -91,6 +93,13 @@ describe('buildAdminDashboardData', () => {
         expect(data.recentIssues[0]?.severity).toBe('warning');
         expect(data.recentIssues[1]?.severity).toBe('error');
         expect(data.avgEstimationErrorPct).toBe(47.8);
+        expect(data.avgResponseMs).toBe(1900);
+        expect(data.recentLatencySampleSize).toBe(4);
+        expect(data.recentTtftP50Ms).toBe(997);
+        expect(data.recentTtftP95Ms).toBe(3031);
+        expect(data.recentCacheHitAvgTtftMs).toBe(3359);
+        expect(data.recentPassThroughAvgTtftMs).toBe(820);
+        expect(data.queueIncidentCount).toBe(3);
         expect(data.responseCacheHits).toBe(7);
         expect(data.compressionAvgRatio).toBe(0.44);
     });
@@ -129,6 +138,7 @@ describe('buildAdminDashboardData', () => {
                 blockedLoops: 0,
                 timedRequests: 1,
                 totalTtftMs: 250,
+                totalResponseMs: 800,
                 smartRouteDowngrades: 0,
                 compressionCalls: 0,
                 compressedTokensSaved: 0,
@@ -138,7 +148,7 @@ describe('buildAdminDashboardData', () => {
                 queueFullRejections: 0,
                 crossProviderFailovers: 0,
                 recentActivity: [
-                    { time: '6:40 PM', model: 'claude-opus-4-6', tokens: '80k', status: 'Context CDN Hit', saved: '1.08', ttftMs: 3359 },
+                    { time: '6:40 PM', model: 'claude-opus-4-6', tokens: '80k', status: 'Context CDN Hit', saved: '1.08', ttftMs: 3359, totalMs: 5100 },
                 ],
             },
             noProgress: { totalFailures: 0, activeIdentifiers: 0 },
@@ -152,5 +162,12 @@ describe('buildAdminDashboardData', () => {
         expect(data.recentIssues).toEqual([]);
         expect(data.recentActivity).toHaveLength(1);
         expect(data.recentActivity[0]?.severity).toBe('ok');
+        expect(data.avgResponseMs).toBe(800);
+        expect(data.recentLatencySampleSize).toBe(1);
+        expect(data.recentTtftP50Ms).toBe(3359);
+        expect(data.recentTtftP95Ms).toBe(3359);
+        expect(data.recentCacheHitAvgTtftMs).toBe(3359);
+        expect(data.recentPassThroughAvgTtftMs).toBe(0);
+        expect(data.queueIncidentCount).toBe(0);
     });
 });

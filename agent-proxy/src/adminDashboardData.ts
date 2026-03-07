@@ -56,6 +56,7 @@ export interface AdminActivityItem {
     status: string;
     saved: string;
     ttftMs: number;
+    totalMs: number;
     severity: 'ok' | 'warning' | 'error';
 }
 
@@ -85,8 +86,15 @@ export interface AdminDashboardData {
     totalRequests: number;
     blockedLoops: number;
     avgTtftMs: number;
+    avgResponseMs: number;
+    recentTtftP50Ms: number;
+    recentTtftP95Ms: number;
+    recentCacheHitAvgTtftMs: number;
+    recentPassThroughAvgTtftMs: number;
+    recentLatencySampleSize: number;
     queueTimeouts: number;
     queueFullRejections: number;
+    queueIncidentCount: number;
     crossProviderFailovers: number;
     noProgressFailures: number;
     activeNoProgressIdentifiers: number;
@@ -135,11 +143,28 @@ const COMMAND_DEFS = [
 
 const ISSUE_STATUS_PATTERN = /rate limited|upstream|timeout|queue|error|blocked|rejected|\b4\d\d\b|\b5\d\d\b/i;
 const WARNING_STATUS_PATTERN = /rate limited|429|timeout|queue/i;
+const CACHE_STATUS_PATTERN = /cdn|cache/i;
 
 function getSeverity(status: string): 'ok' | 'warning' | 'error' {
     if (!ISSUE_STATUS_PATTERN.test(status)) return 'ok';
     if (WARNING_STATUS_PATTERN.test(status)) return 'warning';
     return 'error';
+}
+
+function avg(values: number[]): number {
+    if (values.length === 0) return 0;
+    return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
+}
+
+function percentile(values: number[], pct: number): number {
+    if (values.length === 0) return 0;
+    const sorted = [...values].sort((a, b) => a - b);
+    const index = (pct / 100) * (sorted.length - 1);
+    const lower = Math.floor(index);
+    const upper = Math.ceil(index);
+    if (lower === upper) return Math.round(sorted[lower]);
+    const weight = index - lower;
+    return Math.round(sorted[lower] + (sorted[upper] - sorted[lower]) * weight);
 }
 
 function toRecentInstall(record: InstallRecord) {
@@ -204,10 +229,30 @@ export function buildAdminDashboardData(input: {
             status: activity.status,
             saved: activity.saved || '',
             ttftMs: activity.ttftMs || 0,
+            totalMs: activity.totalMs || 0,
             severity: getSeverity(activity.status),
         }));
 
     const recentIssues = recentActivity.filter((activity) => activity.severity !== 'ok').slice(0, 8);
+
+    const latencySamples = globalStats.recentActivity
+        .map((activity) => ({
+            status: activity.status,
+            ttftMs: activity.ttftMs || 0,
+            totalMs: activity.totalMs || 0,
+        }))
+        .filter((activity) => activity.ttftMs > 0 || activity.totalMs > 0);
+
+    const ttftSamples = latencySamples.map((activity) => activity.ttftMs).filter((value) => value > 0);
+    const cacheHitTtfts = latencySamples
+        .filter((activity) => CACHE_STATUS_PATTERN.test(activity.status) && activity.ttftMs > 0)
+        .map((activity) => activity.ttftMs);
+    const passThroughTtfts = latencySamples
+        .filter((activity) => activity.status === 'Pass-through' && activity.ttftMs > 0)
+        .map((activity) => activity.ttftMs);
+    const avgResponseMs = globalStats.timedRequests > 0
+        ? Math.round(globalStats.totalResponseMs / globalStats.timedRequests)
+        : 0;
 
     const recentInstalls = [...installStats.installs]
         .sort((a, b) => Date.parse(b.lastSeen) - Date.parse(a.lastSeen))
@@ -236,8 +281,15 @@ export function buildAdminDashboardData(input: {
         totalRequests: publicStats.totalRequests,
         blockedLoops: publicStats.blockedLoops,
         avgTtftMs: publicStats.avgTtftMs,
+        avgResponseMs,
+        recentTtftP50Ms: percentile(ttftSamples, 50),
+        recentTtftP95Ms: percentile(ttftSamples, 95),
+        recentCacheHitAvgTtftMs: avg(cacheHitTtfts),
+        recentPassThroughAvgTtftMs: avg(passThroughTtfts),
+        recentLatencySampleSize: latencySamples.length,
         queueTimeouts: globalStats.queueTimeouts,
         queueFullRejections: globalStats.queueFullRejections,
+        queueIncidentCount: globalStats.queueTimeouts + globalStats.queueFullRejections,
         crossProviderFailovers: globalStats.crossProviderFailovers,
         noProgressFailures: noProgress.totalFailures,
         activeNoProgressIdentifiers: noProgress.activeIdentifiers,
