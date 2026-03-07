@@ -256,19 +256,6 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .compare-savings .big{font-size:1.6rem;font-weight:800;color:var(--green);letter-spacing:-0.02em}
 .compare-savings .desc{color:var(--text-secondary);font-size:0.85rem;margin-top:4px}
 
-/* Features */
-.features-section{background:var(--bg);border-top:1px solid var(--border);padding:80px 24px}
-.features{max-width:720px;margin:0 auto}
-.features-header{text-align:center;margin-bottom:48px}
-.features-header h2{font-size:1.5rem;font-weight:700;letter-spacing:-0.02em;color:var(--text)}
-.features-header p{color:var(--text-secondary);margin-top:8px;font-size:0.95rem}
-.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
-.feature{background:var(--bg);padding:24px;border-radius:12px;border:1px solid var(--border);transition:border-color 0.2s,box-shadow 0.2s}
-.feature:hover{border-color:var(--border-hover);box-shadow:0 2px 8px rgba(0,0,0,0.04)}
-.feature .icon{font-size:1.2rem;margin-bottom:10px}
-.feature h3{color:var(--text);font-size:0.9rem;font-weight:600;margin-bottom:4px;letter-spacing:-0.01em}
-.feature p{color:var(--text-secondary);font-size:0.8rem;line-height:1.55}
-
 /* Footer */
 .footer{text-align:center;padding:40px 24px;color:var(--text-muted);font-size:0.8rem;border-top:1px solid var(--border)}
 
@@ -276,7 +263,6 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 @media(max-width:640px){
   .stats{grid-template-columns:repeat(2,1fr)}
   .stat{border-bottom:1px solid var(--border)}
-  .grid{grid-template-columns:1fr}
   .hero{padding:48px 20px 40px}
   .nav{padding:12px 20px}
   .feed-row{grid-template-columns:1fr auto auto;gap:10px;padding:10px 14px}
@@ -307,7 +293,6 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   <div class="nav-links">
     <a href="#how">How It Works</a>
     <a href="#activity">Live Feed</a>
-    <a href="#features">Features</a>
   </div>
 </nav>
 
@@ -329,7 +314,7 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
         <div class="code"><span class="prefix">$</span> npx vibe-billing scan <button class="copy-btn" id="copyBtn" onclick="copyCmd()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span id="copyLabel">Copy</span></button></div>
         <a href="https://github.com/shinertx/agentic-firewall" target="_blank" class="cta">View on GitHub</a>
       </div>
-      <div class="hero-caption">Start with the scan. If the waste is real, fix it with <code>npx vibe-billing setup</code>.</div>
+      <div class="hero-caption">Works with Claude Code, OpenClaw, and OpenAI-compatible tools. Start with the scan. If the waste is real, fix it with <code>npx vibe-billing setup</code>.</div>
     </div>
   </div>
 
@@ -445,26 +430,6 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     <div class="compare-savings">
       <div class="big">$39.40 saved per session</div>
       <div class="desc">That's $591 / month for a developer running 3 sessions per day.</div>
-    </div>
-  </div>
-</div>
-
-<div class="features-section" id="features">
-  <div class="features">
-    <div class="features-header">
-      <h2>Everything you need to control agents</h2>
-      <p>Works with Claude Code, OpenClaw, and any LLM-powered agent. <strong>Open-Source (MIT)</strong>.</p>
-    </div>
-    <div class="grid">
-      <div class="feature"><div class="icon">🔍</div><h3>Waste Scanner</h3><p>Reads your agent logs. Shows exactly how much you're burning on retries, re-sends, and stuck loops.</p></div>
-      <div class="feature"><div class="icon">🔄</div><h3>Loop Detection</h3><p>Circuit breaker kills stuck agents after repeated identical requests. No more overnight surprise bills.</p></div>
-      <div class="feature"><div class="icon">💰</div><h3>Prompt Caching</h3><p>Auto-injects cache headers for Anthropic, OpenAI, Gemini, and NVIDIA. Saves up to 90% on repeated context.</p></div>
-      <div class="feature"><div class="icon">⚡️</div><h3>Shadow Routing (Failover)</h3><p>Detects 429 Rate Limits and auto-downgrades models instantly (e.g. from Opus to Haiku, or across providers) to keep agents moving.</p></div>
-      <div class="feature"><div class="icon">🚫</div><h3>Budget Governor</h3><p>Set per-session spend caps. Agents get a 402 when they hit the limit — hard kill, not a suggestion.</p></div>
-      <div class="feature"><div class="icon">🧠</div><h3>No-Progress Detection</h3><p>Fingerprints tool failures. Same error 5 times? Stopped automatically.</p></div>
-      <div class="feature"><div class="icon">📊</div><h3>Per-User Dashboard</h3><p>Every user gets a personal savings dashboard with spend tracking and loop history.</p></div>
-      <div class="feature"><div class="icon">🧩</div><h3>Smart Router</h3><p>Classifies request complexity with local AI. Simple tasks auto-downgrade from Opus to Haiku — 73% faster responses.${publicStats.smartRouteDowngrades > 0 ? ` <strong>${publicStats.smartRouteDowngrades} downgrades</strong> so far.` : ''}</p></div>
-      <div class="feature"><div class="icon">🗜️</div><h3>Prompt Compression</h3><p>Compresses oversized system prompts and long histories via local AI before sending to the provider. Fewer tokens = faster + cheaper.${publicStats.compressionCalls > 0 ? ` <strong>${publicStats.compressionCalls} compressions</strong>, ~${Math.round(publicStats.compressedTokensSaved / 1000)}k tokens saved.` : ''}</p></div>
     </div>
   </div>
 </div>
