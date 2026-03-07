@@ -9,6 +9,7 @@ function ssrStatusClass(s: string): string {
   if (s.includes('Compressed') && s.includes('CDN')) return 'cdn';
   if (s.includes('CDN')) return 'cdn';
   if (s.includes('Compressed')) return 'compressed';
+  if (s.includes('Upstream') || ((/\b(?:4\d\d|5\d\d)\b/).test(s) && !s.includes('429'))) return 'blocked';
   if (s.includes('Blocked') || s.includes('Loop') || s.includes('Budget') || s.includes('No Progress')) return 'blocked';
   if (s.includes('Failover') || s.includes('Shadow') || s.includes('429')) return 'failover';
   return 'pass';
@@ -18,6 +19,7 @@ function ssrStatusLabel(s: string): string {
   if (s.includes('Compressed') && s.includes('CDN')) return 'Cached + Compressed';
   if (s.includes('CDN')) return 'Cache Hit';
   if (s.includes('Compressed')) return 'Compressed';
+  if (s.includes('Upstream') || ((/\b(?:4\d\d|5\d\d)\b/).test(s) && !s.includes('429'))) return s;
   if (s.includes('Loop')) return 'Loop Killed';
   if (s.includes('Budget')) return 'Budget Block';
   if (s.includes('No Progress')) return 'Stopped';
@@ -40,7 +42,7 @@ export function renderLandingPage(publicStats: PublicStatsSnapshot): string {
   const MAX_SSR_ROWS = 14;
   const feedItems = publicStats.recentFeed.slice(0, MAX_SSR_ROWS);
   const ssrFeedRows = feedItems.map((a: any) => {
-    const saved = a.saved ? `<div class="feed-saved">-$${a.saved}</div>` : '<div class="feed-saved"></div>';
+    const saved = a.saved ? `<div class="feed-saved">$${a.saved}</div>` : '<div class="feed-saved"></div>';
     const ttft = a.ttftMs ? `<div class="feed-ttft">${a.ttftMs < 1000 ? a.ttftMs + 'ms' : (a.ttftMs / 1000).toFixed(1) + 's'}</div>` : '<div class="feed-ttft"></div>';
     const sc = ssrStatusClass(a.status);
     const sl = ssrStatusLabel(a.status);
@@ -109,33 +111,28 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .hero::before{content:'';position:absolute;top:-80px;left:50%;transform:translateX(-50%);width:800px;height:500px;background:radial-gradient(ellipse at center,rgba(79,70,229,0.12) 0%,rgba(79,70,229,0.06) 35%,rgba(79,70,229,0.02) 55%,transparent 75%);pointer-events:none;z-index:0}
 .hero>*{position:relative;z-index:1}
 .hero-copy{max-width:680px;margin:0 auto;text-align:center}
-.badge{display:inline-flex;align-items:center;gap:6px;padding:4px 14px;border-radius:100px;border:1px solid var(--border);font-size:0.8rem;color:var(--text-secondary);margin-bottom:24px;font-weight:500}
-.badge .dot{width:6px;height:6px;border-radius:50%;background:#22c55e;animation:pulse 2s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
-.hero h1{font-size:clamp(2.2rem,4.5vw,3.2rem);font-weight:800;letter-spacing:-0.035em;line-height:1.15;margin-bottom:16px;color:var(--text)}
+.hero h1{font-size:clamp(2.4rem,4.8vw,3.6rem);font-weight:800;letter-spacing:-0.04em;line-height:1.08;margin-bottom:16px;color:var(--text)}
 .hero .sub{color:var(--text-secondary);font-size:1.05rem;max-width:560px;margin:0 auto 30px;line-height:1.6}
 
-/* Stats Grid */
-.stats{display:grid;grid-template-columns:repeat(4,1fr);max-width:600px;margin:0 auto 28px;border:1px solid var(--border);border-radius:12px;overflow:hidden}
-.stat{padding:24px 16px;text-align:center;border-right:1px solid var(--border);transition:background 0.2s}
-.stat:last-child{border-right:none}
-.stat:hover{background:var(--bg-secondary)}
-.stat .num{font-size:1.8rem;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;letter-spacing:-0.02em}
-.stat .label{color:var(--text-muted);font-size:0.7rem;margin-top:4px;text-transform:uppercase;letter-spacing:0.06em;font-weight:600}
+/* Proof row */
+.proof-row{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:10px;margin:0 auto 28px;color:var(--text-secondary);font-size:0.95rem;line-height:1.5}
+.proof-row strong{color:var(--text);font-weight:700;font-variant-numeric:tabular-nums}
+.proof-sep{color:var(--text-muted)}
 
 /* CTA area */
 .actions{display:flex;flex-direction:column;align-items:center;gap:12px}
 .action-row{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:center}
-.code{background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:10px 20px;font-family:'SF Mono','Fira Code',Consolas,monospace;font-size:0.85rem;color:var(--text);display:inline-flex;align-items:center;gap:8px;user-select:all;transition:border-color 0.2s;position:relative}
+.code{background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;padding:12px 20px;font-family:'SF Mono','Fira Code',Consolas,monospace;font-size:0.88rem;color:var(--text);display:inline-flex;align-items:center;gap:8px;user-select:all;transition:border-color 0.2s,box-shadow 0.2s;position:relative}
 .code:hover{border-color:var(--border-hover)}
+.code.primary{border-color:rgba(79,70,229,0.25);box-shadow:0 10px 30px rgba(79,70,229,0.08)}
 .code .prefix{color:var(--text-muted)}
 .copy-btn{all:unset;cursor:pointer;padding:4px 8px;border-radius:6px;color:var(--text-muted);transition:all 0.2s;user-select:none;display:inline-flex;align-items:center;gap:4px;font-size:0.75rem;font-family:'Inter',-apple-system,sans-serif;font-weight:500;border:1px solid transparent}
 .copy-btn:hover{color:var(--text);background:var(--bg);border-color:var(--border)}
 .copy-btn.copied{color:var(--green)}
-.cta{display:inline-block;background:var(--accent);color:#fff;padding:12px 28px;border-radius:8px;font-size:0.9rem;font-weight:600;text-decoration:none;transition:all 0.2s;letter-spacing:-0.01em}
-.cta:hover{background:var(--accent-hover);transform:translateY(-1px);box-shadow:0 4px 12px rgba(79,70,229,0.25)}
-.hero-caption{font-size:0.82rem;color:var(--text-muted);line-height:1.5}
-.hero-caption code{font-family:'SF Mono','Fira Code',Consolas,monospace;background:var(--bg-secondary);border:1px solid var(--border);padding:2px 6px;border-radius:6px;color:var(--text-secondary)}
+.secondary-cta{display:inline-block;background:#fff;color:var(--text-secondary);padding:11px 18px;border-radius:8px;font-size:0.85rem;font-weight:600;text-decoration:none;transition:all 0.2s;letter-spacing:-0.01em;border:1px solid var(--border)}
+.secondary-cta:hover{color:var(--text);border-color:var(--border-hover);transform:translateY(-1px)}
+.cta-note{font-size:0.82rem;color:var(--text-muted);line-height:1.5}
 
 /* Scan example */
 .scan-section{border-top:1px solid var(--border);padding:80px 24px;background:var(--bg)}
@@ -265,8 +262,6 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 
 /* Responsive */
 @media(max-width:640px){
-  .stats{grid-template-columns:repeat(2,1fr)}
-  .stat{border-bottom:1px solid var(--border)}
   .hero{padding:48px 20px 40px}
   .nav{padding:12px 20px}
   .feed-row{grid-template-columns:1fr auto auto;gap:10px;padding:10px 14px}
@@ -278,7 +273,7 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   .steps::before,.steps::after{display:none}
   .compare-grid{grid-template-columns:1fr}
   .action-row{justify-content:center}
-  .hero-caption{text-align:center}
+  .proof-sep{display:none}
 }
 @media(max-width:900px){
   .hero{padding:56px 24px 44px}
@@ -297,23 +292,23 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 
 <div class="hero">
   <div class="hero-copy">
-    <div class="badge"><span class="dot"></span>Live now — scanning logs and proxying agent traffic</div>
-    <h1>Stop agents from burning your money</h1>
-    <p class="sub">See how much money your agents are wasting before you change anything.</p>
+    <h1>Stop wasting money on agent runs</h1>
+    <p class="sub">Vibe Billing scans Claude Code, OpenClaw, and OpenAI-compatible agent logs, shows exactly where money is being burned, then fixes it in one command.</p>
 
-    <div class="stats">
-      <div class="stat"><div class="num" id="users">${fmtNum(publicStats.totalUsers)}</div><div class="label">Users</div></div>
-      <div class="stat"><div class="num" id="saved">${fmtMoney(publicStats.totalSaved)}</div><div class="label">Saved</div></div>
-      <div class="stat"><div class="num" id="reqs">${fmtNum(publicStats.totalRequests)}</div><div class="label">Requests</div></div>
-      <div class="stat"><div class="num" id="loops">${fmtNum(publicStats.blockedLoops)}</div><div class="label">Loops Killed</div></div>
+    <div class="proof-row">
+      <span><strong id="users">${fmtNum(publicStats.totalUsers)}</strong> developers</span>
+      <span class="proof-sep">·</span>
+      <span><strong id="saved">${fmtMoney(publicStats.totalSaved)}</strong> saved</span>
+      <span class="proof-sep">·</span>
+      <span><strong id="loops">${fmtNum(publicStats.blockedLoops)}</strong> loops killed</span>
     </div>
 
     <div class="actions">
       <div class="action-row">
-        <div class="code"><span class="prefix">$</span> npx vibe-billing scan <button class="copy-btn" id="copyBtn" onclick="copyCmd()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span id="copyLabel">Copy</span></button></div>
-        <a href="https://github.com/shinertx/agentic-firewall" target="_blank" class="cta">View on GitHub</a>
+        <div class="code primary"><span class="prefix">$</span> npx vibe-billing scan <button class="copy-btn" id="copyBtn" onclick="copyCmd()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span id="copyLabel">Copy</span></button></div>
+        <a href="https://github.com/shinertx/agentic-firewall" target="_blank" class="secondary-cta">View on GitHub</a>
       </div>
-      <div class="hero-caption">Works with Claude Code, OpenClaw, and OpenAI-compatible tools.</div>
+      <div class="cta-note">Find wasted spend in under 30 seconds. No signup.</div>
     </div>
   </div>
 </div>
@@ -481,7 +476,6 @@ function animateValue(el, start, end, duration, format) {
 var prev = {
   users: ${publicStats.totalUsers},
   saved: ${publicStats.totalSaved},
-  reqs: ${publicStats.totalRequests},
   loops: ${publicStats.blockedLoops}
 };
 
@@ -489,6 +483,7 @@ function statusClass(s) {
   if (s.includes('Compressed') && s.includes('CDN')) return 'cdn';
   if (s.includes('CDN')) return 'cdn';
   if (s.includes('Compressed')) return 'compressed';
+  if (s.includes('Upstream') || ((/\b(?:4\d\d|5\d\d)\b/).test(s) && !s.includes('429'))) return 'blocked';
   if (s.includes('Blocked') || s.includes('Loop') || s.includes('Budget') || s.includes('No Progress')) return 'blocked';
   if (s.includes('Failover') || s.includes('Shadow') || s.includes('429')) return 'failover';
   return 'pass';
@@ -498,6 +493,7 @@ function statusLabel(s) {
   if (s.includes('Compressed') && s.includes('CDN')) return 'Cached + Compressed';
   if (s.includes('CDN')) return 'Cache Hit';
   if (s.includes('Compressed')) return 'Compressed';
+  if (s.includes('Upstream') || ((/\b(?:4\d\d|5\d\d)\b/).test(s) && !s.includes('429'))) return s;
   if (s.includes('Loop')) return 'Loop Killed';
   if (s.includes('Budget')) return 'Budget Block';
   if (s.includes('No Progress')) return 'Stopped';
@@ -509,7 +505,7 @@ function statusLabel(s) {
 
 function rowHTML(item) {
   var savedHTML = item.saved
-    ? '<div class="feed-saved">-$' + item.saved + '</div>'
+    ? '<div class="feed-saved">$' + item.saved + '</div>'
     : '<div class="feed-saved"></div>';
   var ttftHTML = item.ttftMs
     ? '<div class="feed-ttft">' + (item.ttftMs < 1000 ? item.ttftMs + 'ms' : (item.ttftMs / 1000).toFixed(1) + 's') + '</div>'
@@ -593,14 +589,13 @@ async function pollStats() {
     var d = await r.json();
     animateValue(document.getElementById('users'), prev.users, d.totalUsers, 1500, fmtN);
     animateValue(document.getElementById('saved'), prev.saved, d.totalSaved, 2000, fmtM);
-    animateValue(document.getElementById('reqs'), prev.reqs, d.totalRequests, 1500, fmtN);
     animateValue(document.getElementById('loops'), prev.loops, d.blockedLoops, 1500, fmtN);
 
     // Update savings badge
     var badge = document.getElementById('feedSavings');
     if (badge) badge.textContent = fmtM(d.totalSaved) + ' saved';
 
-    prev = { users: d.totalUsers, saved: d.totalSaved, reqs: d.totalRequests, loops: d.blockedLoops };
+    prev = { users: d.totalUsers, saved: d.totalSaved, loops: d.blockedLoops };
     if (d.recentFeed) renderFeed(d.recentFeed);
   } catch(e) {}
 }
