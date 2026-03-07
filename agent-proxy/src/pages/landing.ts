@@ -105,18 +105,18 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .nav a:hover{color:var(--text)}
 
 /* Hero */
-.hero{padding:72px 24px 56px;max-width:1120px;margin:0 auto;position:relative;display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:40px;align-items:center}
+.hero{padding:72px 24px 56px;max-width:1120px;margin:0 auto;position:relative}
 .hero::before{content:'';position:absolute;top:-80px;left:50%;transform:translateX(-50%);width:800px;height:500px;background:radial-gradient(ellipse at center,rgba(79,70,229,0.12) 0%,rgba(79,70,229,0.06) 35%,rgba(79,70,229,0.02) 55%,transparent 75%);pointer-events:none;z-index:0}
 .hero>*{position:relative;z-index:1}
-.hero-copy{max-width:620px}
+.hero-copy{max-width:680px;margin:0 auto;text-align:center}
 .badge{display:inline-flex;align-items:center;gap:6px;padding:4px 14px;border-radius:100px;border:1px solid var(--border);font-size:0.8rem;color:var(--text-secondary);margin-bottom:24px;font-weight:500}
 .badge .dot{width:6px;height:6px;border-radius:50%;background:#22c55e;animation:pulse 2s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
 .hero h1{font-size:clamp(2.2rem,4.5vw,3.2rem);font-weight:800;letter-spacing:-0.035em;line-height:1.15;margin-bottom:16px;color:var(--text)}
-.hero .sub{color:var(--text-secondary);font-size:1.05rem;max-width:560px;margin:0 0 30px;line-height:1.6}
+.hero .sub{color:var(--text-secondary);font-size:1.05rem;max-width:560px;margin:0 auto 30px;line-height:1.6}
 
 /* Stats Grid */
-.stats{display:grid;grid-template-columns:repeat(4,1fr);max-width:600px;margin:0 0 28px;border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);max-width:600px;margin:0 auto 28px;border:1px solid var(--border);border-radius:12px;overflow:hidden}
 .stat{padding:24px 16px;text-align:center;border-right:1px solid var(--border);transition:background 0.2s}
 .stat:last-child{border-right:none}
 .stat:hover{background:var(--bg-secondary)}
@@ -124,8 +124,8 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .stat .label{color:var(--text-muted);font-size:0.7rem;margin-top:4px;text-transform:uppercase;letter-spacing:0.06em;font-weight:600}
 
 /* CTA area */
-.actions{display:flex;flex-direction:column;align-items:flex-start;gap:12px}
-.action-row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.actions{display:flex;flex-direction:column;align-items:center;gap:12px}
+.action-row{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:center}
 .code{background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:10px 20px;font-family:'SF Mono','Fira Code',Consolas,monospace;font-size:0.85rem;color:var(--text);display:inline-flex;align-items:center;gap:8px;user-select:all;transition:border-color 0.2s;position:relative}
 .code:hover{border-color:var(--border-hover)}
 .code .prefix{color:var(--text-muted)}
@@ -137,8 +137,12 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .hero-caption{font-size:0.82rem;color:var(--text-muted);line-height:1.5}
 .hero-caption code{font-family:'SF Mono','Fira Code',Consolas,monospace;background:var(--bg-secondary);border:1px solid var(--border);padding:2px 6px;border-radius:6px;color:var(--text-secondary)}
 
-/* Hero terminal */
-.hero-terminal{width:100%}
+/* Scan example */
+.scan-section{border-top:1px solid var(--border);padding:80px 24px;background:var(--bg)}
+.scan-wrap{max-width:780px;margin:0 auto}
+.scan-header{text-align:center;margin-bottom:32px}
+.scan-header h2{font-size:1.5rem;font-weight:700;letter-spacing:-0.02em;color:var(--text)}
+.scan-header p{color:var(--text-secondary);margin-top:8px;font-size:0.95rem}
 .terminal{background:#0f172a;border:1px solid #1e293b;border-radius:16px;overflow:hidden;box-shadow:0 24px 60px rgba(15,23,42,0.18)}
 .terminal-bar{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #1e293b;background:#111827}
 .terminal-dots{display:flex;gap:6px}
@@ -277,12 +281,7 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   .hero-caption{text-align:center}
 }
 @media(max-width:900px){
-  .hero{grid-template-columns:1fr;gap:28px;text-align:center}
-  .hero-copy{max-width:700px;margin:0 auto}
-  .hero .sub{margin:0 auto 30px}
-  .stats{max-width:560px;margin:0 auto 28px}
-  .actions{align-items:center}
-  .hero-terminal{max-width:560px;margin:0 auto}
+  .hero{padding:56px 24px 44px}
 }
 </style>
 </head>
@@ -300,7 +299,7 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   <div class="hero-copy">
     <div class="badge"><span class="dot"></span>Live now — scanning logs and proxying agent traffic</div>
     <h1>Stop agents from burning your money</h1>
-    <p class="sub">Start with one command to scan local agent logs for waste. If the problem is real, add loop detection, prompt caching, shadow routing, and budget enforcement to any AI agent.</p>
+    <p class="sub">See how much money your agents are wasting before you change anything.</p>
 
     <div class="stats">
       <div class="stat"><div class="num" id="users">${fmtNum(publicStats.totalUsers)}</div><div class="label">Users</div></div>
@@ -314,33 +313,7 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
         <div class="code"><span class="prefix">$</span> npx vibe-billing scan <button class="copy-btn" id="copyBtn" onclick="copyCmd()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span id="copyLabel">Copy</span></button></div>
         <a href="https://github.com/shinertx/agentic-firewall" target="_blank" class="cta">View on GitHub</a>
       </div>
-      <div class="hero-caption">Works with Claude Code, OpenClaw, and OpenAI-compatible tools. Start with the scan. If the waste is real, fix it with <code>npx vibe-billing setup</code>.</div>
-    </div>
-  </div>
-
-  <div class="hero-terminal">
-    <div class="terminal">
-      <div class="terminal-bar">
-        <div class="terminal-dots"><span></span><span></span><span></span></div>
-        <div class="terminal-label">Example Scan Output</div>
-      </div>
-      <div class="terminal-body">
-        <div class="terminal-line"><span><span class="terminal-prompt">$</span> npx vibe-billing scan</span></div>
-        <div class="terminal-line dim"><span>Analyzing your agent usage for waste patterns and savings opportunities...</span></div>
-        <div class="terminal-line gap"></div>
-        <div class="terminal-line heading"><span>Agent Waste Report</span></div>
-        <div class="terminal-line"><span class="terminal-key">Runs analyzed:</span><span class="terminal-value">184</span></div>
-        <div class="terminal-line"><span class="terminal-key">Retry loops:</span><span class="terminal-value">6</span></div>
-        <div class="terminal-line"><span class="terminal-key">Context re-sends:</span><span class="terminal-value">34</span></div>
-        <div class="terminal-line"><span class="terminal-key">Overkill model usage:</span><span class="terminal-value">51</span></div>
-        <div class="terminal-line gap"></div>
-        <div class="terminal-line"><span class="terminal-key">Total agent spend:</span><span class="terminal-value">$381.42</span></div>
-        <div class="terminal-line highlight"><span class="terminal-key">Estimated wasted spend:</span><span class="terminal-value">$312.76</span></div>
-        <div class="terminal-line gap"></div>
-        <div class="terminal-line fix"><span class="terminal-key">Fix with:</span></div>
-        <div class="terminal-line"><span><span class="terminal-prompt">$</span> npx vibe-billing setup</span></div>
-        <div class="terminal-foot">Reads local Claude Code and OpenClaw logs first. No signup required to see the waste.</div>
-      </div>
+      <div class="hero-caption">Works with Claude Code, OpenClaw, and OpenAI-compatible tools.</div>
     </div>
   </div>
 </div>
@@ -384,6 +357,38 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
         <h3>Stay in control</h3>
         <p>Prompt caching, loop detection, budget caps, and smarter routing kick in once traffic is flowing.</p>
         <div class="step-code">Agent &rarr; Firewall &rarr; LLM</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="scan-section">
+  <div class="scan-wrap">
+    <div class="scan-header">
+      <h2>Example Scan Output</h2>
+      <p>Run the scan first. If the waste is real, route traffic through the firewall after that.</p>
+    </div>
+    <div class="terminal">
+      <div class="terminal-bar">
+        <div class="terminal-dots"><span></span><span></span><span></span></div>
+        <div class="terminal-label">Example Scan Output</div>
+      </div>
+      <div class="terminal-body">
+        <div class="terminal-line"><span><span class="terminal-prompt">$</span> npx vibe-billing scan</span></div>
+        <div class="terminal-line dim"><span>Analyzing your agent usage for waste patterns and savings opportunities...</span></div>
+        <div class="terminal-line gap"></div>
+        <div class="terminal-line heading"><span>Agent Waste Report</span></div>
+        <div class="terminal-line"><span class="terminal-key">Runs analyzed:</span><span class="terminal-value">184</span></div>
+        <div class="terminal-line"><span class="terminal-key">Retry loops:</span><span class="terminal-value">6</span></div>
+        <div class="terminal-line"><span class="terminal-key">Context re-sends:</span><span class="terminal-value">34</span></div>
+        <div class="terminal-line"><span class="terminal-key">Overkill model usage:</span><span class="terminal-value">51</span></div>
+        <div class="terminal-line gap"></div>
+        <div class="terminal-line"><span class="terminal-key">Total agent spend:</span><span class="terminal-value">$381.42</span></div>
+        <div class="terminal-line highlight"><span class="terminal-key">Estimated wasted spend:</span><span class="terminal-value">$312.76</span></div>
+        <div class="terminal-line gap"></div>
+        <div class="terminal-line fix"><span class="terminal-key">Fix with:</span></div>
+        <div class="terminal-line"><span><span class="terminal-prompt">$</span> npx vibe-billing setup</span></div>
+        <div class="terminal-foot">Reads local Claude Code and OpenClaw logs first. No signup required to see the waste.</div>
       </div>
     </div>
   </div>
