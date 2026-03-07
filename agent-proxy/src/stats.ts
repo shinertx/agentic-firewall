@@ -73,6 +73,26 @@ async function loadStatsFromRedis(): Promise<PersistedStats | null> {
     return null;
 }
 
+async function loadRecentActivityFromRedis(limit: number): Promise<any[]> {
+    const redis = getRedisClient();
+    if (!redis) return [];
+    try {
+        const rows = await redis.lrange(REDIS_ACTIVITY_KEY, 0, limit - 1);
+        return rows
+            .map((row) => {
+                try {
+                    return JSON.parse(row);
+                } catch {
+                    return null;
+                }
+            })
+            .filter((row): row is Record<string, any> => row !== null);
+    } catch (err) {
+        console.error('[STATS] Failed to load recent activity from Redis:', err);
+        return [];
+    }
+}
+
 async function saveStatsToRedis(): Promise<void> {
     const redis = getRedisClient();
     if (!redis) return;
@@ -192,6 +212,26 @@ export const globalStats = {
     timedRequests: 0,
 };
 
+// Circular buffer for O(1) insertion (replaces O(n) unshift)
+const MAX_RECENT = 50;
+const activityBuffer: any[] = new Array(MAX_RECENT).fill(null);
+let activityWriteIndex = 0;
+let activityCount = 0;
+
+function hydrateRecentActivity(activities: any[]): void {
+    const trimmed = activities.slice(0, MAX_RECENT);
+    activityBuffer.fill(null);
+    trimmed
+        .slice()
+        .reverse()
+        .forEach((activity, index) => {
+            activityBuffer[index] = activity;
+        });
+    activityCount = trimmed.length;
+    activityWriteIndex = trimmed.length % MAX_RECENT;
+    globalStats.recentActivity = trimmed;
+}
+
 // Try loading from Redis once connected (overrides file-based stats if Redis has data)
 setTimeout(async () => {
     const redisStats = await loadStatsFromRedis();
@@ -210,13 +250,13 @@ setTimeout(async () => {
         globalStats.totalResponseMs = redisStats.totalResponseMs;
         globalStats.timedRequests = redisStats.timedRequests;
     }
-}, 1000);
 
-// Circular buffer for O(1) insertion (replaces O(n) unshift)
-const MAX_RECENT = 50;
-const activityBuffer: any[] = new Array(MAX_RECENT).fill(null);
-let activityWriteIndex = 0;
-let activityCount = 0;
+    const recentActivity = await loadRecentActivityFromRedis(MAX_RECENT);
+    if (recentActivity.length > 0) {
+        hydrateRecentActivity(recentActivity);
+        console.log(`[STATS] Restored ${recentActivity.length} recent activity rows from Redis`);
+    }
+}, 1000);
 
 export function recordActivity(activity: { time: string, model: string, tokens: number | string, status: string, statusColor: string, saved?: string, ttftMs?: number, totalMs?: number }) {
     activityBuffer[activityWriteIndex] = activity;
