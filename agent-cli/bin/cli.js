@@ -148,6 +148,11 @@ function warn(msg) { log(`${c.yellow}${icons.warn}${c.reset}  ${msg}`); }
 function fail(msg) { log(`${c.red}${icons.fail}${c.reset} ${msg}`); }
 function info(msg) { log(`${c.cyan}${icons.info}${c.reset}  ${msg}`); }
 function header(msg) { log(`\n${c.bold}${c.magenta}${icons.shield}  ${msg}${c.reset}\n`); }
+function formatDuration(ms) {
+    if (!Number.isFinite(ms) || ms <= 0) return '0s';
+    if (ms >= 60_000) return `${(ms / 60_000).toFixed(1)} min`;
+    return `${(ms / 1000).toFixed(1)}s`;
+}
 
 // ─── Confirmation Prompt ────────────────────────────────
 function confirm(question) {
@@ -907,6 +912,10 @@ async function status() {
         log(`  ${c.bold}Money Saved:${c.reset}   $${stats.savedMoney?.toFixed(4) || '0.0000'}`);
         log(`  ${c.bold}Tokens Saved:${c.reset}  ${(stats.savedTokens || 0).toLocaleString()}`);
         log(`  ${c.bold}Loops Blocked:${c.reset} ${stats.blockedLoops || 0}`);
+        if ((stats.recentEstimatedTimeSavedMs || 0) > 0 || (stats.recentSpeedupPct || 0) > 0) {
+            log(`  ${c.bold}Time Saved:${c.reset}    ${formatDuration(stats.recentEstimatedTimeSavedMs || 0)} recent`);
+            log(`  ${c.bold}Speedup:${c.reset}       ${stats.recentSpeedupPct || 0}% faster on cache hits`);
+        }
 
         const activity = stats.recentActivity || [];
         if (activity.length > 0) {
