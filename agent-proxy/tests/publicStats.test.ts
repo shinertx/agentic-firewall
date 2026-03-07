@@ -13,6 +13,7 @@ describe('buildPublicStats', () => {
                 blockedLoops: 35,
                 timedRequests: 3779,
                 totalTtftMs: 8604816,
+                totalResponseMs: 19200000,
                 smartRouteDowngrades: 0,
                 compressionCalls: 0,
                 compressedTokensSaved: 0,
@@ -38,12 +39,13 @@ describe('buildPublicStats', () => {
                 blockedLoops: 1,
                 timedRequests: 4,
                 totalTtftMs: 1000,
+                totalResponseMs: 2800,
                 smartRouteDowngrades: 2,
                 compressionCalls: 3,
                 compressedTokensSaved: 42000,
                 estimationErrorSum: 0.25,
                 estimationSamples: 2,
-                recentActivity: [{ time: 'now', model: 'claude-opus-4-6', tokens: '70k', status: 'Context CDN Hit', saved: '0.94', ttftMs: 1200 }],
+                recentActivity: [{ time: 'now', model: 'claude-opus-4-6', tokens: '70k', status: 'Context CDN Hit', saved: '0.94', ttftMs: 1200, totalMs: 2200 }],
             },
         );
 

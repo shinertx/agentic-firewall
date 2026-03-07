@@ -131,7 +131,7 @@ function renderQueueRows(queueProviders: AdminQueueMetric[]): string {
 
 function renderActivityRows(rows: AdminActivityItem[], emptyMessage: string): string {
     if (rows.length === 0) {
-        return `<tr><td colspan="6" class="empty-cell">${escHtml(emptyMessage)}</td></tr>`;
+        return `<tr><td colspan="7" class="empty-cell">${escHtml(emptyMessage)}</td></tr>`;
     }
 
     return rows.map((row) => `<tr>
@@ -141,6 +141,7 @@ function renderActivityRows(rows: AdminActivityItem[], emptyMessage: string): st
         <td>${escHtml(row.tokens)}</td>
         <td>${row.saved ? fmtMoney(parseFloat(row.saved) || 0) : '-'}</td>
         <td>${row.ttftMs > 0 ? fmtMs(row.ttftMs) : '-'}</td>
+        <td>${row.totalMs > 0 ? fmtMs(row.totalMs) : '-'}</td>
     </tr>`).join('\n');
 }
 
@@ -173,7 +174,17 @@ export function renderAdminDashboard(data: AdminDashboardData): string {
         { label: 'Saved', value: fmtMoney(data.totalSaved), hint: 'Global runtime counter', tone: 'green' as const },
         { label: 'Requests', value: fmtNum(data.totalRequests), hint: 'Proxy requests observed' },
         { label: 'Loops Blocked', value: fmtNum(data.blockedLoops), hint: 'Guardrail events blocked', tone: data.blockedLoops > 0 ? 'amber' as const : undefined },
-        { label: 'Avg TTFT', value: fmtMs(data.avgTtftMs), hint: 'Across timed requests' },
+    ];
+
+    const speedCards = [
+        { label: 'Avg TTFT', value: fmtMs(data.avgTtftMs), hint: 'Across all timed requests' },
+        { label: 'TTFT P50', value: data.recentLatencySampleSize > 0 ? fmtMs(data.recentTtftP50Ms) : '-', hint: `${fmtNum(data.recentLatencySampleSize)} recent samples` },
+        { label: 'TTFT P95', value: data.recentLatencySampleSize > 0 ? fmtMs(data.recentTtftP95Ms) : '-', hint: 'Recent runtime tail latency', tone: data.recentTtftP95Ms > data.recentTtftP50Ms * 2 && data.recentTtftP95Ms > 0 ? 'amber' as const : undefined },
+        { label: 'Avg Response', value: fmtMs(data.avgResponseMs), hint: 'Full request time' },
+        { label: 'Cache Hit TTFT', value: data.recentCacheHitAvgTtftMs > 0 ? fmtMs(data.recentCacheHitAvgTtftMs) : '-', hint: 'Recent cache-hit average', tone: data.recentCacheHitAvgTtftMs > 0 ? 'green' as const : undefined },
+        { label: 'Pass-through TTFT', value: data.recentPassThroughAvgTtftMs > 0 ? fmtMs(data.recentPassThroughAvgTtftMs) : '-', hint: 'Recent direct proxy average' },
+        { label: 'Failover Rescues', value: fmtNum(data.crossProviderFailovers), hint: '429 recoveries', tone: data.crossProviderFailovers > 0 ? 'amber' as const : undefined },
+        { label: 'Queue Incidents', value: fmtNum(data.queueIncidentCount), hint: `${fmtNum(data.queueTimeouts)} timeouts, ${fmtNum(data.queueFullRejections)} rejects`, tone: data.queueIncidentCount > 0 ? 'red' as const : 'green' as const },
     ];
 
     const issueCards = [
@@ -422,6 +433,14 @@ tr:hover td { background: #f8fafc; }
         <div class="cards">${renderMetricCards(issueCards)}</div>
     </div>
 
+    <div class="section">
+        <div class="section-head">
+            <h3>Speed</h3>
+            <p>Latency signals for whether the firewall is making agents feel faster or slower.</p>
+        </div>
+        <div class="cards">${renderMetricCards(speedCards)}</div>
+    </div>
+
     <div class="grid-2">
         <div class="section">
             <div class="section-head">
@@ -510,7 +529,7 @@ tr:hover td { background: #f8fafc; }
                 <p>Only warning/error statuses from the latest runtime feed.</p>
             </div>
             <table>
-                <thead><tr><th>Time</th><th>Status</th><th>Model</th><th>Tokens</th><th>Saved</th><th>TTFT</th></tr></thead>
+                <thead><tr><th>Time</th><th>Status</th><th>Model</th><th>Tokens</th><th>Saved</th><th>TTFT</th><th>Total</th></tr></thead>
                 <tbody>${renderActivityRows(data.recentIssues, 'No recent issue events.')}</tbody>
             </table>
         </div>
@@ -520,7 +539,7 @@ tr:hover td { background: #f8fafc; }
                 <p>The latest runtime events, good and bad.</p>
             </div>
             <table>
-                <thead><tr><th>Time</th><th>Status</th><th>Model</th><th>Tokens</th><th>Saved</th><th>TTFT</th></tr></thead>
+                <thead><tr><th>Time</th><th>Status</th><th>Model</th><th>Tokens</th><th>Saved</th><th>TTFT</th><th>Total</th></tr></thead>
                 <tbody>${renderActivityRows(data.recentActivity, 'No runtime activity yet.')}</tbody>
             </table>
         </div>

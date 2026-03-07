@@ -11,6 +11,7 @@ export interface ActivityLike {
     status: string;
     saved?: string;
     ttftMs?: number;
+    totalMs?: number;
 }
 
 export interface GlobalStatsLike {
@@ -19,6 +20,7 @@ export interface GlobalStatsLike {
     blockedLoops: number;
     timedRequests: number;
     totalTtftMs: number;
+    totalResponseMs: number;
     smartRouteDowngrades: number;
     compressionCalls: number;
     compressedTokensSaved: number;
