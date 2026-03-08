@@ -45,13 +45,22 @@ export function initAdminCredentials(): void {
 
 /**
  * Validate username + password against stored credentials.
+ * Falls back to accepting ADMIN_TOKEN as the password when
+ * no ADMIN_USER/ADMIN_PASS are configured (token-only mode).
  */
 export function validateCredentials(username: string, password: string): boolean {
-    if (!adminUser || !adminPassHash || !adminSalt) return false;
-    if (username !== adminUser) return false;
+    // If ADMIN_USER/ADMIN_PASS are configured, check those
+    if (adminUser && adminPassHash && adminSalt) {
+        if (username !== adminUser) return false;
+        const hash = crypto.scryptSync(password, adminSalt, SCRYPT_KEYLEN);
+        return crypto.timingSafeEqual(hash, adminPassHash);
+    }
 
-    const hash = crypto.scryptSync(password, adminSalt, SCRYPT_KEYLEN);
-    return crypto.timingSafeEqual(hash, adminPassHash);
+    // Fallback: if only ADMIN_TOKEN is configured, accept it as the password
+    const adminToken = process.env.ADMIN_TOKEN;
+    if (adminToken && password === adminToken) return true;
+
+    return false;
 }
 
 export function hasCredentialsConfigured(): boolean {
@@ -123,9 +132,12 @@ export function requireAdminAuth(req: Request, res: Response, next: NextFunction
     const adminToken = process.env.ADMIN_TOKEN;
     const credsConfigured = hasCredentialsConfigured();
 
-    // If neither ADMIN_TOKEN nor ADMIN_USER/PASS are configured → open access
+    // If nothing configured → restrict to localhost only
     if (!adminToken && !credsConfigured) {
-        next();
+        const clientIp = req.ip || req.socket.remoteAddress || '';
+        const isLocal = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp === '::ffff:127.0.0.1';
+        if (isLocal) { next(); return; }
+        res.status(401).json({ error: { message: 'Admin authentication required — set ADMIN_TOKEN or access from localhost' } });
         return;
     }
 
@@ -139,14 +151,12 @@ export function requireAdminAuth(req: Request, res: Response, next: NextFunction
         }
     }
 
-    // Check session cookie
-    if (credsConfigured) {
-        const cookies = parseCookies(req.headers.cookie);
-        const sessionId = cookies['admin_session'];
-        if (sessionId && validateSession(sessionId)) {
-            next();
-            return;
-        }
+    // Check session cookie (always — sessions work in both credential and token-only modes)
+    const cookies = parseCookies(req.headers.cookie);
+    const sessionId = cookies['admin_session'];
+    if (sessionId && validateSession(sessionId)) {
+        next();
+        return;
     }
 
     res.status(401).json({ error: { message: 'Admin authentication required' } });
@@ -159,9 +169,12 @@ export function requireAdminPage(req: Request, res: Response, next: NextFunction
     const adminToken = process.env.ADMIN_TOKEN;
     const credsConfigured = hasCredentialsConfigured();
 
-    // If nothing configured → open access
+    // If nothing configured → restrict to localhost only
     if (!adminToken && !credsConfigured) {
-        next();
+        const clientIp = req.ip || req.socket.remoteAddress || '';
+        const isLocal = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp === '::ffff:127.0.0.1';
+        if (isLocal) { next(); return; }
+        res.redirect('/admin/login');
         return;
     }
 
@@ -175,14 +188,12 @@ export function requireAdminPage(req: Request, res: Response, next: NextFunction
         }
     }
 
-    // Check session cookie
-    if (credsConfigured) {
-        const cookies = parseCookies(req.headers.cookie);
-        const sessionId = cookies['admin_session'];
-        if (sessionId && validateSession(sessionId)) {
-            next();
-            return;
-        }
+    // Check session cookie (always — sessions work in both credential and token-only modes)
+    const cookies = parseCookies(req.headers.cookie);
+    const sessionId = cookies['admin_session'];
+    if (sessionId && validateSession(sessionId)) {
+        next();
+        return;
     }
 
     res.redirect('/admin/login');

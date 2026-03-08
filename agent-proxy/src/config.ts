@@ -44,9 +44,11 @@ export const ACTIVITY_BUFFER_SIZE = 50;              // Circular buffer for rece
 
 // ─── Tool Result Optimizer ──────────────────────────────
 export const TRO_RECENT_WINDOW = 10;                 // Keep last N messages fully intact
-export const TRO_SIZE_THRESHOLD = 2_000;             // Only compress results > 2k chars (~500 tokens)
-export const TRO_HEAD_LINES = 5;                     // Keep first N lines in summary
-export const TRO_TAIL_LINES = 5;                     // Keep last N lines in summary
+export const TRO_SIZE_THRESHOLD = 8_000;             // Only compress results > 8k chars (~2000 tokens)
+                                                     // 2k was too aggressive — normal file reads got truncated,
+                                                     // causing agents to re-read files (net token INCREASE)
+export const TRO_HEAD_LINES = 10;                    // Keep first N lines in summary
+export const TRO_TAIL_LINES = 10;                    // Keep last N lines in summary
 
 // ─── Context CDN ────────────────────────────────────────
 export const CDN_MIN_CHARS_ANTHROPIC = 4_096;        // Min chars for Anthropic cache injection (~1024 tokens)
