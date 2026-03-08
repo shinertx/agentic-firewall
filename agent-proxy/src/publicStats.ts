@@ -153,7 +153,8 @@ export function buildPublicStats(
         : 0;
 
     return {
-        totalUsers: estimatedUsers,
+        // Public-facing "developers" should reflect observed usage, not modeled reach.
+        totalUsers: aggregate.totalUsers,
         estimatedUsers,
         trackedUsers: aggregate.totalUsers,
         uniqueInstalls,

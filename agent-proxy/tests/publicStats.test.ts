@@ -59,8 +59,8 @@ describe('buildPublicStats', () => {
         expect(stats.trackedUsers).toBe(79);
         expect(stats.uniqueInstalls).toBe(35);
         expect(stats.npmWeeklyDownloads).toBe(3673);
-        expect(stats.totalUsers).toBe(35 + 3673 + HISTORICAL_INSTALL_BASELINE);
-        expect(stats.estimatedUsers).toBe(stats.totalUsers);
+        expect(stats.totalUsers).toBe(79);
+        expect(stats.estimatedUsers).toBe(35 + 3673 + HISTORICAL_INSTALL_BASELINE);
         expect(stats.avgTtftMs).toBe(250);
         expect(stats.avgResponseMs).toBe(700);
         expect(stats.avgEstimationErrorPct).toBe(12.5);
