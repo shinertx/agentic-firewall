@@ -204,14 +204,19 @@ export function applyContextCDN(body: LLMRequest, isGemini: boolean, reqUrl: str
             }
         }
 
-        if (body.messages && Array.isArray(body.messages) && body.messages.length > 0) {
-            const lastMsgIndex = body.messages.length - 1;
-            const lastMsg = body.messages[lastMsgIndex];
-
-            if (lastMsg && lastMsg.role === 'user' && lastMsg.content) {
-                const result = injectEphemeralCache(lastMsg.content);
-                if (result.modified) {
-                    lastMsg.content = result.content;
+        // NOTE: We intentionally do NOT inject cache_control on the last user message.
+        // In agentic conversations, the last user message changes every turn (new tool
+        // results, new user input). Injecting cache_control would pay the 25% cache WRITE
+        // surcharge on every request with zero chance of a cache READ — a pure tax on some
+        // of the largest content blocks in the request.
+        // Only the system prompt (stable across turns) benefits from cache injection.
+        if (body.tools && Array.isArray(body.tools) && body.tools.length > 0) {
+            // Tools definitions are stable across a conversation, so they benefit from caching
+            const toolsStr = JSON.stringify(body.tools);
+            if (toolsStr.length >= CDN_MIN_CHARS_ANTHROPIC) {
+                const lastTool = body.tools[body.tools.length - 1];
+                if (lastTool && typeof lastTool === 'object' && !lastTool.cache_control) {
+                    lastTool.cache_control = { type: 'ephemeral' };
                     modified = true;
                 }
             }

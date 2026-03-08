@@ -15,6 +15,8 @@ import {
 function mockReq(overrides: any = {}): any {
     return {
         headers: {},
+        ip: overrides.ip || undefined,
+        socket: { remoteAddress: overrides.remoteAddress || '10.0.0.1' },
         ...overrides,
     };
 }
@@ -67,10 +69,22 @@ describe('Admin Auth', () => {
         it('should return false when no credentials configured', () => {
             delete process.env.ADMIN_USER;
             delete process.env.ADMIN_PASS;
+            delete process.env.ADMIN_TOKEN;
             initAdminCredentials();
 
             expect(hasCredentialsConfigured()).toBe(false);
             expect(validateCredentials('admin', 'secret123')).toBe(false);
+        });
+
+        it('should accept ADMIN_TOKEN as password in token-only mode', () => {
+            delete process.env.ADMIN_USER;
+            delete process.env.ADMIN_PASS;
+            process.env.ADMIN_TOKEN = 'my-secret-token';
+            initAdminCredentials();
+
+            expect(hasCredentialsConfigured()).toBe(false);
+            expect(validateCredentials('anything', 'my-secret-token')).toBe(true);
+            expect(validateCredentials('anything', 'wrong-token')).toBe(false);
         });
 
         it('should handle partial env (only user, no pass)', () => {
@@ -125,17 +139,31 @@ describe('Admin Auth', () => {
     });
 
     describe('requireAdminAuth middleware', () => {
-        it('should allow open access when nothing configured', () => {
+        it('should allow localhost access when nothing configured', () => {
             delete process.env.ADMIN_TOKEN;
             delete process.env.ADMIN_USER;
             delete process.env.ADMIN_PASS;
             initAdminCredentials();
 
-            const req = mockReq();
+            const req = mockReq({ ip: '127.0.0.1' });
             const res = mockRes();
             let called = false;
             requireAdminAuth(req, res, () => { called = true; });
             expect(called).toBe(true);
+        });
+
+        it('should reject remote access when nothing configured', () => {
+            delete process.env.ADMIN_TOKEN;
+            delete process.env.ADMIN_USER;
+            delete process.env.ADMIN_PASS;
+            initAdminCredentials();
+
+            const req = mockReq({ ip: '203.0.113.5' });
+            const res = mockRes();
+            let called = false;
+            requireAdminAuth(req, res, () => { called = true; });
+            expect(called).toBe(false);
+            expect(res.statusCode).toBe(401);
         });
 
         it('should accept valid Bearer token', () => {
@@ -169,6 +197,22 @@ describe('Admin Auth', () => {
             process.env.ADMIN_USER = 'admin';
             process.env.ADMIN_PASS = 'test';
             delete process.env.ADMIN_TOKEN;
+            initAdminCredentials();
+
+            const sessionId = createSession('admin');
+            const req = mockReq({ headers: { cookie: `admin_session=${sessionId}` } });
+            const res = mockRes();
+            let called = false;
+            requireAdminAuth(req, res, () => { called = true; });
+            expect(called).toBe(true);
+
+            destroySession(sessionId);
+        });
+
+        it('should accept session cookie in token-only mode', () => {
+            process.env.ADMIN_TOKEN = 'my-secret-token';
+            delete process.env.ADMIN_USER;
+            delete process.env.ADMIN_PASS;
             initAdminCredentials();
 
             const sessionId = createSession('admin');
@@ -227,17 +271,31 @@ describe('Admin Auth', () => {
             destroySession(sessionId);
         });
 
-        it('should allow open access when nothing configured', () => {
+        it('should allow localhost access when nothing configured', () => {
             delete process.env.ADMIN_TOKEN;
             delete process.env.ADMIN_USER;
             delete process.env.ADMIN_PASS;
             initAdminCredentials();
 
-            const req = mockReq();
+            const req = mockReq({ ip: '::1' });
             const res = mockRes();
             let called = false;
             requireAdminPage(req, res, () => { called = true; });
             expect(called).toBe(true);
+        });
+
+        it('should redirect remote access when nothing configured', () => {
+            delete process.env.ADMIN_TOKEN;
+            delete process.env.ADMIN_USER;
+            delete process.env.ADMIN_PASS;
+            initAdminCredentials();
+
+            const req = mockReq({ ip: '203.0.113.5' });
+            const res = mockRes();
+            let called = false;
+            requireAdminPage(req, res, () => { called = true; });
+            expect(called).toBe(false);
+            expect(res._redirect).toBe('/admin/login');
         });
     });
 });

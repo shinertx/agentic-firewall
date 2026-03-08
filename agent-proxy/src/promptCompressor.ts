@@ -148,7 +148,9 @@ async function compressSystemPrompt(content: string): Promise<{ compressed: stri
 
     const result = await ollamaGenerate(prompt, { timeout: COMPRESSION_TIMEOUT });
 
-    if (result.length > 10 && result.length < content.length * 0.9) {
+    // Require at least 30% reduction — marginal compression isn't worth the
+    // Ollama latency and quality risk from a local 3B model.
+    if (result.length > 10 && result.length < content.length * 0.7) {
         const tokens = estimateTokens(result);
         compressionCache.set(hash, { compressed: result, tokens, createdAt: Date.now() });
         return { compressed: result, tokens, cacheHit: false };
@@ -201,7 +203,8 @@ async function compressHistory(messages: any[], isGemini: boolean): Promise<{ co
 
     const result = await ollamaGenerate(prompt, { timeout: COMPRESSION_TIMEOUT });
 
-    if (result.length > 10 && result.length < text.length * 0.9) {
+    // Same 30% floor as system prompt compression
+    if (result.length > 10 && result.length < text.length * 0.7) {
         const tokens = estimateTokens(result);
         compressionCache.set(hash, { compressed: result, tokens, createdAt: Date.now() });
         return { compressed: result, tokens, cacheHit: false };

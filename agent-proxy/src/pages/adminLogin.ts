@@ -6,6 +6,13 @@ export function renderAdminLogin(error?: string): string {
         ? `<div class="error">${error}</div>`
         : '';
 
+    // Token-only mode: ADMIN_TOKEN is set but no ADMIN_USER/ADMIN_PASS
+    const hasToken = !!process.env.ADMIN_TOKEN;
+    const hasCreds = !!(process.env.ADMIN_USER && process.env.ADMIN_PASS);
+    const tokenOnlyHint = (hasToken && !hasCreds)
+        ? '<p style="font-size:13px;color:#64748b;margin-top:8px;text-align:center">Enter any username and your ADMIN_TOKEN as the password</p>'
+        : '';
+
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -132,6 +139,7 @@ button:hover { background: #4338ca; }
         <input type="password" id="password" name="password" required autocomplete="current-password">
         <button type="submit">Sign In</button>
     </form>
+    ${tokenOnlyHint}
     <a href="/" class="back">Back to home</a>
 </div>
 </body>
