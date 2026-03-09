@@ -262,11 +262,14 @@ export async function handleProxyRequest(req: Request, res: ExpressResponse) {
 
     if (!isPublicMode) {
         const { headerName, headerPrefix } = getProviderHeaderConfig(provider);
+        const incomingAuth = headers[headerName] || '';
+        const hasOauthToken = typeof incomingAuth === 'string' && incomingAuth.includes('eyJ');
+
         const hasProviderKey = provider === 'gemini'
             ? !!(req.query.key || headers[headerName])
             : !!headers[headerName];
 
-        if (!hasProviderKey) {
+        if (!hasProviderKey && !hasOauthToken) {
             const keyResult = getProviderKey(provider);
             if ('error' in keyResult) {
                 res.status(400).json({ error: { message: keyResult.error } });
@@ -281,10 +284,10 @@ export async function handleProxyRequest(req: Request, res: ExpressResponse) {
         headers,
     };
 
-    // Fast pass-through for /v1/messages/count_tokens — skip all firewall logic
+    // Fast pass-through for un-proxied endpoints (count_tokens)
     if (isCountTokens) {
-        console.log(`[PROXY] => count_tokens pass-through to ${url}`);
-        const ctInit: RequestInit = { method: req.method, headers, body: req.body ? JSON.stringify(req.body) : undefined };
+        console.log(`[PROXY] => Pass-through (no inspection) to ${url}`);
+        const ctInit: RequestInit = { method: req.method, headers, body: req.body && Object.keys(req.body).length > 0 ? JSON.stringify(req.body) : undefined };
         try {
             const ctRes = await fetch(url, ctInit);
             ctRes.headers.forEach((value, key) => {
@@ -301,8 +304,8 @@ export async function handleProxyRequest(req: Request, res: ExpressResponse) {
                 res.write(value);
             }
         } catch (err) {
-            console.error('[PROXY] count_tokens error:', err);
-            if (!res.headersSent) res.status(502).json({ error: { message: 'Failed to reach Anthropic count_tokens endpoint' } });
+            console.error('[PROXY] pass-through error:', err);
+            if (!res.headersSent) res.status(502).json({ error: { message: 'Failed to reach upstream endpoint' } });
         } finally {
             res.end();
         }
