@@ -286,7 +286,10 @@ export async function handleProxyRequest(req: Request, res: ExpressResponse) {
     };
 
     // Fast pass-through for un-proxied endpoints (count_tokens)
-    if (isCountTokens) {
+    // Fast pass-through for un-proxied endpoints (count_tokens)
+    const isRealtimeResponses = req.originalUrl.includes('/v1/responses');
+
+    if (isCountTokens || isRealtimeResponses) {
         console.log(`[PROXY] => Pass-through (no inspection) to ${url}`);
         const ctInit: RequestInit = { method: req.method, headers, body: req.body && Object.keys(req.body).length > 0 ? JSON.stringify(req.body) : undefined };
         try {
