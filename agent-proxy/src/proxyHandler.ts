@@ -127,7 +127,7 @@ export function normalizeCacheControlTTLs(body: LLMRequest): boolean {
     return true;
 }
 
-function hasExistingCacheControl(body: LLMRequest): boolean {
+function hasExistingCacheControl(body: LLMRequest | undefined): boolean {
     const check = (obj: any): boolean => {
         if (!obj) return false;
         if (typeof obj !== 'object') return false;
@@ -135,6 +135,7 @@ function hasExistingCacheControl(body: LLMRequest): boolean {
         if (Array.isArray(obj)) return obj.some(check);
         return Object.values(obj).some(check);
     };
+    if (!body) return false;
     return check(body.system) || check(body.messages) || check(body.tools);
 }
 
