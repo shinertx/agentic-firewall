@@ -23,7 +23,7 @@ export function parseAnthropicUsage(chunks: Buffer[]): ParsedUsage | null {
         let cacheCreationTokens = 0;
         let found = false;
 
-        const eventRegex = /event:\s*(\w+)\ndata:\s*(.+)/g;
+        const eventRegex = /event:\s*(\w+)\r?\ndata:\s*(.+)/g;
         let match: RegExpExecArray | null;
 
         while ((match = eventRegex.exec(text)) !== null) {
