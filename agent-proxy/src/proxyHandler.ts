@@ -679,6 +679,7 @@ export async function handleProxyRequest(req: Request, res: ExpressResponse) {
         globalStats.realInputTokens += usage.inputTokens;
         globalStats.realOutputTokens += usage.outputTokens;
         globalStats.realCachedTokens += usage.cachedTokens;
+        globalStats.realCacheCreationTokens += usage.cacheCreationTokens;
 
         // Track estimation accuracy (per-model)
         const estimated = Math.round(originalBodyStr.length / 4);
