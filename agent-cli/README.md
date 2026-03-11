@@ -1,16 +1,22 @@
 # vibe-billing
 
-**Agent Runtime Control** — Stop AI agents from getting stuck in loops and burning your money.
+`vibe-billing` is a trust-first CLI for scanning agent waste and routing supported agent traffic through the Vibe Billing firewall.
 
-## Install
+## Install / Setup
 
 ```bash
 npx vibe-billing setup
 ```
 
-## Proof of Savings
+`setup` does three things:
 
-Run `npx vibe-billing scan` to analyze your local agent logs and instantly see exactly how much money you've lost to API hallucinations. 
+1. Detects supported local agent installs such as OpenClaw and Claude Code.
+2. Writes managed `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL` routing blocks into your shell config and, when OpenClaw is present, `~/.openclaw/.env`.
+3. Verifies the firewall can be reached. If OpenClaw is detected, it only reports full success after a real OpenClaw request is verified through the proxy.
+
+## Scan First
+
+Run `npx vibe-billing scan` to inspect local Claude Code and OpenClaw logs before changing anything.
 
 ```text
 Agent Waste Report
@@ -27,32 +33,60 @@ Fix with:
 npx vibe-billing setup
 ```
 
-## Works With
+## Validate Your Setup
 
-100% invisible, native routing for the most popular SDKs:
+Use these commands after install:
 
-- **OpenClaw** (`openclaw.json` / `.openclaw/.env`)
-- **Claude Code** (`ANTHROPIC_BASE_URL` env var)
-- **OpenAI SDK** (`OPENAI_BASE_URL` env var)
-- **Anthropic SDK** (`ANTHROPIC_BASE_URL` env var)
-- **Any framework** supporting standard `base_url` overrides.
+```bash
+npx vibe-billing verify
+npx vibe-billing doctor
+```
+
+- `verify` runs the end-to-end validation flow.
+- `doctor` runs the same checks and exits nonzero when a required check fails.
+
+When OpenClaw is installed, validation checks:
+
+- proxy reachability
+- shell env state
+- the managed `~/.openclaw/.env` routing block
+- supported API-key auth for Anthropic or OpenAI
+- a real OpenClaw smoke request through the firewall
+
+## Supported Integrations
+
+Current integration targets are:
+
+- **OpenClaw** via `~/.openclaw/.env` plus standard provider env vars
+- **Claude Code** via `ANTHROPIC_BASE_URL`
+- **OpenAI SDK / OpenAI-compatible tools** via `OPENAI_BASE_URL`
+- **Anthropic SDK** via `ANTHROPIC_BASE_URL`
+
+Current support boundary:
+
+- OpenClaw **API-key / BYOK flows** for Anthropic and OpenAI are the intended support path. Run `npx vibe-billing doctor` to confirm your local agent actually routes through the firewall.
+- OpenClaw **OAuth/account-linked flows are not verified yet**.
+- `vibe-billing` does **not** patch `openclaw.json`.
+
+## How Routing Works
+
+Vibe Billing routes traffic to the managed firewall endpoint:
+
+```text
+Your Agent -> Vibe Billing firewall -> AI provider
+```
+
+The CLI uses managed env blocks instead of deep app mutation:
+
+- shell config gets `OPENAI_BASE_URL` and `ANTHROPIC_BASE_URL`
+- OpenClaw gets the same routing values in `~/.openclaw/.env`
 
 ## Uninstall
 
-If you ever want to remove it, it restores your computer to exactly how it was:
+To remove the managed routing blocks:
 
 ```bash
 npx vibe-billing uninstall
 ```
 
-## How It Works
-
-The firewall sits locally on your machine at `localhost:4000`. Every API request from your agent passes through it before hitting Anthropic or OpenAI.
-
-1. **Loop detection** — If an agent submits the exact same request 3 times in a row, the proxy hard-kills the connection before you are billed for infinite loops.
-2. **Context caching** — The proxy auto-injects `ephemeral` caching headers into your payloads, yielding up to 80% cheaper system prompts on supported models.
-3. **No Config Needed** — `setup` handles the environment variables and `openclaw.json` bindings automatically.
-
-```text
-Your Agent → Agent Firewall (localhost) → AI Provider
-```
+`uninstall` removes only the managed shell and OpenClaw env blocks added by the CLI.
