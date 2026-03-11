@@ -292,10 +292,6 @@ export async function handleProxyRequest(req: Request, res: ExpressResponse) {
     if (isCountTokens || isRealtimeResponses) {
         console.log(`[PROXY] => Pass-through (no inspection) to ${url}`);
         const ctInit: RequestInit = { method: req.method, headers, body: req.body && Object.keys(req.body).length > 0 ? JSON.stringify(req.body) : undefined };
-        const passThroughBodyStr = req.body ? JSON.stringify(req.body) : "";
-        const fetchStartMs = Date.now();
-        let ttftMs = 0;
-        const chunks: Buffer[] = [];
         try {
             const ctRes = await fetch(url, ctInit);
             ctRes.headers.forEach((value, key) => {
@@ -309,47 +305,7 @@ export async function handleProxyRequest(req: Request, res: ExpressResponse) {
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
-                if (ttftMs === 0) ttftMs = Date.now() - fetchStartMs;
-                if (isRealtimeResponses) chunks.push(Buffer.from(value));
                 res.write(value);
-            }
-
-            if (isRealtimeResponses && req.method !== 'GET' && req.method !== 'HEAD' && req.body && Object.keys(req.body).length > 0) {
-                const totalResponseMs = Date.now() - fetchStartMs;
-                const displayModel = req.body?.model || 'unknown';
-                const estimatedPromptTokens = Math.max(Math.round(passThroughBodyStr.length / 4), 1000);
-                const apiKey = (req.headers['x-api-key'] || req.headers['authorization'] || '') as string;
-                const userId = !isPublicMode && !apiKey ? getLocalUserId() : getUserId(apiKey);
-                const sessionId = resolveSessionId(req);
-                getOrCreateSession(sessionId, userId);
-
-                globalStats.totalRequests++;
-                globalStats.totalTtftMs += ttftMs;
-                globalStats.totalResponseMs += totalResponseMs;
-                globalStats.timedRequests++;
-
-                if (ctRes.ok) {
-                    recordUserSpend(userId, displayModel, estimatedPromptTokens, false);
-                    recordSessionSpend(sessionId, displayModel, estimatedPromptTokens, false);
-                }
-
-                const usage = parseUsageFromChunks(chunks, provider);
-                if (usage) {
-                    globalStats.realInputTokens += usage.inputTokens;
-                    globalStats.realOutputTokens += usage.outputTokens;
-                    globalStats.realCachedTokens += usage.cachedTokens;
-                }
-
-                recordActivity({
-                    time: new Date().toLocaleTimeString(),
-                    model: displayModel,
-                    tokens: `${Math.round(estimatedPromptTokens / 1000)}k`,
-                    status: ctRes.ok ? 'Pass-through' : `Upstream ${ctRes.status}`,
-                    statusColor: ctRes.ok ? 'text-slate-300 bg-slate-300/10' : 'text-red-400 bg-red-400/10',
-                    saved: '',
-                    ttftMs,
-                    totalMs: totalResponseMs,
-                });
             }
         } catch (err) {
             console.error('[PROXY] pass-through error:', err);

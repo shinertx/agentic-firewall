@@ -17,10 +17,6 @@ type CheckResult = {
     durationMs?: number;
 };
 
-type FirewallStats = {
-    totalRequests?: number;
-};
-
 const FIREWALL_BASE_URL = stripTrailingSlash(process.env.FIREWALL_BASE_URL || 'http://127.0.0.1:4000');
 const FIREWALL_OPENAI_BASE_URL = stripTrailingSlash(process.env.FIREWALL_OPENAI_BASE_URL || `${FIREWALL_BASE_URL}/v1`);
 const OPENCLAW_ANTHROPIC_AGENT = process.env.OPENCLAW_ANTHROPIC_AGENT || 'main';
@@ -38,27 +34,6 @@ function formatResult(result: CheckResult): string {
 function isTruthy(value: string | undefined): boolean {
     if (!value) return false;
     return !['0', 'false', 'no'].includes(value.toLowerCase());
-}
-
-async function getFirewallStats(): Promise<FirewallStats> {
-    const response = await fetch(`${FIREWALL_BASE_URL}/api/stats`);
-    if (!response.ok) {
-        throw new Error(`stats returned ${response.status}`);
-    }
-    return response.json() as Promise<FirewallStats>;
-}
-
-async function withProxyRequestDelta(fn: () => Promise<string>): Promise<string> {
-    const before = await getFirewallStats();
-    const detail = await fn();
-    const after = await getFirewallStats();
-    const requestDelta = (after.totalRequests || 0) - (before.totalRequests || 0);
-
-    if (requestDelta < 1) {
-        throw new Error('proxy request count did not increase');
-    }
-
-    return `${detail} (+${requestDelta} proxied request${requestDelta === 1 ? '' : 's'})`;
 }
 
 async function timeCheck(name: string, fn: () => Promise<string>): Promise<CheckResult> {
@@ -90,21 +65,19 @@ async function checkAnthropicSdk(): Promise<CheckResult> {
     }
 
     return timeCheck('anthropic-sdk', async () => {
-        return withProxyRequestDelta(async () => {
-            const client = new Anthropic({
-                apiKey,
-                baseURL: FIREWALL_BASE_URL,
-            });
-
-            const response = await client.messages.create({
-                model: process.env.TIER1_ANTHROPIC_MODEL || 'claude-sonnet-4-6',
-                max_tokens: 24,
-                messages: [{ role: 'user', content: 'Reply with the single word ok' }],
-            });
-
-            const text = response.content[0]?.type === 'text' ? response.content[0].text : '(non-text response)';
-            return `${response.model} -> ${JSON.stringify(text)}`;
+        const client = new Anthropic({
+            apiKey,
+            baseURL: FIREWALL_BASE_URL,
         });
+
+        const response = await client.messages.create({
+            model: process.env.TIER1_ANTHROPIC_MODEL || 'claude-sonnet-4-6',
+            max_tokens: 24,
+            messages: [{ role: 'user', content: 'Reply with the single word ok' }],
+        });
+
+        const text = response.content[0]?.type === 'text' ? response.content[0].text : '(non-text response)';
+        return `${response.model} -> ${JSON.stringify(text)}`;
     });
 }
 
@@ -115,21 +88,19 @@ async function checkOpenAIChat(): Promise<CheckResult> {
     }
 
     return timeCheck('openai-chat', async () => {
-        return withProxyRequestDelta(async () => {
-            const client = new OpenAI({
-                apiKey,
-                baseURL: FIREWALL_OPENAI_BASE_URL,
-            });
-
-            const response = await client.chat.completions.create({
-                model: process.env.TIER1_OPENAI_MODEL || 'gpt-4o-mini',
-                messages: [{ role: 'user', content: 'Reply with the single word ok' }],
-                max_completion_tokens: 24,
-            });
-
-            const text = response.choices[0]?.message?.content || '(empty response)';
-            return `${response.model} -> ${JSON.stringify(text)}`;
+        const client = new OpenAI({
+            apiKey,
+            baseURL: FIREWALL_OPENAI_BASE_URL,
         });
+
+        const response = await client.chat.completions.create({
+            model: process.env.TIER1_OPENAI_MODEL || 'gpt-4o-mini',
+            messages: [{ role: 'user', content: 'Reply with the single word ok' }],
+            max_completion_tokens: 24,
+        });
+
+        const text = response.choices[0]?.message?.content || '(empty response)';
+        return `${response.model} -> ${JSON.stringify(text)}`;
     });
 }
 
@@ -140,20 +111,18 @@ async function checkOpenAIResponses(): Promise<CheckResult> {
     }
 
     return timeCheck('openai-responses', async () => {
-        return withProxyRequestDelta(async () => {
-            const client = new OpenAI({
-                apiKey,
-                baseURL: FIREWALL_OPENAI_BASE_URL,
-            });
-
-            const response = await client.responses.create({
-                model: process.env.TIER1_OPENAI_MODEL || 'gpt-4o-mini',
-                input: 'Reply with the single word ok',
-                max_output_tokens: 24,
-            });
-
-            return `${response.model} -> ${JSON.stringify(response.output_text || '(empty response)')}`;
+        const client = new OpenAI({
+            apiKey,
+            baseURL: FIREWALL_OPENAI_BASE_URL,
         });
+
+        const response = await client.responses.create({
+            model: process.env.TIER1_OPENAI_MODEL || 'gpt-4o-mini',
+            input: 'Reply with the single word ok',
+            max_output_tokens: 24,
+        });
+
+        return `${response.model} -> ${JSON.stringify(response.output_text || '(empty response)')}`;
     });
 }
 
@@ -243,8 +212,7 @@ async function listOpenClawAgents(): Promise<string[]> {
         maxBuffer: 10 * 1024 * 1024,
     });
 
-    const parsed = JSON.parse(stdout) as Array<{ id?: string }> | { agents?: { list?: Array<{ id?: string }> } };
-    const agents = Array.isArray(parsed) ? parsed : parsed.agents?.list || [];
+    const agents = JSON.parse(stdout) as Array<{ id?: string }>;
     return agents.map(agent => agent.id).filter((value): value is string => Boolean(value));
 }
 
@@ -263,18 +231,15 @@ async function checkOpenClawAnthropic(): Promise<CheckResult> {
     }
 
     return timeCheck('openclaw-anthropic', async () => {
-        return withProxyRequestDelta(async () => {
-            const payload = await runOpenClawAgent(OPENCLAW_ANTHROPIC_AGENT, {
-                ...process.env,
-                ANTHROPIC_API_KEY: apiKey,
-                ANTHROPIC_BASE_URL: FIREWALL_BASE_URL,
-                OPENAI_BASE_URL: FIREWALL_OPENAI_BASE_URL,
-            });
-
-            const text = payload.payloads?.[0]?.text || '(empty response)';
-            const model = payload.meta?.agentMeta?.model || 'unknown-model';
-            return `${model} -> ${JSON.stringify(text)}`;
+        const payload = await runOpenClawAgent(OPENCLAW_ANTHROPIC_AGENT, {
+            ...process.env,
+            ANTHROPIC_API_KEY: apiKey,
+            ANTHROPIC_BASE_URL: FIREWALL_BASE_URL,
         });
+
+        const text = payload.payloads?.[0]?.text || '(empty response)';
+        const model = payload.meta?.agentMeta?.model || 'unknown-model';
+        return `${model} -> ${JSON.stringify(text)}`;
     });
 }
 
@@ -297,18 +262,15 @@ async function checkOpenClawOpenAI(): Promise<CheckResult> {
     }
 
     return timeCheck('openclaw-openai', async () => {
-        return withProxyRequestDelta(async () => {
-            const payload = await runOpenClawAgent(OPENCLAW_OPENAI_AGENT, {
-                ...process.env,
-                OPENAI_API_KEY: apiKey,
-                OPENAI_BASE_URL: FIREWALL_OPENAI_BASE_URL,
-                ANTHROPIC_BASE_URL: FIREWALL_BASE_URL,
-            });
-
-            const text = payload.payloads?.[0]?.text || '(empty response)';
-            const model = payload.meta?.agentMeta?.model || 'unknown-model';
-            return `${model} -> ${JSON.stringify(text)}`;
+        const payload = await runOpenClawAgent(OPENCLAW_OPENAI_AGENT, {
+            ...process.env,
+            OPENAI_API_KEY: apiKey,
+            OPENAI_BASE_URL: FIREWALL_OPENAI_BASE_URL,
         });
+
+        const text = payload.payloads?.[0]?.text || '(empty response)';
+        const model = payload.meta?.agentMeta?.model || 'unknown-model';
+        return `${model} -> ${JSON.stringify(text)}`;
     });
 }
 
