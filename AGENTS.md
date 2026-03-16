@@ -12,7 +12,7 @@ This file is the **master org chart** for all AI agents working on this project.
 **Staging URL:** `https://staging.jockeyvc.com` (pending DNS)
 **Infrastructure:** GCP VM (`meme-snipe-v19-vm`), Docker Compose, Caddy (TLS)
 **CI/CD:** GitHub Actions → auto-deploy on merge to `main`
-**Repo:** Monorepo at `/Users/benjijmac/Documents/vibebilling`
+**Repo:** Monorepo at `/Users/benjijmac/Documents/vibebilling-clean`
 
 ---
 
@@ -42,6 +42,19 @@ When one agent finishes work that impacts another agent's territory:
 1. **Document the change** — Write a clear summary of what changed and why in the PR description or commit message.
 2. **Flag the dependency** — If Dashboard needs to update because Proxy added a new endpoint, add a comment: `<!-- HANDOFF: Dashboard needs to add a card for /api/new-endpoint -->`.
 3. **Never assume** — Don't modify another agent's code "while you're in there." Create a separate task.
+
+---
+
+## GitHub Engineering Practice
+
+When working in this repo, use GitHub as the source of truth and keep the local checkout boring:
+
+1. **Start from current `origin/main`.** Fetch first, branch from the latest remote main, and avoid stacking new work on stale local history.
+2. **Push branches, not direct `main` edits.** Treat `main` as PR-only and keep changes reviewable in a scoped branch.
+3. **Keep generated/runtime files out of commits.** Things like local stats dumps, cache files, or machine-specific artifacts must stay untracked unless the task explicitly requires them.
+4. **Ship behavior changes with verification.** If CLI or proxy behavior changes, include the smallest useful test or scripted verification and note what was verified before pushing.
+5. **Leave the repo in a clear state.** Before pushing, check `git status`, make sure only intentional files are included, and call out any known local-only leftovers.
+6. **Match docs to reality.** If setup, deploy, or integration behavior changes, update the relevant docs in the same branch so GitHub reflects how the product actually behaves.
 
 ---
 

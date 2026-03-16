@@ -18,12 +18,17 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
-const { execSync } = require('child_process');
+const { execSync, execFile, spawnSync } = require('child_process');
+const { promisify } = require('util');
 const readline = require('readline');
+const execFileAsync = promisify(execFile);
 
 const VERSION = '0.5.42';
 const PROXY_URL = 'https://api.jockeyvc.com';
 const PROXY_API = `${PROXY_URL}/api/stats`;
+const PROXY_OPENAI_BASE_URL = `${PROXY_URL}/v1`;
+const OPENCLAW_ANTHROPIC_AGENT = process.env.OPENCLAW_ANTHROPIC_AGENT || 'main';
+const OPENCLAW_OPENAI_AGENT = process.env.OPENCLAW_OPENAI_AGENT || 'openai-smoke';
 
 // ─── Install Identity ───────────────────────────────────
 const INSTALL_DIR = path.join(os.homedir(), '.vibe-billing');
@@ -228,6 +233,291 @@ function httpGet(url) {
             reject(new Error(`Request timed out after ${HTTP_TIMEOUT_MS / 1000}s`));
         });
     });
+}
+
+function readJsonFile(filepath) {
+    try {
+        if (!fs.existsSync(filepath)) return null;
+        return JSON.parse(fs.readFileSync(filepath, 'utf-8'));
+    } catch {
+        return null;
+    }
+}
+
+function requireCommand(command, args) {
+    const result = spawnSync(command, args, {
+        encoding: 'utf8',
+    });
+
+    if (result.status !== 0) {
+        throw new Error(result.stderr?.trim() || `${command} exited with ${result.status}`);
+    }
+
+    return {
+        stdout: result.stdout || '',
+        stderr: result.stderr || '',
+    };
+}
+
+function getOpenClawCommand() {
+    const explicit = process.env.OPENCLAW_BIN;
+    if (explicit) {
+        if (!fs.existsSync(explicit)) {
+            throw new Error(`OPENCLAW_BIN does not exist: ${explicit}`);
+        }
+        if (explicit.endsWith('.js')) {
+            return { command: process.execPath, args: [explicit] };
+        }
+        return { command: explicit, args: [] };
+    }
+
+    try {
+        const { stdout } = requireCommand('which', ['openclaw']);
+        const resolved = stdout.trim();
+        if (resolved) {
+            return { command: resolved, args: [] };
+        }
+    } catch {
+        // Fall through to npm cache lookup.
+    }
+
+    const npxRoot = path.join(os.homedir(), '.npm', '_npx');
+    if (!fs.existsSync(npxRoot)) return null;
+
+    const candidates = fs.readdirSync(npxRoot)
+        .map((entry) => path.join(npxRoot, entry, 'node_modules', 'openclaw', 'dist', 'index.js'))
+        .filter((candidate) => fs.existsSync(candidate))
+        .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+
+    if (candidates.length === 0) return null;
+    return { command: process.execPath, args: [candidates[0]] };
+}
+
+async function listOpenClawAgents() {
+    const openclaw = getOpenClawCommand();
+    if (!openclaw) return [];
+
+    const { stdout } = await execFileAsync(openclaw.command, [
+        ...openclaw.args,
+        'agents',
+        'list',
+        '--json',
+    ], {
+        env: process.env,
+        maxBuffer: 10 * 1024 * 1024,
+    });
+
+    const parsed = JSON.parse(stdout);
+    if (Array.isArray(parsed)) {
+        return parsed.map((agent) => agent.id).filter(Boolean);
+    }
+
+    if (Array.isArray(parsed?.agents?.list)) {
+        return parsed.agents.list.map((agent) => agent.id).filter(Boolean);
+    }
+
+    return [];
+}
+
+async function runOpenClawAgent(agentId, env, message) {
+    const openclaw = getOpenClawCommand();
+    if (!openclaw) {
+        throw new Error('OpenClaw CLI not found');
+    }
+
+    const { stdout } = await execFileAsync(openclaw.command, [
+        ...openclaw.args,
+        'agent',
+        '--local',
+        '--agent',
+        agentId,
+        '--message',
+        message,
+        '--json',
+    ], {
+        env,
+        maxBuffer: 10 * 1024 * 1024,
+    });
+
+    return JSON.parse(stdout);
+}
+
+function getOpenClawEnvPath() {
+    return path.join(os.homedir(), '.openclaw', '.env');
+}
+
+function getOpenClawAuthProfilePath(agentId) {
+    return path.join(os.homedir(), '.openclaw', 'agents', agentId, 'agent', 'auth-profiles.json');
+}
+
+function listOpenClawAgentIdsFromDisk(homeDir = os.homedir()) {
+    const agentsRoot = path.join(homeDir, '.openclaw', 'agents');
+    if (!fs.existsSync(agentsRoot)) return [];
+    return fs.readdirSync(agentsRoot, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name);
+}
+
+function getProviderEnvName(provider) {
+    return provider === 'anthropic' ? 'ANTHROPIC_API_KEY' : 'OPENAI_API_KEY';
+}
+
+function getProviderBaseUrl(provider) {
+    return provider === 'anthropic' ? PROXY_URL : PROXY_OPENAI_BASE_URL;
+}
+
+function getOpenClawBaseUrlOverrides(agentIds = null, homeDir = os.homedir()) {
+    const ids = Array.isArray(agentIds) && agentIds.length > 0
+        ? agentIds
+        : listOpenClawAgentIdsFromDisk(homeDir);
+
+    return ids.flatMap((agentId) => {
+        const authProfilePath = path.join(homeDir, '.openclaw', 'agents', agentId, 'agent', 'auth-profiles.json');
+        const profiles = readJsonFile(authProfilePath);
+        if (!profiles || typeof profiles !== 'object') return [];
+
+        return ['anthropic', 'openai'].flatMap((provider) => {
+            const providerProfile = profiles[provider];
+            const configuredBaseUrl = providerProfile?.baseURL || providerProfile?.baseUrl;
+            if (typeof configuredBaseUrl !== 'string' || !configuredBaseUrl.trim()) return [];
+
+            const baseUrl = configuredBaseUrl.trim();
+            const normalizedBaseUrl = baseUrl.replace(/\/+$/, '');
+            const expectedBaseUrl = getProviderBaseUrl(provider);
+            return [{
+                agentId,
+                provider,
+                authProfilePath,
+                baseUrl,
+                expectedBaseUrl,
+                matchesExpected: normalizedBaseUrl === expectedBaseUrl,
+            }];
+        });
+    });
+}
+
+function summarizeOpenClawBaseUrlOverrides(overrides, limit = 2) {
+    if (!Array.isArray(overrides) || overrides.length === 0) return '';
+
+    const visible = overrides.slice(0, limit)
+        .map((override) => `${override.provider}/${override.agentId} -> ${override.baseUrl}`);
+    const extra = overrides.length > limit ? ` (+${overrides.length - limit} more)` : '';
+    return `${visible.join('; ')}${extra}`;
+}
+
+function getOpenClawProviderCredential(provider, agentId) {
+    const expectedBaseUrl = getProviderBaseUrl(provider);
+    const authProfilePath = getOpenClawAuthProfilePath(agentId);
+    const profiles = readJsonFile(authProfilePath);
+    const providerProfile = profiles && typeof profiles === 'object' ? profiles[provider] : null;
+    const configuredBaseUrl = providerProfile?.baseURL || providerProfile?.baseUrl;
+    if (typeof configuredBaseUrl === 'string' && configuredBaseUrl.trim()) {
+        const normalizedBaseUrl = configuredBaseUrl.trim().replace(/\/+$/, '');
+        if (normalizedBaseUrl !== expectedBaseUrl) {
+            return {
+                status: 'unsupported',
+                detail: `OpenClaw ${provider} auth for ${agentId} overrides baseURL with ${configuredBaseUrl}`,
+                fix: `Remove the custom ${provider} baseURL from ${path.basename(authProfilePath)} or point it to ${expectedBaseUrl}.`,
+            };
+        }
+    }
+
+    const envName = getProviderEnvName(provider);
+    const envValue = process.env[envName];
+    if (envValue && envValue.trim()) {
+        return {
+            status: 'ready',
+            value: envValue.trim(),
+            source: envName,
+        };
+    }
+    if (!providerProfile) {
+        return {
+            status: 'missing',
+            detail: `No ${envName} env var or OpenClaw ${provider} API key profile found`,
+            fix: `Add ${envName} or configure an API key for the ${provider} provider in OpenClaw.`,
+        };
+    }
+
+    const apiKey = providerProfile.apiKey || providerProfile.api_key || providerProfile.key;
+    if (typeof apiKey === 'string' && apiKey.trim()) {
+        return {
+            status: 'ready',
+            value: apiKey.trim(),
+            source: `${path.basename(authProfilePath)}:${provider}`,
+        };
+    }
+
+    return {
+        status: 'unsupported',
+        detail: `OpenClaw ${provider} auth exists, but only API-key auth is supported right now`,
+        fix: `Switch ${provider} to an API key flow or export ${envName} before running setup.`,
+    };
+}
+
+function getOpenClawVerificationCandidates(agentIds) {
+    return [
+        {
+            provider: 'anthropic',
+            agentId: OPENCLAW_ANTHROPIC_AGENT,
+        },
+        {
+            provider: 'openai',
+            agentId: OPENCLAW_OPENAI_AGENT,
+        },
+    ].map((candidate) => {
+        if (!agentIds.includes(candidate.agentId)) {
+            return {
+                ...candidate,
+                status: 'missing-agent',
+                detail: `agent ${candidate.agentId} not found`,
+                fix: `Create the ${candidate.agentId} OpenClaw agent or set ${candidate.provider === 'anthropic' ? 'OPENCLAW_ANTHROPIC_AGENT' : 'OPENCLAW_OPENAI_AGENT'}.`,
+            };
+        }
+
+        const credential = getOpenClawProviderCredential(candidate.provider, candidate.agentId);
+        if (credential.status !== 'ready') {
+            return {
+                ...candidate,
+                status: credential.status,
+                detail: credential.detail,
+                fix: credential.fix,
+            };
+        }
+
+        return {
+            ...candidate,
+            status: 'ready',
+            credential,
+        };
+    });
+}
+
+function chooseOpenClawVerificationCandidate(candidates) {
+    const anthropic = candidates.find((candidate) => candidate.provider === 'anthropic');
+    const openai = candidates.find((candidate) => candidate.provider === 'openai');
+
+    if (anthropic?.status === 'ready') return anthropic;
+    if (anthropic && anthropic.status !== 'missing' && anthropic.status !== 'missing-agent') {
+        return anthropic;
+    }
+
+    if (openai?.status === 'ready') return openai;
+    if (anthropic) return anthropic;
+    if (openai) return openai;
+
+    return anthropic || null;
+}
+
+function extractOpenClawText(payload) {
+    if (Array.isArray(payload?.payloads)) {
+        const textPayload = payload.payloads.find((entry) => typeof entry?.text === 'string' && entry.text.trim());
+        if (textPayload) return textPayload.text.trim();
+    }
+    if (typeof payload?.text === 'string' && payload.text.trim()) {
+        return payload.text.trim();
+    }
+    return '';
 }
 
 // ─── Shell Config Detection (cross-platform) ────────────
@@ -824,18 +1114,36 @@ async function setup() {
         return;
     }
 
-    // Send registration ping (fire-and-forget telemetry)
-    sendRegistrationPing();
+    const validation = await runValidationSuite({ title: null, fromSetup: true });
+    const fullyVerified = validation.success && (!validation.openClawDetected || validation.verified);
+
+    if (fullyVerified) {
+        sendRegistrationPing();
+
+        header('Setup Complete!');
+        log(`${c.green}${c.bold}  Your agents are now protected.${c.reset}\n`);
+        log(`${c.dim}• Loop detection: kills stuck agents${c.reset}`);
+        log(`${c.dim}• Prompt caching: up to 90% savings${c.reset}`);
+        log(`${c.dim}• Budget control: cap spend per session${c.reset}`);
+        log('');
+        log(`  ${c.bold}Next:${c.reset} Launch any agent — it will route through the firewall automatically.`);
+        log(`  ${c.bold}Check:${c.reset} ${c.cyan}npx vibe-billing status${c.reset} to see live traffic.`);
+        log(`  ${c.bold}Undo:${c.reset}  ${c.cyan}npx vibe-billing uninstall${c.reset} to remove.\n`);
+        return;
+    }
 
     header('Setup Complete!');
-    log(`${c.green}${c.bold}  Your agents are now protected.${c.reset}\n`);
-    log(`${c.dim}• Loop detection: kills stuck agents${c.reset}`);
-    log(`${c.dim}• Prompt caching: up to 90% savings${c.reset}`);
-    log(`${c.dim}• Budget control: cap spend per session${c.reset}`);
+    warn('Configured, but not verified.');
+    if (validation.failures[0]) {
+        log(`  ${c.bold}Blocker:${c.reset} ${validation.failures[0].detail}`);
+        log(`  ${c.bold}Fix:${c.reset} ${validation.failures[0].fix}`);
+    } else {
+        log(`  ${c.bold}Blocker:${c.reset} OpenClaw was detected, but no verified request reached the firewall.`);
+        log(`  ${c.bold}Fix:${c.reset} Run ${c.cyan}npx vibe-billing doctor${c.reset} and follow the first failure.`);
+    }
     log('');
-    log(`  ${c.bold}Next:${c.reset} Launch any agent — it will route through the firewall automatically.`);
-    log(`  ${c.bold}Check:${c.reset} ${c.cyan}npx vibe-billing status${c.reset} to see live traffic.`);
-    log(`  ${c.bold}Undo:${c.reset}  ${c.cyan}npx vibe-billing uninstall${c.reset} to remove.\n`);
+    log(`  ${c.bold}Doctor:${c.reset} ${c.cyan}npx vibe-billing doctor${c.reset}`);
+    log(`  ${c.bold}Undo:${c.reset}   ${c.cyan}npx vibe-billing uninstall${c.reset}\n`);
 }
 
 // ─── Uninstall Command ──────────────────────────────────
@@ -893,11 +1201,230 @@ async function uninstall() {
             warn(`Could not clean OpenClaw .env: ${err.message}`);
         }
     }
+
+    const lingeringOverrides = getOpenClawBaseUrlOverrides();
+    if (lingeringOverrides.length > 0) {
+        warn(`OpenClaw auth profiles still contain custom baseURL overrides: ${summarizeOpenClawBaseUrlOverrides(lingeringOverrides)}.`);
+        info('Those auth-profile overrides were not added by vibe-billing. Remove the custom baseURL entries from auth-profiles.json if you want OpenClaw to connect directly with no hidden routing.');
+    }
     // Removing env vars from shell config (above) is sufficient.
 
     log('');
     ok('Agent Firewall uninstalled. Your agents now connect directly to providers.');
     log(`${c.dim}Run ${c.bold}npx vibe-billing setup${c.reset}${c.dim} to re-enable.${c.reset}\n`);
+}
+
+function getCurrentProxyEnvStatus() {
+    const openai = (process.env.OPENAI_BASE_URL || '') === PROXY_OPENAI_BASE_URL;
+    const anthropic = (process.env.ANTHROPIC_BASE_URL || '') === PROXY_URL;
+    return {
+        openai,
+        anthropic,
+        ok: openai || anthropic,
+    };
+}
+
+async function runValidationSuite(options = {}) {
+    const title = options.title === undefined ? 'Agent Firewall — Doctor' : options.title;
+    const fromSetup = options.fromSetup === true;
+    if (title) header(title);
+
+    const result = {
+        success: true,
+        verified: false,
+        openClawDetected: false,
+        provider: null,
+        agentId: null,
+        requestDelta: 0,
+        failures: [],
+    };
+
+    const failCheck = (detail, fix) => {
+        result.success = false;
+        result.failures.push({ detail, fix });
+    };
+
+    const proxySpin = spinner('Checking proxy connection');
+    let proxyStats = null;
+    try {
+        proxyStats = await httpGet(PROXY_API);
+        if (typeof proxyStats?.totalRequests !== 'number') {
+            throw new Error('stats payload missing totalRequests');
+        }
+        proxySpin.stop(`${c.green}✓ Proxy reachable${c.reset}`);
+    } catch (err) {
+        proxySpin.stop(`${c.red}✗ Proxy unreachable${c.reset}`);
+        failCheck(
+            `Could not reach ${PROXY_URL}: ${err.message}`,
+            'Check your network or re-run npx vibe-billing setup.',
+        );
+    }
+
+    const currentEnvSpin = spinner('Checking current shell');
+    const currentEnv = getCurrentProxyEnvStatus();
+    if (currentEnv.ok) {
+        currentEnvSpin.stop(`${c.green}✓ Current shell points at the firewall${c.reset}`);
+    } else {
+        currentEnvSpin.stop(`${c.yellow}⚠ Current shell env vars are missing${c.reset}`);
+    }
+
+    const shellSpin = spinner('Checking shell configuration');
+    const shell = findShellConfig();
+    const shellConfigured = Boolean(shell && fs.existsSync(shell.path) && fs.readFileSync(shell.path, 'utf-8').includes(MARKER));
+    if (shellConfigured) {
+        shellSpin.stop(`${c.green}✓ Shell config contains managed routing${c.reset}`);
+    } else if (shell) {
+        shellSpin.stop(`${c.yellow}⚠ ${path.basename(shell.path)} is missing the managed routing block${c.reset}`);
+        if (!fromSetup) {
+            // OpenClaw can work via .openclaw/.env only, so this stays non-fatal.
+        }
+    } else {
+        shellSpin.stop(`${c.yellow}⚠ Shell config file not detected${c.reset}`);
+    }
+
+    const openClawDir = path.join(os.homedir(), '.openclaw');
+    const openClawDetected = fs.existsSync(openClawDir);
+    result.openClawDetected = openClawDetected;
+
+    const ocDetectSpin = spinner('Checking OpenClaw installation');
+    if (!openClawDetected) {
+        ocDetectSpin.stop(`${c.dim}ℹ OpenClaw not detected${c.reset}`);
+    } else {
+        ocDetectSpin.stop(`${c.green}✓ OpenClaw detected${c.reset}`);
+    }
+
+    if (!openClawDetected) {
+        log('');
+        if (result.success) {
+            ok('Firewall configuration looks good for SDK traffic.');
+        } else {
+            fail('Validation failed.');
+            log(`  Blocker: ${result.failures[0].detail}`);
+            log(`  Fix: ${result.failures[0].fix}`);
+        }
+        return result;
+    }
+
+    const openClawEnvPath = getOpenClawEnvPath();
+    const ocEnvSpin = spinner('Checking OpenClaw routing block');
+    const ocEnvConfigured = fs.existsSync(openClawEnvPath) && fs.readFileSync(openClawEnvPath, 'utf-8').includes(MARKER);
+    if (ocEnvConfigured) {
+        ocEnvSpin.stop(`${c.green}✓ .openclaw/.env contains managed routing${c.reset}`);
+    } else {
+        ocEnvSpin.stop(`${c.red}✗ .openclaw/.env is missing managed routing${c.reset}`);
+        const lingeringOverrides = getOpenClawBaseUrlOverrides();
+        const overrideSummary = summarizeOpenClawBaseUrlOverrides(lingeringOverrides);
+        failCheck(
+            lingeringOverrides.length > 0
+                ? `OpenClaw is installed, but .openclaw/.env is not configured for the firewall. Found custom auth profile baseURL overrides: ${overrideSummary}.`
+                : 'OpenClaw is installed, but .openclaw/.env is not configured for the firewall.',
+            lingeringOverrides.length > 0
+                ? 'Run npx vibe-billing setup to restore the managed routing block, or remove the custom baseURL entries from OpenClaw auth-profiles.json if you want a fully direct setup.'
+                : 'Run npx vibe-billing setup to inject the managed routing block.',
+        );
+    }
+
+    const ocCliSpin = spinner('Checking OpenClaw CLI');
+    let openclaw = null;
+    try {
+        openclaw = getOpenClawCommand();
+        if (!openclaw) throw new Error('OpenClaw CLI not found');
+        ocCliSpin.stop(`${c.green}✓ OpenClaw CLI available${c.reset}`);
+    } catch (err) {
+        ocCliSpin.stop(`${c.red}✗ OpenClaw CLI not found${c.reset}`);
+        failCheck(
+            err.message,
+            'Install OpenClaw or set OPENCLAW_BIN to the OpenClaw executable.',
+        );
+    }
+
+    let agentIds = [];
+    if (openclaw && result.success) {
+        const agentSpin = spinner('Checking OpenClaw agents');
+        try {
+            agentIds = await listOpenClawAgents();
+            if (agentIds.length === 0) {
+                throw new Error('no OpenClaw agents found');
+            }
+            agentSpin.stop(`${c.green}✓ Found OpenClaw agents: ${agentIds.join(', ')}${c.reset}`);
+        } catch (err) {
+            agentSpin.stop(`${c.red}✗ Could not list OpenClaw agents${c.reset}`);
+            failCheck(
+                `OpenClaw CLI is available, but agent discovery failed: ${err.message}`,
+                'Run OpenClaw once and confirm the expected agents exist.',
+            );
+        }
+    }
+
+    let candidate = null;
+    if (result.success) {
+        const authSpin = spinner('Checking supported OpenClaw auth');
+        const candidates = getOpenClawVerificationCandidates(agentIds);
+        candidate = chooseOpenClawVerificationCandidate(candidates);
+        if (candidate && candidate.status === 'ready') {
+            authSpin.stop(`${c.green}✓ Using ${candidate.provider}/${candidate.agentId} via ${candidate.credential.source}${c.reset}`);
+        } else if (candidate) {
+            authSpin.stop(`${c.red}✗ ${candidate.detail}${c.reset}`);
+            failCheck(candidate.detail, candidate.fix);
+        } else {
+            authSpin.stop(`${c.red}✗ No supported OpenClaw verification target found${c.reset}`);
+            failCheck(
+                'No supported OpenClaw verification target was found.',
+                `Create ${OPENCLAW_ANTHROPIC_AGENT} or ${OPENCLAW_OPENAI_AGENT} and configure API-key auth.`,
+            );
+        }
+    }
+
+    if (result.success && candidate) {
+        const smokeSpin = spinner('Running OpenClaw smoke test');
+        try {
+            const beforeStats = await httpGet(PROXY_API);
+            const smokeToken = `oc-smoke-${Date.now().toString(36)}`;
+            const envName = getProviderEnvName(candidate.provider);
+            const payload = await runOpenClawAgent(candidate.agentId, {
+                ...process.env,
+                [envName]: candidate.credential.value,
+                OPENAI_BASE_URL: PROXY_OPENAI_BASE_URL,
+                ANTHROPIC_BASE_URL: PROXY_URL,
+            }, `Reply with the exact token ${smokeToken}`);
+
+            const text = extractOpenClawText(payload);
+            if (!text || !text.toLowerCase().includes(smokeToken.toLowerCase())) {
+                throw new Error(`unexpected OpenClaw response: ${JSON.stringify(text || payload)}`);
+            }
+
+            const afterStats = await httpGet(PROXY_API);
+            const requestDelta = (afterStats?.totalRequests || 0) - (beforeStats?.totalRequests || 0);
+            if (requestDelta < 1) {
+                throw new Error('OpenClaw returned a response, but the firewall request count did not increase');
+            }
+
+            result.verified = true;
+            result.provider = candidate.provider;
+            result.agentId = candidate.agentId;
+            result.requestDelta = requestDelta;
+            smokeSpin.stop(`${c.green}✓ OpenClaw ${candidate.provider}/${candidate.agentId} smoke passed (+${requestDelta} request${requestDelta === 1 ? '' : 's'})${c.reset}`);
+        } catch (err) {
+            smokeSpin.stop(`${c.red}✗ OpenClaw smoke test failed${c.reset}`);
+            failCheck(
+                `OpenClaw did not complete a verified ${candidate.provider}/${candidate.agentId} request: ${err.message}`,
+                `Fix the ${candidate.provider} API-key flow and any conflicting baseURL overrides for ${candidate.agentId}, then run npx vibe-billing doctor.`,
+            );
+        }
+    }
+
+    log('');
+    if (result.success && result.verified) {
+        ok(`OpenClaw verification passed.\n  ${result.provider}/${result.agentId} is routing through the firewall.`);
+    } else if (result.success) {
+        ok('Firewall configuration looks good.');
+    } else {
+        fail('Validation failed.');
+        log(`  Blocker: ${result.failures[0].detail}`);
+        log(`  Fix: ${result.failures[0].fix}`);
+    }
+
+    return result;
 }
 
 // ─── Status Command ─────────────────────────────────────
@@ -936,45 +1463,10 @@ async function status() {
 
 // ─── Verify Command ─────────────────────────────────────
 async function verify() {
-    header('Agent Firewall — Verify');
-    const ov = process.env.OPENAI_BASE_URL || 'not set';
-    const av = process.env.ANTHROPIC_BASE_URL || 'not set';
-    const ovOk = ov.includes('localhost:4000');
-    const avOk = av.includes('localhost:4000');
-    log(`  OPENAI_BASE_URL:    ${ovOk ? c.green : c.red}${ov}${c.reset}`);
-    log(`  ANTHROPIC_BASE_URL: ${avOk ? c.green : c.red}${av}${c.reset}\n`);
-
-    const s = spinner('Testing proxy connection');
-    try {
-        const stats = await httpGet(PROXY_API);
-        s.stop(`${c.green}${icons.ok}${c.reset} Proxy live (${stats.totalRequests} requests)`);
-    } catch (err) {
-        s.stop(`${c.red}${icons.fail}${c.reset} Proxy unreachable: ${err.message}`);
-        info('Run npx vibe-billing setup to configure.');
-        return;
+    const result = await runValidationSuite({ title: 'Agent Firewall — Verify' });
+    if (!result.success) {
+        process.exitCode = 1;
     }
-
-    // OpenClaw check: it uses env vars, so checking ANTHROPIC_BASE_URL is sufficient
-    const ocDir = path.join(os.homedir(), '.openclaw');
-    if (fs.existsSync(ocDir)) {
-        if (avOk || ovOk) {
-            ok(`OpenClaw detected — will use proxy via env vars`);
-        } else {
-            warn(`OpenClaw detected but env vars not set — run ${c.bold}npx vibe-billing setup${c.reset}`);
-        }
-    }
-
-    // Check shell config
-    const shell = findShellConfig();
-    if (shell && fs.existsSync(shell.path)) {
-        const content = fs.readFileSync(shell.path, 'utf-8');
-        if (content.includes(MARKER) || content.includes(LEGACY_MARKER)) {
-            ok(`Shell config: ${c.green}${path.basename(shell.path)}${c.reset} has proxy vars`);
-        } else {
-            warn(`Shell config: ${c.yellow}${path.basename(shell.path)}${c.reset} — no proxy vars found`);
-        }
-    }
-    log('');
 }
 
 // ─── Run Command (Value Demo Wrapper) ───────────────────
@@ -1126,89 +1618,69 @@ async function reportCmd() {
 }
 
 async function doctorCmd() {
-    header('Agent Firewall — Doctor');
-    let okCount = 0;
-
-    const pSpin = spinner('Checking proxy connection');
-    try {
-        await httpGet(PROXY_API);
-        pSpin.stop(`${c.green}✓ Proxy routing active${c.reset}`);
-        okCount++;
-    } catch {
-        pSpin.stop(`${c.red}✗ Proxy unreachable (run npx vibe-billing setup)${c.reset}`);
-    }
-
-    const envSpin = spinner('Checking shell configuration');
-    const shell = findShellConfig();
-    let shellOk = false;
-    if (shell && fs.existsSync(shell.path) && fs.readFileSync(shell.path, 'utf-8').includes(MARKER)) {
-        shellOk = true;
-    }
-    if (shellOk) {
-        envSpin.stop(`${c.green}✓ Shell variables injected${c.reset}`);
-        okCount++;
-    } else {
-        envSpin.stop(`${c.yellow}⚠ Shell variables missing (optional if using OpenClaw)${c.reset}`);
-    }
-
-    const ocSpin = spinner('Checking OpenClaw integration');
-    const openClawEnvPath = path.join(os.homedir(), '.openclaw', '.env');
-    if (fs.existsSync(openClawEnvPath) && fs.readFileSync(openClawEnvPath, 'utf-8').includes(MARKER)) {
-        ocSpin.stop(`${c.green}✓ OpenClaw integration active${c.reset}`);
-        okCount++;
-    } else {
-        ocSpin.stop(`${c.dim}ℹ OpenClaw not detected or not configured${c.reset}`);
-    }
-
-    log('');
-    if (okCount > 0) ok('Agent Firewall detected ✓\\n  Your setup looks good!');
-    else warn('Doctor checks failed. Try running npx vibe-billing setup.');
-}
-
-// ─── Main ───────────────────────────────────────────────
-const command = process.argv[2] || '--help';
-
-// Send telemetry ping on every CLI invocation (fire-and-forget, non-blocking)
-if (!command.startsWith('-')) {
-    sendTelemetryPing('cli_invocation', command);
-}
-
-switch (command) {
-    case 'setup': setup().catch(err => fail(err.message)); break;
-    case 'scan': scan().catch(err => fail(err.message)); break;
-    case 'status': status().catch(err => fail(err.message)); break;
-    case 'verify': verify().catch(err => fail(err.message)); break;
-    case 'uninstall': uninstall().catch(err => fail(err.message)); break;
-    case 'run': runCmd().catch(err => fail(err.message)); break;
-    case 'replay': replayCmd().catch(err => fail(err.message)); break;
-    case 'badge': badgeCmd().catch(err => fail(err.message)); break;
-    case 'report': reportCmd().catch(err => fail(err.message)); break;
-    case 'doctor': doctorCmd().catch(err => fail(err.message)); break;
-    case '--version': case '-v':
-        log(`vibe-billing v${VERSION}`);
-        break;
-    case '--help': case '-h':
-        header('Agent Firewall');
-        log('  Keep autonomous AI agents under control.\n');
-        log(`  ${c.bold}Usage:${c.reset} npx vibe-billing <command>\n`);
-        log(`  ${c.bold}Commands:${c.reset}`);
-        log(`    ${c.green}setup${c.reset}       Auto-detect agents, patch configs, verify connection`);
-        log(`    ${c.green}scan${c.reset}        Scan agent logs for waste (loops, retries, missed caching)`);
-        log(`    ${c.green}run${c.reset}         Wrap an agent to get a receipt of your savings`);
-        log(`    ${c.green}replay${c.reset}      Re-run your last wrapped agent with cheaper routing`);
-        log(`    ${c.green}status${c.reset}      Check live proxy stats (requests, savings, blocked loops)`);
-        log(`    ${c.green}verify${c.reset}      Test that routing is working`);
-        log(`    ${c.green}uninstall${c.reset}   Remove proxy routing and restore original configs`);
-        log(`    ${c.green}badge${c.reset}       Generate a markdown badge of your savings`);
-        log(`    ${c.green}report${c.reset}      Generate a shareable text report of waste blocked`);
-        log(`    ${c.green}doctor${c.reset}      Diagnose and validate your local proxy configuration`);
-        log('');
-        log(`  ${c.bold}Flags:${c.reset}`);
-        log(`    ${c.dim}--version${c.reset}   Show version`);
-        log(`    ${c.dim}--help${c.reset}      Show this help\n`);
-        break;
-    default:
-        fail(`Unknown command: ${command}`);
-        log(`Run ${c.bold}npx vibe-billing --help${c.reset} to see available commands.`);
+    const result = await runValidationSuite({ title: 'Agent Firewall — Doctor' });
+    if (!result.success) {
         process.exitCode = 1;
+    }
+}
+
+function main(argv = process.argv) {
+    const command = argv[2] || '--help';
+
+    // Send telemetry ping on every CLI invocation (fire-and-forget, non-blocking)
+    if (!command.startsWith('-')) {
+        sendTelemetryPing('cli_invocation', command);
+    }
+
+    switch (command) {
+        case 'setup': setup().catch(err => fail(err.message)); break;
+        case 'scan': scan().catch(err => fail(err.message)); break;
+        case 'status': status().catch(err => fail(err.message)); break;
+        case 'verify': verify().catch(err => fail(err.message)); break;
+        case 'uninstall': uninstall().catch(err => fail(err.message)); break;
+        case 'run': runCmd().catch(err => fail(err.message)); break;
+        case 'replay': replayCmd().catch(err => fail(err.message)); break;
+        case 'badge': badgeCmd().catch(err => fail(err.message)); break;
+        case 'report': reportCmd().catch(err => fail(err.message)); break;
+        case 'doctor': doctorCmd().catch(err => fail(err.message)); break;
+        case '--version': case '-v':
+            log(`vibe-billing v${VERSION}`);
+            break;
+        case '--help': case '-h':
+            header('Agent Firewall');
+            log('  Keep autonomous AI agents under control.\n');
+            log(`  ${c.bold}Usage:${c.reset} npx vibe-billing <command>\n`);
+            log(`  ${c.bold}Commands:${c.reset}`);
+            log(`    ${c.green}setup${c.reset}       Auto-detect agents, patch configs, verify connection`);
+            log(`    ${c.green}scan${c.reset}        Scan agent logs for waste (loops, retries, missed caching)`);
+            log(`    ${c.green}run${c.reset}         Wrap an agent to get a receipt of your savings`);
+            log(`    ${c.green}replay${c.reset}      Re-run your last wrapped agent with cheaper routing`);
+            log(`    ${c.green}status${c.reset}      Check live proxy stats (requests, savings, blocked loops)`);
+            log(`    ${c.green}verify${c.reset}      Test that routing is working`);
+            log(`    ${c.green}uninstall${c.reset}   Remove proxy routing and restore original configs`);
+            log(`    ${c.green}badge${c.reset}       Generate a markdown badge of your savings`);
+            log(`    ${c.green}report${c.reset}      Generate a shareable text report of waste blocked`);
+            log(`    ${c.green}doctor${c.reset}      Diagnose and validate your local proxy configuration`);
+            log('');
+            log(`  ${c.bold}Flags:${c.reset}`);
+            log(`    ${c.dim}--version${c.reset}   Show version`);
+            log(`    ${c.dim}--help${c.reset}      Show this help\n`);
+            break;
+        default:
+            fail(`Unknown command: ${command}`);
+            log(`Run ${c.bold}npx vibe-billing --help${c.reset} to see available commands.`);
+            process.exitCode = 1;
+    }
+}
+
+module.exports = {
+    getOpenClawBaseUrlOverrides,
+    summarizeOpenClawBaseUrlOverrides,
+    listOpenClawAgentIdsFromDisk,
+    getProviderBaseUrl,
+    main,
+};
+
+if (require.main === module) {
+    main(process.argv);
 }
