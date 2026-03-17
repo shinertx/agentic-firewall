@@ -271,8 +271,17 @@ export function checkNoProgress(identifier: string, body: any): {
 
     // Check for spinning FIRST — this is a conversation-level check that
     // applies regardless of whether the current turn has tool activity.
+    // Skip firewall synthetic messages — they would cause cascading blocks
+    // because the proxy returns identical "loop detected" text each time.
     const assistantMessages = body.messages
-        .filter((m: any) => m.role === 'assistant')
+        .filter((m: any) => {
+            if (m.role !== 'assistant') return false;
+            const text = typeof m.content === 'string' ? m.content
+                : Array.isArray(m.content) ? m.content.map((b: any) => b.text || '').join('')
+                : '';
+            if (text.includes('Agentic Firewall')) return false;
+            return true;
+        })
         .slice(-3);
 
     if (assistantMessages.length >= 3) {
@@ -280,6 +289,10 @@ export function checkNoProgress(identifier: string, body: any): {
             hashContent(JSON.stringify(m.content || ''))
         );
         if (hashes[0] === hashes[1] && hashes[1] === hashes[2]) {
+            // Reset state so the agent can recover after we block this request
+            state.turnsSinceProgress = 0;
+            state.consecutiveIdenticalErrors = 0;
+            state.lastErrorHash = '';
             return {
                 noProgress: true,
                 reason: 'Agent spinning: last 3 assistant messages are identical.',
@@ -344,12 +357,19 @@ export function checkNoProgress(identifier: string, body: any): {
     // ─ Decision ─
 
     if (state.turnsSinceProgress >= NP_BLOCK_AT) {
-        return {
+        const result = {
             noProgress: true,
             reason: `Agent stuck: ${state.turnsSinceProgress} turns with zero progress signals (${state.consecutiveIdenticalErrors} identical errors). Stopping to prevent waste.`,
             consecutiveErrors: state.consecutiveIdenticalErrors,
-            progressSignals: [],
+            progressSignals: [] as ProgressSignal[],
         };
+        // Reset state after blocking so the next request starts fresh.
+        // Without this, the synthetic "loop detected" response poisons the
+        // conversation history and the agent can never recover.
+        state.turnsSinceProgress = 0;
+        state.consecutiveIdenticalErrors = 0;
+        state.lastErrorHash = '';
+        return result;
     }
 
     if (state.turnsSinceProgress >= NP_WARN_AT) {

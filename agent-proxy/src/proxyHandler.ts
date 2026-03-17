@@ -336,7 +336,7 @@ export async function handleProxyRequest(req: Request, res: ExpressResponse) {
 
     if (req.method !== 'GET' && req.method !== 'HEAD' && req.body && Object.keys(req.body).length > 0) {
         const ip = req.ip || '127.0.0.1';
-        const cb = await checkCircuitBreaker(ip, req.body, apiKey || undefined);
+        const cb = await checkCircuitBreaker(ip, req.body, apiKey || undefined, sessionId);
         if (cb.blocked) {
             recordUserLoop(userId);
             recordSessionLoop(sessionId);
@@ -436,7 +436,7 @@ export async function handleProxyRequest(req: Request, res: ExpressResponse) {
 
         // No-progress detection — return a synthetic model response so the agent
         // processes it as a real turn and changes approach instead of retrying.
-        const npCheck = checkNoProgress(userId, req.body);
+        const npCheck = checkNoProgress(sessionId, req.body);
         if (npCheck.noProgress) {
             const stopMsg = `I've been repeating the same failing operation ${npCheck.consecutiveErrors} times. The Agentic Firewall has stopped this loop to prevent waste. I need to try a completely different approach instead of retrying the same thing.`;
             const model = req.body?.model || 'unknown';
@@ -686,6 +686,7 @@ export async function handleProxyRequest(req: Request, res: ExpressResponse) {
         globalStats.realInputTokens += usage.inputTokens;
         globalStats.realOutputTokens += usage.outputTokens;
         globalStats.realCachedTokens += usage.cachedTokens;
+        globalStats.realCacheCreationTokens += usage.cacheCreationTokens;
 
         // Track estimation accuracy (per-model)
         const estimated = Math.round(originalBodyStr.length / 4);
