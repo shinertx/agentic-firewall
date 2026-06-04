@@ -4,9 +4,9 @@ This file is the local operating contract for agents working in this repo. It is
 
 ## Source Of Truth
 
-- Read `/Users/benjijmac/WORKSPACE_INDEX.md` before broad repo, cleanup, routing, deploy, or project-canonicalization work.
-- Project routing lives in `/Users/benjijmac/workspace-audits/PROJECT_REGISTRY.json`; the readable map is `/Users/benjijmac/workspace-audits/PROJECT_CONVERSATION_MAP.md`.
-- This repo's current canonical path is whatever the project registry says. Do not hardcode `/Users/benjijmac/Documents/vibebilling-clean` as active if the registry says the repo is quarantined or under review.
+- Read `~/WORKSPACE_INDEX.md` before broad repo, cleanup, routing, deploy, or project-canonicalization work.
+- Project routing lives in `~/workspace-audits/PROJECT_REGISTRY.json`; the readable map is `~/workspace-audits/PROJECT_CONVERSATION_MAP.md`.
+- This repo's current canonical path is whatever the project registry says. Do not hardcode local repo paths as active if the registry says the repo is quarantined or under review.
 - This repo is code truth for Agentic Firewall behavior. Live service state is proved by the running endpoints, not by docs alone.
 - If this file conflicts with `WORKSPACE_INDEX.md`, follow `WORKSPACE_INDEX.md` and update this file only as a local adapter.
 

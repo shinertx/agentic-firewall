@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type ReactNode } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import { Shield, Zap, RefreshCw, BarChart2, Download, TrendingUp, Users, Globe, Package } from 'lucide-react';
 import { motion, useMotionValue, useTransform, animate } from 'framer-motion';
 
@@ -26,12 +26,14 @@ type StatCardProps = {
   color: string;
 };
 
+function formatCounterValue(value: number, prefix: string, suffix: string, decimals: number) {
+  return `${prefix}${value.toFixed(decimals).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}${suffix}`;
+}
+
 function AnimatedCounter({ target, prefix = '', suffix = '', decimals = 0 }: { target: number; prefix?: string; suffix?: string; decimals?: number }) {
   const count = useMotionValue(0);
-  const rounded = useTransform(count, (v: number) =>
-    `${prefix}${v.toFixed(decimals).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}${suffix}`
-  );
-  const ref = useRef<HTMLSpanElement>(null);
+  const rounded = useTransform(count, (v: number) => formatCounterValue(v, prefix, suffix, decimals));
+  const [display, setDisplay] = useState(() => formatCounterValue(0, prefix, suffix, decimals));
 
   useEffect(() => {
     const controls = animate(count, target, { duration: 2.5, ease: 'easeOut' });
@@ -40,12 +42,12 @@ function AnimatedCounter({ target, prefix = '', suffix = '', decimals = 0 }: { t
 
   useEffect(() => {
     const unsub = rounded.on('change', (v: string) => {
-      if (ref.current) ref.current.textContent = v;
+      setDisplay(v);
     });
     return unsub;
   }, [rounded]);
 
-  return <span ref={ref}>{prefix}0{suffix}</span>;
+  return <span>{display}</span>;
 }
 
 /* ── Main App ─────────────────────────────────────────────── */
@@ -60,7 +62,6 @@ function App() {
 
   // Real community metrics from server
   const [communityInstalls, setCommunityInstalls] = useState(0);
-  const [communitySavings, setCommunitySavings] = useState(0);
   const [npmStats, setNpmStats] = useState({ weekly: 0, monthly: 0 });
   const [installSources, setInstallSources] = useState<{
     platformBreakdown: Record<string, number>;
@@ -114,17 +115,6 @@ function App() {
         }
       } catch {
         // Keep polling the other community endpoints even if npm stats fails.
-      }
-
-      // Fetch aggregate for community savings
-      try {
-        const aggRes = await fetch('https://api.jockeyvc.com/api/stats');
-        if (aggRes.ok) {
-          const data = await aggRes.json();
-          setCommunitySavings(Math.round(data.savedMoney || 0));
-        }
-      } catch {
-        // Community savings are supplementary; proxy stats below still render.
       }
     };
 
@@ -211,7 +201,7 @@ function App() {
                   <span className="text-gray-400 text-sm font-medium uppercase tracking-wider">Community Savings</span>
                 </div>
                 <p className="text-5xl font-extrabold tracking-tight bg-gradient-to-r from-emerald-400 to-green-300 bg-clip-text text-transparent">
-                  <AnimatedCounter target={communitySavings} prefix="$" />
+                  <AnimatedCounter target={Math.round(stats.savedMoney)} prefix="$" />
                 </p>
                 <p className="text-gray-500 text-sm mt-2 flex items-center justify-center gap-1.5">
                   <Zap className="w-3.5 h-3.5 text-yellow-400" />
