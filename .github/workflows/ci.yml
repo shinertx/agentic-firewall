@@ -231,6 +231,7 @@ jobs:
       !contains(github.event.head_commit.message, '[skip ci]')
 
     permissions:
+      contents: read
       id-token: write
 
     steps:
@@ -258,8 +259,6 @@ jobs:
           VER="${NEW_VERSION#v}"
           sed -i "s/^const VERSION = '.*';$/const VERSION = '${VER}';/" bin/cli.js
 
-      - name: Publish to npm with provenance
+      - name: Publish to npm with trusted publishing
         working-directory: agent-cli
-        run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public
