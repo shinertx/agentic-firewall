@@ -17,18 +17,20 @@ A reverse-proxy that sits between AI agents and LLM providers to prevent **Vibe 
 
 ## Use the CLI (NPM)
 
-The easiest way to see your waste and setup your proxy connection is the `vibe-billing` CLI tool.
+The easiest way to see your waste and setup your proxy connection is the `vibebilling` npm package.
 
 ```bash
 # See how much your agents are wasting
-npx vibe-billing scan
+npx vibebilling scan
 
 # Route agents through the firewall to fix it
-npx vibe-billing setup
+npx vibebilling setup
 
 # Wrap an agent to get a receipt of your savings
-npx vibe-billing run <agent_cmd>
+npx vibebilling run <agent_cmd>
 ```
+
+The installed command is also aliased as `vibe-billing` for shell users who install the package globally.
 
 ## Running the Proxy Locally
 
