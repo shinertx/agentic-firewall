@@ -106,6 +106,31 @@ jobs:
         run: npm audit --omit=dev --audit-level=high
         working-directory: ${{ matrix.package }}
 
+  detect-release-changes:
+    name: Detect Release Changes
+    runs-on: ubuntu-latest
+    outputs:
+      agent_cli_changed: ${{ steps.changes.outputs.agent_cli_changed }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check changed paths
+        id: changes
+        run: |
+          BEFORE="${{ github.event.before }}"
+          if [ -z "${BEFORE}" ] || [ "${BEFORE}" = "0000000000000000000000000000000000000000" ]; then
+            BEFORE="$(git rev-parse HEAD^)"
+          fi
+
+          if git diff --name-only "${BEFORE}" "${GITHUB_SHA}" | grep -q '^agent-cli/'; then
+            echo "agent_cli_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "agent_cli_changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
   # ── Deploy to Production (only on merge to main) ────────
   deploy:
     name: Deploy to Production
@@ -151,7 +176,7 @@ jobs:
               [ -f "/tmp/$f" ] && cp "/tmp/$f" "agent-proxy/$f" || true
             done
 
-            # Stop PM2 if running (legacy non-Docker setup)
+            # Stop any legacy process-manager runtime before Docker owns the port
             pm2 stop all 2>/dev/null || true
             pm2 delete all 2>/dev/null || true
 
@@ -197,11 +222,12 @@ jobs:
   # ── Publish CLI to npm (only on merge to main) ────────
   publish:
     name: Publish vibe-billing to npm
-    needs: [proxy-test, dashboard-test, cli-test, deploy]
+    needs: [proxy-test, dashboard-test, cli-test, deploy, detect-release-changes]
     runs-on: ubuntu-latest
     if: >-
       github.ref == 'refs/heads/main' &&
       github.event_name == 'push' &&
+      needs.detect-release-changes.outputs.agent_cli_changed == 'true' &&
       !contains(github.event.head_commit.message, '[skip ci]')
 
     permissions:

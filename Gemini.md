@@ -172,8 +172,8 @@ Look for `[PROXY] =>` entries showing the method and upstream URL. Each proxied 
 
 ## 6. Architecture Notes
 
-- **Context CDN** injects `cache_control: { type: 'ephemeral' }` into Anthropic payloads >500 characters, triggering server-side prompt caching for up to 90% input cost reduction
-- **Circuit Breaker** hashes the last user message per IP and blocks after 3 identical requests in a sliding window of 5
-- **Shadow Router** automatically fails over from Sonnet → Haiku on 429 rate-limit responses
+- **Context CDN** injects `cache_control: { type: 'ephemeral' }` into large Anthropic system/tool payloads and optimizes OpenAI/Gemini request shape for stable provider-native cache prefixes
+- **Circuit Breaker** hashes recent payload signatures per session/API key/IP and blocks after 3 identical requests in a sliding window of 5
+- **Shadow Router** automatically fails over to cheaper same-provider models on 429 rate-limit responses for Anthropic, OpenAI, and Gemini paths
 - **ZSTD Decompression** handles Python SDK compressed payloads that would crash standard proxies
 - **30-minute timeouts** prevent premature disconnection during long reasoning chains

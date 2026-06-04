@@ -18,7 +18,7 @@ vibebilling/
 │   │   ├── index.ts          # Express app, ZSTD middleware, timeout config
 │   │   ├── proxyHandler.ts   # Provider routing, Context CDN, SSE streaming
 │   │   ├── circuitBreaker.ts # SHA-256 loop detection (3 identical = kill)
-│   │   ├── shadowRouter.ts   # 429 failover: Sonnet → Haiku downgrade
+│   │   ├── shadowRouter.ts   # 429 cheap-model failover paths
 │   │   ├── pricing.ts        # Configurable model pricing tiers for savings math
 │   │   └── stats.ts          # In-memory request/savings tracking
 │   └── tests/                # Vitest unit tests
