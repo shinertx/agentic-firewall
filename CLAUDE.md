@@ -73,7 +73,7 @@ node index.js        # Starts stdio MCP server
 ### Deployment
 ```bash
 ./deploy.sh          # Sync origin/main on meme-snipe-v19-vm and restart Docker Compose
-./deploy.sh staging  # Also starts the staging profile; staging DNS must still prove healthy
+./deploy.sh staging  # Also starts the staging profile and requires staging health to pass
 ```
 
 ---
@@ -168,7 +168,7 @@ This project is engineered as a production system, not a prototype. All developm
 - Staging URL: `https://staging.jockeyvc.com`
 - Staging health check: `https://staging.jockeyvc.com/api/stats` currently must return `200` before staging is called ready
 - Manual deploy command: `./deploy.sh`
-- Manual staging deploy command: `./deploy.sh staging`
+- Manual staging deploy command: `./deploy.sh staging` (Caddy routes staging to the Docker staging proxy on VM port `4001`)
 - Runtime target on VM: `/home/benjijmac/agentic-firewall`
 
 ### Custom deploy hooks

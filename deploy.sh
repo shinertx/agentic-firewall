@@ -45,9 +45,16 @@ STATS=$(curl -sf https://api.jockeyvc.com/api/stats 2>/dev/null) || {
 echo "Production stats: $STATS"
 
 if [ "$PROFILE" = "staging" ]; then
-  STAGING_STATS=$(curl -sf https://staging.jockeyvc.com/api/stats 2>/dev/null) || {
-    echo "⚠️  Staging health check failed (DNS might not be configured yet)"
-  }
+  STAGING_BODY="$(mktemp)"
+  STAGING_STATUS=$(curl -sS -o "$STAGING_BODY" -w "%{http_code}" https://staging.jockeyvc.com/api/stats 2>/dev/null || true)
+  if [ "$STAGING_STATUS" != "200" ]; then
+    echo "❌ Staging health check failed with HTTP $STAGING_STATUS!"
+    ssh "$SERVER" "cd $DEST_DIR && docker compose --profile staging logs --tail=20 proxy-staging"
+    rm -f "$STAGING_BODY"
+    exit 1
+  fi
+  STAGING_STATS="$(cat "$STAGING_BODY")"
+  rm -f "$STAGING_BODY"
   [ -n "${STAGING_STATS:-}" ] && echo "Staging stats: $STAGING_STATS"
 fi
 
