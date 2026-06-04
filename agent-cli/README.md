@@ -2,7 +2,7 @@
 
 `vibe-billing` is a trust-first CLI for scanning agent waste and routing supported agent traffic through the Vibe Billing firewall. It is published on npm as `@shinertx/vibebilling`.
 
-Releases are published from GitHub Actions through npm trusted publishing.
+Releases are published from GitHub Actions through npm trusted publishing using npm 11 or newer.
 
 ## Install / Setup
 
