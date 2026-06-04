@@ -176,9 +176,9 @@ This project is engineered as a production system, not a prototype. All developm
 - After deploy: verify `https://api.jockeyvc.com/api/stats` returns `200`.
 - Canary: monitor production stats, dashboard load, and recent error/loop activity after deploy.
 
-## Skill routing
+## Local gstack skill routing
 
-When the user's request matches an available gstack skill, invoke it. When in doubt, prefer the skill workflow instead of an ad hoc approximation.
+When working inside Benji's Codex workspace, the following gstack skills may be available locally. These are operator workflow hints, not npm scripts or repo-provided commands. When the user's request matches an available local skill, invoke it; otherwise use the matching repo commands above.
 
 Key routing rules:
 - Product ideas/brainstorming -> invoke /office-hours

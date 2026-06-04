@@ -153,7 +153,7 @@ Open the management dashboard to see live traffic, savings, and blocked loops in
 
 ### Docker Logs (Server-Side)
 ```bash
-ssh meme-snipe-v19-vm "cd /home/benjijmac/agentic-firewall && docker compose logs --tail=20 agent-proxy"
+ssh meme-snipe-v19-vm "cd /home/benjijmac/agentic-firewall && docker compose logs --tail=20 proxy"
 ```
 
 Look for `[PROXY] =>` entries showing the method and upstream URL. Each proxied request generates exactly one log line.
@@ -163,7 +163,7 @@ Look for `[PROXY] =>` entries showing the method and upstream URL. Each proxied 
 | Symptom | Cause | Fix |
 |---|---|---|
 | Dashboard shows 0 requests | Agent is bypassing the proxy | Verify `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` are set in the shell where the agent launches |
-| `ECONNREFUSED` on port 4000 | Proxy is not running | SSH into the VM and run `cd /home/benjijmac/agentic-firewall && docker compose up -d agent-proxy` |
+| `ECONNREFUSED` on port 4000 | Proxy is not running | SSH into the VM and run `cd /home/benjijmac/agentic-firewall && docker compose up -d proxy` |
 | `400 Bad Request` from Anthropic | Missing `anthropic-beta` header | The proxy injects this automatically — if you see this error, the agent may be connecting directly |
 | Agent hangs for >2 minutes | Default Node.js timeout | The proxy extends timeouts to 30 minutes — this only happens if the agent bypasses it |
 | `Loop detected` / 400 response | Circuit Breaker triggered | The agent sent 3+ identical payloads. Change the user message content to clear the breaker |
