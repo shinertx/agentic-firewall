@@ -305,7 +305,7 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 
     <div class="actions">
       <div class="action-row">
-        <div class="code primary"><span class="prefix">$</span> npx vibebilling scan <button class="copy-btn" id="copyBtn" onclick="copyCmd()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span id="copyLabel">Copy</span></button></div>
+        <div class="code primary"><span class="prefix">$</span> npx @shinertx/vibebilling scan <button class="copy-btn" id="copyBtn" onclick="copyCmd()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span id="copyLabel">Copy</span></button></div>
         <a href="https://github.com/shinertx/agentic-firewall" target="_blank" class="secondary-cta">View on GitHub</a>
       </div>
       <div class="cta-note">Find wasted spend in under 30 seconds. No signup.</div>
@@ -339,13 +339,13 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
         <div class="step-num">1</div>
         <h3>Scan</h3>
         <p>Analyze local transcripts and see retry loops, context re-sends, and overkill model usage before you install anything.</p>
-        <div class="step-code">npx vibebilling scan</div>
+        <div class="step-code">npx @shinertx/vibebilling scan</div>
       </div>
       <div class="step">
         <div class="step-num">2</div>
         <h3>Setup</h3>
         <p>Run one command to patch configs, verify the connection, and route agent traffic through the firewall.</p>
-        <div class="step-code">npx vibebilling setup</div>
+        <div class="step-code">npx @shinertx/vibebilling setup</div>
       </div>
       <div class="step">
         <div class="step-num">3</div>
@@ -369,7 +369,7 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
         <div class="terminal-label">Example Scan Output</div>
       </div>
       <div class="terminal-body">
-        <div class="terminal-line"><span><span class="terminal-prompt">$</span> npx vibebilling scan</span></div>
+        <div class="terminal-line"><span><span class="terminal-prompt">$</span> npx @shinertx/vibebilling scan</span></div>
         <div class="terminal-line dim"><span>Analyzing your agent usage for waste patterns and savings opportunities...</span></div>
         <div class="terminal-line gap"></div>
         <div class="terminal-line heading"><span>Agent Waste Report</span></div>
@@ -382,7 +382,7 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
         <div class="terminal-line highlight"><span class="terminal-key">Estimated wasted spend:</span><span class="terminal-value">$312.76</span></div>
         <div class="terminal-line gap"></div>
         <div class="terminal-line fix"><span class="terminal-key">Fix with:</span></div>
-        <div class="terminal-line"><span><span class="terminal-prompt">$</span> npx vibebilling setup</span></div>
+        <div class="terminal-line"><span><span class="terminal-prompt">$</span> npx @shinertx/vibebilling setup</span></div>
         <div class="terminal-foot">Reads local Claude Code and OpenClaw logs first. No signup required to see the waste.</div>
       </div>
     </div>
@@ -436,7 +436,7 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 
 <div class="footer">
   <p>Agent Firewall — Agent Runtime Control</p>
-  <p style="margin-top:8px;font-size:0.75rem"><a href="https://github.com/shinertx/agentic-firewall" target="_blank" style="color:var(--text-secondary);text-decoration:none;margin:0 8px">GitHub</a> · <a href="https://www.npmjs.com/package/vibebilling" target="_blank" style="color:var(--text-secondary);text-decoration:none;margin:0 8px">npm</a></p>
+  <p style="margin-top:8px;font-size:0.75rem"><a href="https://github.com/shinertx/agentic-firewall" target="_blank" style="color:var(--text-secondary);text-decoration:none;margin:0 8px">GitHub</a> · <a href="https://www.npmjs.com/package/@shinertx/vibebilling" target="_blank" style="color:var(--text-secondary);text-decoration:none;margin:0 8px">npm</a></p>
 </div>
 
 <script>
@@ -447,7 +447,7 @@ function fmtN(v) {
   return Math.round(v).toLocaleString('en-US');
 }
 function copyCmd() {
-  navigator.clipboard.writeText('npx vibebilling scan').then(function() {
+  navigator.clipboard.writeText('npx @shinertx/vibebilling scan').then(function() {
     var btn = document.getElementById('copyBtn');
     var label = document.getElementById('copyLabel');
     btn.classList.add('copied');

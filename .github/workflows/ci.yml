@@ -221,7 +221,7 @@ jobs:
 
   # ── Publish CLI to npm (only on merge to main) ────────
   publish:
-    name: Publish vibebilling to npm
+    name: Publish @shinertx/vibebilling to npm
     needs: [proxy-test, dashboard-test, cli-test, deploy, detect-release-changes]
     runs-on: ubuntu-latest
     if: >-

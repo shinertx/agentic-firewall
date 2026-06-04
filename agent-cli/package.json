@@ -1,5 +1,5 @@
 {
-    "name": "vibebilling",
+    "name": "@shinertx/vibebilling",
     "version": "0.5.63",
     "description": "Agent Runtime Control — Loop detection, prompt caching, budget enforcement, and waste scanning for autonomous AI agents.",
     "scripts": {
