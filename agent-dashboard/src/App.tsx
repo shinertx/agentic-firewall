@@ -1,8 +1,31 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, type ReactNode } from 'react';
 import { Shield, Zap, RefreshCw, BarChart2, Download, TrendingUp, Users, Globe, Package } from 'lucide-react';
 import { motion, useMotionValue, useTransform, animate } from 'framer-motion';
 
 /* ── Animated number counter ──────────────────────────────── */
+type Activity = {
+  time: string;
+  model: string;
+  tokens: number | string;
+  status: string;
+  statusColor: string;
+};
+
+type Stats = {
+  savedTokens: number;
+  savedMoney: number;
+  blockedLoops: number;
+  totalRequests: number;
+  recentActivity: Activity[];
+};
+
+type StatCardProps = {
+  title: string;
+  value: string;
+  icon: ReactNode;
+  color: string;
+};
+
 function AnimatedCounter({ target, prefix = '', suffix = '', decimals = 0 }: { target: number; prefix?: string; suffix?: string; decimals?: number }) {
   const count = useMotionValue(0);
   const rounded = useTransform(count, (v: number) =>
@@ -13,7 +36,7 @@ function AnimatedCounter({ target, prefix = '', suffix = '', decimals = 0 }: { t
   useEffect(() => {
     const controls = animate(count, target, { duration: 2.5, ease: 'easeOut' });
     return controls.stop;
-  }, [target]);
+  }, [count, target]);
 
   useEffect(() => {
     const unsub = rounded.on('change', (v: string) => {
@@ -27,12 +50,12 @@ function AnimatedCounter({ target, prefix = '', suffix = '', decimals = 0 }: { t
 
 /* ── Main App ─────────────────────────────────────────────── */
 function App() {
-  const [stats, setStats] = useState({
+  const [stats, setStats] = useState<Stats>({
     savedTokens: 0,
     savedMoney: 0,
     blockedLoops: 0,
     totalRequests: 0,
-    recentActivity: [] as any[]
+    recentActivity: [],
   });
 
   // Real community metrics from server
@@ -79,7 +102,9 @@ function App() {
             versionBreakdown: data.versionBreakdown || {},
           });
         }
-      } catch {}
+      } catch {
+        // Keep the dashboard usable if the install breakdown endpoint is unavailable.
+      }
 
       try {
         const npmRes = await fetch('https://api.jockeyvc.com/api/npm-stats');
@@ -87,7 +112,9 @@ function App() {
           const data = await npmRes.json();
           setNpmStats({ weekly: data.weekly || 0, monthly: data.monthly || 0 });
         }
-      } catch {}
+      } catch {
+        // Keep polling the other community endpoints even if npm stats fails.
+      }
 
       // Fetch aggregate for community savings
       try {
@@ -96,7 +123,9 @@ function App() {
           const data = await aggRes.json();
           setCommunitySavings(Math.round(data.savedMoney || 0));
         }
-      } catch {}
+      } catch {
+        // Community savings are supplementary; proxy stats below still render.
+      }
     };
 
     fetchInstallData();
@@ -267,7 +296,7 @@ function App() {
                 </tr>
               </thead>
               <tbody>
-                {stats.recentActivity.map((activity: any, i: number) => (
+                {stats.recentActivity.map((activity, i) => (
                   <FeedRow key={i} {...activity} />
                 ))}
                 {stats.recentActivity.length === 0 && (
@@ -282,7 +311,7 @@ function App() {
   )
 }
 
-function StatCard({ title, value, icon, color }: any) {
+function StatCard({ title, value, icon, color }: StatCardProps) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -299,7 +328,7 @@ function StatCard({ title, value, icon, color }: any) {
   )
 }
 
-function FeedRow({ time, model, tokens, status, statusColor }: any) {
+function FeedRow({ time, model, tokens, status, statusColor }: Activity) {
   return (
     <tr className="border-b border-white/5 hover:bg-white/[0.02] last:border-0 transition-colors">
       <td className="px-6 py-4 whitespace-nowrap">{time}</td>

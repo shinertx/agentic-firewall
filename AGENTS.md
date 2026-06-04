@@ -1,88 +1,109 @@
-# AGENTS.md — VibeBilling Multi-Agent Coordination
+# AGENTS.md - VibeBilling / Agentic Firewall
 
-This file is the **master org chart** for all AI agents working on this project. Every agent must read this file before doing any work.
+This file is the local operating contract for agents working in this repo. It is not the global source of truth and it is not a roadmap. Keep it short, current, and enforceable.
 
----
+## Source Of Truth
+
+- Read `/Users/benjijmac/WORKSPACE_INDEX.md` before broad repo, cleanup, routing, deploy, or project-canonicalization work.
+- Project routing lives in `/Users/benjijmac/workspace-audits/PROJECT_REGISTRY.json`; the readable map is `/Users/benjijmac/workspace-audits/PROJECT_CONVERSATION_MAP.md`.
+- This repo's current canonical path is whatever the project registry says. Do not hardcode `/Users/benjijmac/Documents/vibebilling-clean` as active if the registry says the repo is quarantined or under review.
+- This repo is code truth for Agentic Firewall behavior. Live service state is proved by the running endpoints, not by docs alone.
+- If this file conflicts with `WORKSPACE_INDEX.md`, follow `WORKSPACE_INDEX.md` and update this file only as a local adapter.
 
 ## Project Identity
 
-**Product:** Agentic Firewall — a reverse-proxy that prevents "Vibe Billing" by inserting prompt caching, loop detection, and failover between AI agents and LLM providers.
+- Product: Agentic Firewall, also known as VibeBilling.
+- Purpose: a reverse proxy that reduces agent waste by adding prompt caching support, loop/no-progress detection, budget controls, request shaping, queueing, failover, and observability between AI agents and LLM providers.
+- Production: `https://api.jockeyvc.com`
+- Staging: `https://staging.jockeyvc.com` only counts as usable when `/api/stats` returns `200`.
+- Infrastructure: GCP VM `meme-snipe-v19-vm`, Docker Compose, Caddy/TLS, GitHub Actions deploys from `main`.
+- GitHub repo: `shinertx/agentic-firewall`.
 
-**Production URL:** `https://api.jockeyvc.com`
-**Staging URL:** `https://staging.jockeyvc.com` (pending DNS)
-**Infrastructure:** GCP VM (`meme-snipe-v19-vm`), Docker Compose, Caddy (TLS)
-**CI/CD:** GitHub Actions → auto-deploy on merge to `main`
-**Repo:** Monorepo at `/Users/benjijmac/Documents/vibebilling-clean`
+## First Moves
 
----
+1. Check `git status --short --branch` and do not overwrite user or untracked work.
+2. Fetch remote state before judging freshness, branching, or preparing a PR.
+3. Read the smallest relevant docs: `README.md` for usage, `CLAUDE.md` / `Gemini.md` for routing behavior, package files for scripts, and `.github/workflows/` for CI/deploy truth.
+4. Inspect source before trusting docs. If docs and code disagree, report the drift and update docs when the task changes behavior.
+5. Do not rely on missing `.agent/rules/*` files. If local rules are needed, keep them in this `AGENTS.md` or add explicit docs that exist.
 
-## Agent Roles & Directory Ownership
+## Ownership
 
-| Role | Directories Owned | Responsibility |
+| Area | Paths | Owner Mode |
 |---|---|---|
-| **Proxy Engineer** | `agent-proxy/` | Core firewall features, new LLM providers, Context CDN, Circuit Breaker, Shadow Router |
-| **Dashboard Engineer** | `agent-dashboard/` | React monitoring UI, live traffic feed, stats cards, charts |
-| **QA & Testing** | `stress_tests/`, `test-agent/`, `agent-proxy/tests/` | Unit tests, integration tests, stress tests, pre-deploy validation |
-| **DevOps** | `deploy.sh`, PM2/Caddy config | Deployment, server management, uptime monitoring, CI/CD |
-| **Marketing (External)** | `N/A in this repo` | Studio marketing automation lives in `shinertx/jenni-marketing-agents`. Product-facing landing pages may still live in product repos and require handoff when implemented outside `agent-proxy/`. |
-| **CLI/SDK** | `agent-cli/`, `agentic-firewall-cli/`, `agent-mcp/` | npm package, CLI installer, MCP server integration |
+| Proxy runtime | `agent-proxy/` | Provider routing, caching, budgets, loop detection, queueing, telemetry, admin endpoints |
+| Dashboard | `agent-dashboard/` | React/Vite UI, public stats, admin visibility, live traffic display |
+| CLI and SDK | `agent-cli/`, `agentic-firewall-cli/`, `agent-mcp/` | npm CLI, installer behavior, OpenClaw/Claude routing, MCP status tools |
+| QA and stress | `test-agent/`, `stress_tests/`, `agent-proxy/tests/` | smoke tests, SDK compatibility, stress and live-provider validation |
+| Deploy | `deploy.sh`, `docker-compose.yml`, `.github/workflows/` | build, deploy, health checks, release gates |
+| Shared docs | `README.md`, `CLAUDE.md`, `Gemini.md`, `Agentic_Firewall.md`, `AGENTS.md` | Must match current behavior and live operational reality |
 
-### Ownership Rules
+Cross-area edits are allowed only when needed to finish the task cleanly. Call out the handoff in the final summary or PR description.
 
-1. **Stay in your lane.** Only modify files inside the directories you own.
-2. **Cross-boundary changes require handoff.** If a Proxy Engineer change requires a Dashboard update, document the API change and hand off to Dashboard Engineer.
-3. **Shared files** (`README.md`, `CLAUDE.md`, `Gemini.md`, `Agentic_Firewall.md`, `AGENTS.md`) may be updated by any role, but only to reflect changes in their owned directories.
+## Safety Rules
 
----
+- Treat production as live. Do not run load, stress, destructive, or real-provider-cost tests against production unless the user explicitly asks.
+- Never commit secrets, provider keys, `.env` files, shell profiles, local auth profiles, generated credentials, or copied request payloads containing user data.
+- Do not print or paste secrets into reports. If a real secret is found, redact it and tell the user to rotate it.
+- Runtime data is not source: `node_modules/`, `dist/`, logs, coverage, `agent-proxy/data/*.json`, `agent-proxy/*.json` runtime counters, local stats dumps, and machine-specific caches stay out of commits unless the task explicitly says otherwise.
+- Do not change user shell files, VS Code settings, Claude/OpenClaw settings, LaunchAgents, Docker services, DNS, GitHub secrets, npm publishing, or VM state unless the request clearly requires it.
+- Do not delete repo or workspace files during cleanup. Use the machine cleanup policy in `WORKSPACE_INDEX.md`.
 
-## Handoff Protocol
+## Engineering Practice
 
-When one agent finishes work that impacts another agent's territory:
+- Start behavior work from current `origin/main` unless the user intentionally points at a feature branch.
+- Use branches and PRs for reviewable work. Do not commit directly to `main`.
+- Keep changes scoped. Avoid opportunistic refactors across proxy, dashboard, CLI, and deploy code in one patch.
+- Prefer typed, tested TypeScript in `agent-proxy` and `agent-dashboard`.
+- Preserve compatibility for Anthropic, OpenAI, Gemini, NVIDIA, OpenClaw, Claude Code, and common SDK clients when touching request routing.
+- When touching request mutation, streaming, compression, provider headers, auth, queueing, or budget logic, add or update focused tests.
+- When touching installer or CLI behavior, test in a temp home/profile when possible. Do not mutate the user's real home config during tests.
+- When touching docs, remove stale claims instead of layering new contradictory notes on top.
 
-1. **Document the change** — Write a clear summary of what changed and why in the PR description or commit message.
-2. **Flag the dependency** — If Dashboard needs to update because Proxy added a new endpoint, add a comment: `<!-- HANDOFF: Dashboard needs to add a card for /api/new-endpoint -->`.
-3. **Never assume** — Don't modify another agent's code "while you're in there." Create a separate task.
+## Verification Gates
 
----
+Use the smallest verification set that matches the change:
 
-## GitHub Engineering Practice
+- Proxy changes: `cd agent-proxy && npm test`
+- Dashboard changes: `cd agent-dashboard && npm run build && npm run lint`
+- CLI routing changes: run relevant `node --test` tests under `agent-cli/tests/`
+- Dependency changes: run `npm audit --omit=dev` in affected packages and report remaining production vulnerabilities.
+- Docker/deploy changes: build affected Docker image or compose stack locally where practical, then verify the health endpoint.
+- Production verification: `https://api.jockeyvc.com/api/stats` must return `200` before claiming production is healthy.
+- Staging verification: `https://staging.jockeyvc.com/api/stats` must return `200` before claiming staging is healthy.
 
-When working in this repo, use GitHub as the source of truth and keep the local checkout boring:
+If a package has only a placeholder `npm test`, say that plainly and either add a real test script or run a direct command.
 
-1. **Start from current `origin/main`.** Fetch first, branch from the latest remote main, and avoid stacking new work on stale local history.
-2. **Push branches, not direct `main` edits.** Treat `main` as PR-only and keep changes reviewable in a scoped branch.
-3. **Keep generated/runtime files out of commits.** Things like local stats dumps, cache files, or machine-specific artifacts must stay untracked unless the task explicitly requires them.
-4. **Ship behavior changes with verification.** If CLI or proxy behavior changes, include the smallest useful test or scripted verification and note what was verified before pushing.
-5. **Leave the repo in a clear state.** Before pushing, check `git status`, make sure only intentional files are included, and call out any known local-only leftovers.
-6. **Match docs to reality.** If setup, deploy, or integration behavior changes, update the relevant docs in the same branch so GitHub reflects how the product actually behaves.
+## CI And Release Expectations
 
----
+- CI should cover proxy tests, dashboard build/lint, CLI tests, and any package whose behavior is changed.
+- A PR that changes deployed behavior should include the verification commands and results.
+- Do not publish npm packages, push tags, merge PRs, or deploy unless explicitly asked.
+- If GitHub Actions deploy behavior changes, update `.github/workflows/ci.yml`, `deploy.sh`, and docs together.
+- If release behavior changes, confirm package names, versions, and npm provenance before publishing.
 
-## Escalation Protocol
+## Operational Truth
 
-If an agent encounters a problem it cannot solve:
+- Production health is live endpoint proof, not an assumption.
+- Staging marked "pending" is not healthy until its endpoint proves it.
+- Dashboard metrics are observability signals; inspect proxy code and persisted runtime data before treating metrics as accounting truth.
+- Budget, session, cache, queue, failover, and no-progress features must be verified in code/tests before docs claim them as shipped.
+- If local checkout is quarantined or marked `QUARANTINE_REVIEW`, do not present it as the active development home without checking the project registry.
 
-1. **Stop.** Do not guess or loop.
-2. **Document the blocker** — Write exactly what failed, what was tried, and what information is missing.
-3. **Report to the user** — Present the blocker clearly and ask for direction.
+## Handoff Format
 
----
+When finishing work, report:
 
-## Context Files (Read Order)
+- What changed.
+- What was verified.
+- What remains risky or unverified.
+- Any cross-area dependency, for example: `HANDOFF: dashboard needs a card for the new proxy field`.
 
-Every agent should read these files in this order before starting work:
+## Escalation
 
-1. `AGENTS.md` (this file) — Understand the team structure
-2. `.agent/rules/01_project_identity.md` — Product context and tech stack
-3. `.agent/rules/02_safety_boundaries.md` — Hard rules that cannot be violated
-4. `.agent/rules/03_code_conventions.md` — How to write code in this project
-5. Role-specific docs: `CLAUDE.md` or `Gemini.md` for agent routing details
+Stop and ask the user when:
 
----
-
-## Roadmap (Current Milestones)
-
-- **Milestone 1:** OpenAI `prompt_cache_key` injection + `/v1/messages/count_tokens` endpoint
-- **Milestone 2:** Budget enforcement (max tokens, max dollars, max time per session)
-- **Milestone 3:** Smart loop detection with tool-failure fingerprinting
-- **Milestone 4:** Per-session cost tracking + dashboard enhancements
+- The desired source of truth is unclear after checking the registry and repo.
+- A task requires real money, provider tokens, production traffic, DNS, GitHub secrets, npm publishing, or VM mutation and permission is not explicit.
+- A change would overwrite user work or untracked files that appear intentional.
+- Live service behavior contradicts repo expectations and the next step would be deploy or rollback.

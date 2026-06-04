@@ -2,6 +2,9 @@
     "name": "vibe-billing",
     "version": "0.5.42",
     "description": "Agent Runtime Control — Loop detection, prompt caching, budget enforcement, and waste scanning for autonomous AI agents.",
+    "scripts": {
+        "test": "node --test tests/*.test.js"
+    },
     "bin": {
         "vibe-billing": "./bin/cli.js"
     },
