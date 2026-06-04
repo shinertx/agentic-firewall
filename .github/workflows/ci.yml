@@ -221,7 +221,7 @@ jobs:
 
   # ── Publish CLI to npm (only on merge to main) ────────
   publish:
-    name: Publish vibe-billing to npm
+    name: Publish vibebilling to npm
     needs: [proxy-test, dashboard-test, cli-test, deploy, detect-release-changes]
     runs-on: ubuntu-latest
     if: >-
@@ -245,8 +245,9 @@ jobs:
       - name: Bump patch version from npm
         working-directory: agent-cli
         run: |
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
           REPO_VERSION=$(node -p "require('./package.json').version")
-          PUBLISHED_VERSION=$(npm view vibe-billing version 2>/dev/null || echo "${REPO_VERSION}")
+          PUBLISHED_VERSION=$(npm view "$PACKAGE_NAME" version 2>/dev/null || echo "${REPO_VERSION}")
           NEXT_VERSION=$(node -e "const [repo, published] = process.argv.slice(1); const parse = (v) => v.split('.').map(Number); const cmp = (a, b) => { for (let i = 0; i < 3; i += 1) { if (a[i] !== b[i]) return a[i] - b[i]; } return 0; }; const base = cmp(parse(repo), parse(published)) > 0 ? repo : published; const next = parse(base); next[2] += 1; console.log(next.join('.'));" "${REPO_VERSION}" "${PUBLISHED_VERSION}")
           npm version "${NEXT_VERSION}" --no-git-tag-version
           echo "NEW_VERSION=v${NEXT_VERSION}" >> $GITHUB_ENV

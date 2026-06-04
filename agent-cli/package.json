@@ -1,12 +1,13 @@
 {
-    "name": "vibe-billing",
-    "version": "0.5.42",
+    "name": "vibebilling",
+    "version": "0.5.63",
     "description": "Agent Runtime Control — Loop detection, prompt caching, budget enforcement, and waste scanning for autonomous AI agents.",
     "scripts": {
         "test": "node --test tests/*.test.js"
     },
     "bin": {
-        "vibe-billing": "./bin/cli.js"
+        "vibe-billing": "bin/cli.js",
+        "vibebilling": "bin/cli.js"
     },
     "keywords": [
         "ai",
@@ -20,14 +21,15 @@
         "openclaw",
         "cost-control",
         "prompt-caching",
-        "vibe-billing"
+        "vibe-billing",
+        "vibebilling"
     ],
     "author": "Jockey VC",
     "license": "MIT",
     "homepage": "https://api.jockeyvc.com",
     "repository": {
         "type": "git",
-        "url": "https://github.com/shinertx/agentic-firewall"
+        "url": "git+https://github.com/shinertx/agentic-firewall.git"
     },
     "bugs": {
         "url": "https://github.com/shinertx/agentic-firewall/issues"

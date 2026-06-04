@@ -1,11 +1,11 @@
 # vibe-billing
 
-`vibe-billing` is a trust-first CLI for scanning agent waste and routing supported agent traffic through the Vibe Billing firewall.
+`vibe-billing` is a trust-first CLI for scanning agent waste and routing supported agent traffic through the Vibe Billing firewall. It is published on npm as `vibebilling`.
 
 ## Install / Setup
 
 ```bash
-npx vibe-billing setup
+npx vibebilling setup
 ```
 
 `setup` does three things:
@@ -16,7 +16,7 @@ npx vibe-billing setup
 
 ## Scan First
 
-Run `npx vibe-billing scan` to inspect local Claude Code and OpenClaw logs before changing anything.
+Run `npx vibebilling scan` to inspect local Claude Code and OpenClaw logs before changing anything.
 
 ```text
 Agent Waste Report
@@ -30,7 +30,7 @@ Total agent spend: $124.50
 Estimated wasted spend: $102.09
 
 Fix with:
-npx vibe-billing setup
+npx vibebilling setup
 ```
 
 ## Validate Your Setup
@@ -38,8 +38,8 @@ npx vibe-billing setup
 Use these commands after install:
 
 ```bash
-npx vibe-billing verify
-npx vibe-billing doctor
+npx vibebilling verify
+npx vibebilling doctor
 ```
 
 - `verify` runs the end-to-end validation flow.
@@ -64,7 +64,7 @@ Current integration targets are:
 
 Current support boundary:
 
-- OpenClaw **API-key / BYOK flows** for Anthropic and OpenAI are the intended support path. Run `npx vibe-billing doctor` to confirm your local agent actually routes through the firewall.
+- OpenClaw **API-key / BYOK flows** for Anthropic and OpenAI are the intended support path. Run `npx vibebilling doctor` to confirm your local agent actually routes through the firewall.
 - OpenClaw **OAuth/account-linked flows are not verified yet**.
 - `vibe-billing` does **not** patch `openclaw.json`.
 
@@ -86,7 +86,7 @@ The CLI uses managed env blocks instead of deep app mutation:
 To remove the managed routing blocks:
 
 ```bash
-npx vibe-billing uninstall
+npx vibebilling uninstall
 ```
 
 `uninstall` removes only the managed shell and OpenClaw env blocks added by the CLI.

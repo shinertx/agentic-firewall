@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 
 /**
- * vibe-billing CLI v0.5.3
+ * vibe-billing CLI v0.5.63
  * Agent Runtime Control — keep autonomous AI agents under control.
  *
  * Usage:
- *   npx vibe-billing setup     — auto-detect agents, patch configs, verify connection
- *   npx vibe-billing scan      — scan agent logs for waste (with real $ numbers)
- *   npx vibe-billing status    — check proxy stats (requests, savings, blocked loops)
- *   npx vibe-billing verify    — test that traffic is routing through the firewall
- *   npx vibe-billing uninstall — remove proxy routing from shell config + agent configs
+ *   npx vibebilling setup     — auto-detect agents, patch configs, verify connection
+ *   npx vibebilling scan      — scan agent logs for waste (with real $ numbers)
+ *   npx vibebilling status    — check proxy stats (requests, savings, blocked loops)
+ *   npx vibebilling verify    — test that traffic is routing through the firewall
+ *   npx vibebilling uninstall — remove proxy routing from shell config + agent configs
  */
 
 const http = require('http');
@@ -23,7 +23,7 @@ const { promisify } = require('util');
 const readline = require('readline');
 const execFileAsync = promisify(execFile);
 
-const VERSION = '0.5.42';
+const VERSION = '0.5.63';
 const PROXY_URL = 'https://api.jockeyvc.com';
 const PROXY_API = `${PROXY_URL}/api/stats`;
 const PROXY_OPENAI_BASE_URL = `${PROXY_URL}/v1`;
@@ -761,10 +761,10 @@ async function scan() {
                 log('');
                 showProxyWaste(stats);
             } else {
-                info('Route some traffic through the firewall first: npx vibe-billing setup\n');
+                info('Route some traffic through the firewall first: npx vibebilling setup\n');
             }
         } catch {
-            info('Run `npx vibe-billing setup` to get started.\n');
+            info('Run `npx vibebilling setup` to get started.\n');
         }
         return;
     }
@@ -855,7 +855,7 @@ async function scan() {
     log(`Estimated wasted spend: $${estimatedWastedSpend.toFixed(2)}`);
     log('');
     log(`Fix with:`);
-    log(`npx vibe-billing setup`);
+    log(`npx vibebilling setup`);
     log('');
 }
 
@@ -1127,8 +1127,8 @@ async function setup() {
         log(`${c.dim}• Budget control: cap spend per session${c.reset}`);
         log('');
         log(`  ${c.bold}Next:${c.reset} Launch any agent — it will route through the firewall automatically.`);
-        log(`  ${c.bold}Check:${c.reset} ${c.cyan}npx vibe-billing status${c.reset} to see live traffic.`);
-        log(`  ${c.bold}Undo:${c.reset}  ${c.cyan}npx vibe-billing uninstall${c.reset} to remove.\n`);
+        log(`  ${c.bold}Check:${c.reset} ${c.cyan}npx vibebilling status${c.reset} to see live traffic.`);
+        log(`  ${c.bold}Undo:${c.reset}  ${c.cyan}npx vibebilling uninstall${c.reset} to remove.\n`);
         return;
     }
 
@@ -1139,11 +1139,11 @@ async function setup() {
         log(`  ${c.bold}Fix:${c.reset} ${validation.failures[0].fix}`);
     } else {
         log(`  ${c.bold}Blocker:${c.reset} OpenClaw was detected, but no verified request reached the firewall.`);
-        log(`  ${c.bold}Fix:${c.reset} Run ${c.cyan}npx vibe-billing doctor${c.reset} and follow the first failure.`);
+        log(`  ${c.bold}Fix:${c.reset} Run ${c.cyan}npx vibebilling doctor${c.reset} and follow the first failure.`);
     }
     log('');
-    log(`  ${c.bold}Doctor:${c.reset} ${c.cyan}npx vibe-billing doctor${c.reset}`);
-    log(`  ${c.bold}Undo:${c.reset}   ${c.cyan}npx vibe-billing uninstall${c.reset}\n`);
+    log(`  ${c.bold}Doctor:${c.reset} ${c.cyan}npx vibebilling doctor${c.reset}`);
+    log(`  ${c.bold}Undo:${c.reset}   ${c.cyan}npx vibebilling uninstall${c.reset}\n`);
 }
 
 // ─── Uninstall Command ──────────────────────────────────
@@ -1211,7 +1211,7 @@ async function uninstall() {
 
     log('');
     ok('Agent Firewall uninstalled. Your agents now connect directly to providers.');
-    log(`${c.dim}Run ${c.bold}npx vibe-billing setup${c.reset}${c.dim} to re-enable.${c.reset}\n`);
+    log(`${c.dim}Run ${c.bold}npx vibebilling setup${c.reset}${c.dim} to re-enable.${c.reset}\n`);
 }
 
 function getCurrentProxyEnvStatus() {
@@ -1256,7 +1256,7 @@ async function runValidationSuite(options = {}) {
         proxySpin.stop(`${c.red}✗ Proxy unreachable${c.reset}`);
         failCheck(
             `Could not reach ${PROXY_URL}: ${err.message}`,
-            'Check your network or re-run npx vibe-billing setup.',
+            'Check your network or re-run npx vibebilling setup.',
         );
     }
 
@@ -1319,8 +1319,8 @@ async function runValidationSuite(options = {}) {
                 ? `OpenClaw is installed, but .openclaw/.env is not configured for the firewall. Found custom auth profile baseURL overrides: ${overrideSummary}.`
                 : 'OpenClaw is installed, but .openclaw/.env is not configured for the firewall.',
             lingeringOverrides.length > 0
-                ? 'Run npx vibe-billing setup to restore the managed routing block, or remove the custom baseURL entries from OpenClaw auth-profiles.json if you want a fully direct setup.'
-                : 'Run npx vibe-billing setup to inject the managed routing block.',
+                ? 'Run npx vibebilling setup to restore the managed routing block, or remove the custom baseURL entries from OpenClaw auth-profiles.json if you want a fully direct setup.'
+                : 'Run npx vibebilling setup to inject the managed routing block.',
         );
     }
 
@@ -1408,7 +1408,7 @@ async function runValidationSuite(options = {}) {
             smokeSpin.stop(`${c.red}✗ OpenClaw smoke test failed${c.reset}`);
             failCheck(
                 `OpenClaw did not complete a verified ${candidate.provider}/${candidate.agentId} request: ${err.message}`,
-                `Fix the ${candidate.provider} API-key flow and any conflicting baseURL overrides for ${candidate.agentId}, then run npx vibe-billing doctor.`,
+                `Fix the ${candidate.provider} API-key flow and any conflicting baseURL overrides for ${candidate.agentId}, then run npx vibebilling doctor.`,
             );
         }
     }
@@ -1457,7 +1457,7 @@ async function status() {
         log('');
     } catch (err) {
         s.stop(`${c.red}${icons.fail}${c.reset} Cannot reach proxy: ${err.message}`);
-        info('Is the proxy running? Start it with: npx vibe-billing setup');
+        info('Is the proxy running? Start it with: npx vibebilling setup');
     }
 }
 
@@ -1473,7 +1473,7 @@ async function verify() {
 async function runCmd() {
     const args = process.argv.slice(3);
     if (args.length === 0) {
-        fail('Usage: npx vibe-billing run <your_command_here>');
+        fail('Usage: npx vibebilling run <your_command_here>');
         process.exit(1);
     }
 
@@ -1541,7 +1541,7 @@ async function runCmd() {
         log(`2) Same run with strict budget → $2 cap`);
         log('');
         log(`Run:`);
-        log(`${c.bold}npx vibe-billing replay 1${c.reset}\n`);
+        log(`${c.bold}npx vibebilling replay 1${c.reset}\n`);
 
     } catch {
         warn('Could not fetch final receipt data from proxy.');
@@ -1552,13 +1552,13 @@ async function runCmd() {
 async function replayCmd() {
     const option = process.argv[3];
     if (!['1', '2'].includes(option)) {
-        fail('Usage: npx vibe-billing replay <1|2>');
+        fail('Usage: npx vibebilling replay <1|2>');
         process.exit(1);
     }
 
     const configFile = path.join(os.homedir(), '.vibe-billing-last-run.json');
     if (!fs.existsSync(configFile)) {
-        fail('No previous run found. Use \`npx vibe-billing run <command>\` first.');
+        fail('No previous run found. Use \`npx vibebilling run <command>\` first.');
         process.exit(1);
     }
 
@@ -1613,7 +1613,7 @@ async function reportCmd() {
             log(`${c.cyan}\`\`\`text\n== VIBE BILLING REPORT ==\nTotal API Requests:  ${stats.totalRequests}\nTokens Cached:       ${(stats.savedTokens || 0).toLocaleString()}\nInfinite Loops Cut:  ${stats.blockedLoops || 0}\nTotal Money Saved:   $${(stats.savedMoney || 0).toFixed(2)}\n=========================\n\`\`\`${c.reset}\n`);
         }
     } catch {
-        warn('Could not generate report. Run \`npx vibe-billing setup\` first.');
+        warn('Could not generate report. Run \`npx vibebilling setup\` first.');
     }
 }
 
@@ -1649,7 +1649,7 @@ function main(argv = process.argv) {
         case '--help': case '-h':
             header('Agent Firewall');
             log('  Keep autonomous AI agents under control.\n');
-            log(`  ${c.bold}Usage:${c.reset} npx vibe-billing <command>\n`);
+            log(`  ${c.bold}Usage:${c.reset} npx vibebilling <command>\n`);
             log(`  ${c.bold}Commands:${c.reset}`);
             log(`    ${c.green}setup${c.reset}       Auto-detect agents, patch configs, verify connection`);
             log(`    ${c.green}scan${c.reset}        Scan agent logs for waste (loops, retries, missed caching)`);
@@ -1668,7 +1668,7 @@ function main(argv = process.argv) {
             break;
         default:
             fail(`Unknown command: ${command}`);
-            log(`Run ${c.bold}npx vibe-billing --help${c.reset} to see available commands.`);
+            log(`Run ${c.bold}npx vibebilling --help${c.reset} to see available commands.`);
             process.exitCode = 1;
     }
 }
