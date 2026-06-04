@@ -90,3 +90,5 @@ npx vibe-billing uninstall
 ```
 
 `uninstall` removes only the managed shell and OpenClaw env blocks added by the CLI.
+If OpenClaw still has custom `baseURL` entries inside `auth-profiles.json`, `uninstall` will warn about them instead of silently changing them. Remove those overrides yourself if you want a fully direct, no-proxy OpenClaw setup.
+

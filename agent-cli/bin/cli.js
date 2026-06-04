@@ -350,6 +350,14 @@ function getOpenClawAuthProfilePath(agentId) {
     return path.join(os.homedir(), '.openclaw', 'agents', agentId, 'agent', 'auth-profiles.json');
 }
 
+function listOpenClawAgentIdsFromDisk(homeDir = os.homedir()) {
+    const agentsRoot = path.join(homeDir, '.openclaw', 'agents');
+    if (!fs.existsSync(agentsRoot)) return [];
+    return fs.readdirSync(agentsRoot, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name);
+}
+
 function getProviderEnvName(provider) {
     return provider === 'anthropic' ? 'ANTHROPIC_API_KEY' : 'OPENAI_API_KEY';
 }
@@ -358,6 +366,44 @@ function getProviderBaseUrl(provider) {
     return provider === 'anthropic' ? PROXY_URL : PROXY_OPENAI_BASE_URL;
 }
 
+function getOpenClawBaseUrlOverrides(agentIds = null, homeDir = os.homedir()) {
+    const ids = Array.isArray(agentIds) && agentIds.length > 0
+        ? agentIds
+        : listOpenClawAgentIdsFromDisk(homeDir);
+
+    return ids.flatMap((agentId) => {
+        const authProfilePath = path.join(homeDir, '.openclaw', 'agents', agentId, 'agent', 'auth-profiles.json');
+        const profiles = readJsonFile(authProfilePath);
+        if (!profiles || typeof profiles !== 'object') return [];
+
+        return ['anthropic', 'openai'].flatMap((provider) => {
+            const providerProfile = profiles[provider];
+            const configuredBaseUrl = providerProfile?.baseURL || providerProfile?.baseUrl;
+            if (typeof configuredBaseUrl !== 'string' || !configuredBaseUrl.trim()) return [];
+
+            const baseUrl = configuredBaseUrl.trim();
+            const normalizedBaseUrl = baseUrl.replace(/\/+$/, '');
+            const expectedBaseUrl = getProviderBaseUrl(provider);
+            return [{
+                agentId,
+                provider,
+                authProfilePath,
+                baseUrl,
+                expectedBaseUrl,
+                matchesExpected: normalizedBaseUrl === expectedBaseUrl,
+            }];
+        });
+    });
+}
+
+function summarizeOpenClawBaseUrlOverrides(overrides, limit = 2) {
+    if (!Array.isArray(overrides) || overrides.length === 0) return '';
+
+    const visible = overrides.slice(0, limit)
+        .map((override) => `${override.provider}/${override.agentId} -> ${override.baseUrl}`);
+    const extra = overrides.length > limit ? ` (+${overrides.length - limit} more)` : '';
+    return `${visible.join('; ')}${extra}`;
+}
 function getOpenClawProviderCredential(provider, agentId) {
     const expectedBaseUrl = getProviderBaseUrl(provider);
     const authProfilePath = getOpenClawAuthProfilePath(agentId);
@@ -1154,6 +1200,12 @@ async function uninstall() {
             warn(`Could not clean OpenClaw .env: ${err.message}`);
         }
     }
+
+    const lingeringOverrides = getOpenClawBaseUrlOverrides();
+    if (lingeringOverrides.length > 0) {
+        warn(`OpenClaw auth profiles still contain custom baseURL overrides: ${summarizeOpenClawBaseUrlOverrides(lingeringOverrides)}.`);
+        info('Those auth-profile overrides were not added by vibe-billing. Remove the custom baseURL entries from auth-profiles.json if you want OpenClaw to connect directly with no hidden routing.');
+    }
     // Removing env vars from shell config (above) is sufficient.
 
     log('');
@@ -1259,9 +1311,15 @@ async function runValidationSuite(options = {}) {
         ocEnvSpin.stop(`${c.green}✓ .openclaw/.env contains managed routing${c.reset}`);
     } else {
         ocEnvSpin.stop(`${c.red}✗ .openclaw/.env is missing managed routing${c.reset}`);
+        const lingeringOverrides = getOpenClawBaseUrlOverrides();
+        const overrideSummary = summarizeOpenClawBaseUrlOverrides(lingeringOverrides);
         failCheck(
-            'OpenClaw is installed, but .openclaw/.env is not configured for the firewall.',
-            'Run npx vibe-billing setup to inject the managed routing block.',
+            lingeringOverrides.length > 0
+                ? `OpenClaw is installed, but .openclaw/.env is not configured for the firewall. Found custom auth profile baseURL overrides: ${overrideSummary}.`
+                : 'OpenClaw is installed, but .openclaw/.env is not configured for the firewall.',
+            lingeringOverrides.length > 0
+                ? 'Run npx vibe-billing setup to restore the managed routing block, or remove the custom baseURL entries from OpenClaw auth-profiles.json if you want a fully direct setup.'
+                : 'Run npx vibe-billing setup to inject the managed routing block.',
         );
     }
 
@@ -1565,50 +1623,63 @@ async function doctorCmd() {
     }
 }
 
-// ─── Main ───────────────────────────────────────────────
-const command = process.argv[2] || '--help';
+function main(argv = process.argv) {
+    const command = argv[2] || '--help';
 
-// Send telemetry ping on every CLI invocation (fire-and-forget, non-blocking)
-if (!command.startsWith('-')) {
-    sendTelemetryPing('cli_invocation', command);
+    // Send telemetry ping on every CLI invocation (fire-and-forget, non-blocking)
+    if (!command.startsWith('-')) {
+        sendTelemetryPing('cli_invocation', command);
+    }
+
+    switch (command) {
+        case 'setup': setup().catch(err => fail(err.message)); break;
+        case 'scan': scan().catch(err => fail(err.message)); break;
+        case 'status': status().catch(err => fail(err.message)); break;
+        case 'verify': verify().catch(err => fail(err.message)); break;
+        case 'uninstall': uninstall().catch(err => fail(err.message)); break;
+        case 'run': runCmd().catch(err => fail(err.message)); break;
+        case 'replay': replayCmd().catch(err => fail(err.message)); break;
+        case 'badge': badgeCmd().catch(err => fail(err.message)); break;
+        case 'report': reportCmd().catch(err => fail(err.message)); break;
+        case 'doctor': doctorCmd().catch(err => fail(err.message)); break;
+        case '--version': case '-v':
+            log(`vibe-billing v${VERSION}`);
+            break;
+        case '--help': case '-h':
+            header('Agent Firewall');
+            log('  Keep autonomous AI agents under control.\n');
+            log(`  ${c.bold}Usage:${c.reset} npx vibe-billing <command>\n`);
+            log(`  ${c.bold}Commands:${c.reset}`);
+            log(`    ${c.green}setup${c.reset}       Auto-detect agents, patch configs, verify connection`);
+            log(`    ${c.green}scan${c.reset}        Scan agent logs for waste (loops, retries, missed caching)`);
+            log(`    ${c.green}run${c.reset}         Wrap an agent to get a receipt of your savings`);
+            log(`    ${c.green}replay${c.reset}      Re-run your last wrapped agent with cheaper routing`);
+            log(`    ${c.green}status${c.reset}      Check live proxy stats (requests, savings, blocked loops)`);
+            log(`    ${c.green}verify${c.reset}      Test that routing is working`);
+            log(`    ${c.green}uninstall${c.reset}   Remove proxy routing and restore original configs`);
+            log(`    ${c.green}badge${c.reset}       Generate a markdown badge of your savings`);
+            log(`    ${c.green}report${c.reset}      Generate a shareable text report of waste blocked`);
+            log(`    ${c.green}doctor${c.reset}      Diagnose and validate your local proxy configuration`);
+            log('');
+            log(`  ${c.bold}Flags:${c.reset}`);
+            log(`    ${c.dim}--version${c.reset}   Show version`);
+            log(`    ${c.dim}--help${c.reset}      Show this help\n`);
+            break;
+        default:
+            fail(`Unknown command: ${command}`);
+            log(`Run ${c.bold}npx vibe-billing --help${c.reset} to see available commands.`);
+            process.exitCode = 1;
+    }
 }
 
-switch (command) {
-    case 'setup': setup().catch(err => fail(err.message)); break;
-    case 'scan': scan().catch(err => fail(err.message)); break;
-    case 'status': status().catch(err => fail(err.message)); break;
-    case 'verify': verify().catch(err => fail(err.message)); break;
-    case 'uninstall': uninstall().catch(err => fail(err.message)); break;
-    case 'run': runCmd().catch(err => fail(err.message)); break;
-    case 'replay': replayCmd().catch(err => fail(err.message)); break;
-    case 'badge': badgeCmd().catch(err => fail(err.message)); break;
-    case 'report': reportCmd().catch(err => fail(err.message)); break;
-    case 'doctor': doctorCmd().catch(err => fail(err.message)); break;
-    case '--version': case '-v':
-        log(`vibe-billing v${VERSION}`);
-        break;
-    case '--help': case '-h':
-        header('Agent Firewall');
-        log('  Keep autonomous AI agents under control.\n');
-        log(`  ${c.bold}Usage:${c.reset} npx vibe-billing <command>\n`);
-        log(`  ${c.bold}Commands:${c.reset}`);
-        log(`    ${c.green}setup${c.reset}       Auto-detect agents, patch configs, verify connection`);
-        log(`    ${c.green}scan${c.reset}        Scan agent logs for waste (loops, retries, missed caching)`);
-        log(`    ${c.green}run${c.reset}         Wrap an agent to get a receipt of your savings`);
-        log(`    ${c.green}replay${c.reset}      Re-run your last wrapped agent with cheaper routing`);
-        log(`    ${c.green}status${c.reset}      Check live proxy stats (requests, savings, blocked loops)`);
-        log(`    ${c.green}verify${c.reset}      Test that routing is working`);
-        log(`    ${c.green}uninstall${c.reset}   Remove proxy routing and restore original configs`);
-        log(`    ${c.green}badge${c.reset}       Generate a markdown badge of your savings`);
-        log(`    ${c.green}report${c.reset}      Generate a shareable text report of waste blocked`);
-        log(`    ${c.green}doctor${c.reset}      Diagnose and validate your local proxy configuration`);
-        log('');
-        log(`  ${c.bold}Flags:${c.reset}`);
-        log(`    ${c.dim}--version${c.reset}   Show version`);
-        log(`    ${c.dim}--help${c.reset}      Show this help\n`);
-        break;
-    default:
-        fail(`Unknown command: ${command}`);
-        log(`Run ${c.bold}npx vibe-billing --help${c.reset} to see available commands.`);
-        process.exitCode = 1;
+module.exports = {
+    getOpenClawBaseUrlOverrides,
+    summarizeOpenClawBaseUrlOverrides,
+    listOpenClawAgentIdsFromDisk,
+    getProviderBaseUrl,
+    main,
+};
+
+if (require.main === module) {
+    main(process.argv);
 }
