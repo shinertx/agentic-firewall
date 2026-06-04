@@ -11,7 +11,7 @@ The **Agentic Firewall** is a reverse-proxy server that sits between autonomous 
 ### 1. Context CDN (Cost Optimization)
 Modern agents repeatedly send the entire contents of a multi-million token codebase to the LLM on every single step of a reasoning process. The Firewall's **Context CDN** automatically intercepts these massive JSON payloads and injects `cache_control: { type: 'ephemeral' }` metadata into Anthropic requests. This triggers server-side prompt caching, resulting in up to **90% input cost reduction** on subsequent agent reasoning steps.
 
-> **Note:** Context CDN currently provides real server-side caching for Anthropic only. OpenAI and Gemini support is placeholder — their providers do not yet offer block-level server-side caching via request headers.
+> **Note:** Anthropic uses explicit `cache_control` blocks. OpenAI and Gemini use provider-native prefix/implicit caching behavior, so the proxy optimizes request shape and stable prefixes instead of adding Anthropic-style cache headers.
 
 ### 2. Multi-Provider Universal Routing
 The proxy functions as a drop-in universal backend. It auto-detects the target provider by inspecting request structure and routes accordingly:
@@ -43,7 +43,7 @@ A React/Vite web application that displays live intercepted traffic, model utili
 ## Deployment
 
 - **Infrastructure:** GCP VM (`meme-snipe-v19-vm`)
-- **Process Manager:** PM2
+- **Runtime:** Docker Compose
 - **TLS:** Caddy with automated Let's Encrypt certificates
 - **Proxy Port:** 4000 (behind Caddy on 443)
 

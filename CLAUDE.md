@@ -5,7 +5,7 @@
 The **Agentic Firewall** is a reverse-proxy server that sits between autonomous AI agents (OpenClaw, Claude Code, AutoGPT) and LLM providers (Anthropic, OpenAI, Gemini, NVIDIA). It solves **"Vibe Billing"** — where runaway agents waste thousands of dollars on redundant multi-million-token codebase reads, infinite retry loops, and overkill model selection.
 
 **Production URL:** `https://api.jockeyvc.com`  
-**Deployed on:** GCP VM (`meme-snipe-v19-vm`), managed by PM2, TLS via Caddy
+**Deployed on:** GCP VM (`meme-snipe-v19-vm`), Docker Compose, TLS via Caddy
 
 ---
 
@@ -30,7 +30,7 @@ vibebilling/
 ├── stress_tests/         # Exhaustive Node.js + Python test suites
 ├── Agentic_Firewall.md   # Product documentation
 ├── Gemini.md             # Universal agent compatibility guide
-└── deploy.sh             # rsync deployment to GCP VM
+└── deploy.sh             # Syncs VM checkout to origin/main and starts Docker Compose
 ```
 
 ### Request Flow
@@ -72,10 +72,8 @@ node index.js        # Starts stdio MCP server
 
 ### Deployment
 ```bash
-./deploy.sh          # rsync to meme-snipe-v19-vm (excludes node_modules, .git, .env)
-# Then on the server:
-ssh meme-snipe-v19-vm
-cd ~/agentic-firewall/agent-proxy && pm2 restart agentic-firewall-proxy
+./deploy.sh          # Sync origin/main on meme-snipe-v19-vm and restart Docker Compose
+./deploy.sh staging  # Also starts the staging profile; staging DNS must still prove healthy
 ```
 
 ---
@@ -141,22 +139,57 @@ This project is engineered as a production system, not a prototype. All developm
 - **Branch strategy:** `main` (protected, CI required) with `feature/*` branches merged via PR
 - **Commit convention:** `feat:`, `fix:`, `test:`, `docs:` prefixes
 - **CI:** GitHub Actions runs Vitest on Node 20 + 22 for every push/PR
-- **Deployment:** `deploy.sh` → rsync to GCP VM → PM2 restart
+- **Deployment:** merge to `main` → GitHub Actions → Docker Compose on GCP VM; `deploy.sh` is the manual equivalent
 
 ---
 
-## Known Limitations (Current)
+## Current Capability Notes
 
-1. **Single-instance only** — no horizontal scaling, clustering, or Redis shared state
-2. **No budget enforcement** — agents can burn unlimited tokens (planned: Milestone 2)
-3. **No per-session tracking** — cost is global, not per-agent/session (planned: Milestone 4)
-4. **No `/v1/messages/count_tokens`** — Claude Code needs this for preflight estimation (planned: Milestone 1)
-5. **No OpenAI `prompt_cache_key`** — missing explicit cache key injection (planned: Milestone 1)
-6. **Shadow Router only supports Anthropic** — Sonnet → Haiku failover. No OpenAI/Gemini failover
+- **Single-node runtime:** the service runs as one Docker Compose deployment on the GCP VM. Redis-backed user/session/install sync exists when Redis is available, but do not claim horizontally scaled production until multiple running instances are proved.
+- **Budget enforcement:** supported through the `x-budget-limit` request header and tracked per local user/machine identity.
+- **Per-session tracking:** supported through explicit `x-session-id` when provided, with user-level session summaries available behind admin auth.
+- **Claude count tokens:** `/v1/messages/count_tokens` is passed through for Claude Code preflight estimation.
+- **OpenAI prompt caching:** large OpenAI requests are reordered for prefix stability and receive a deterministic `prompt_cache_key` when a stable system prefix is present.
+- **Shadow Router:** same-provider failover covers Anthropic, OpenAI, and Gemini cheap-model fallback paths; cross-provider failover depends on the caller having a usable key for the target provider.
 
 ## Roadmap
 
-- **Milestone 1:** OpenAI `prompt_cache_key` injection + `/v1/messages/count_tokens` endpoint
-- **Milestone 2:** Budget enforcement (max tokens, max dollars, max time per session)
-- **Milestone 3:** Smart loop detection with tool-failure fingerprinting
-- **Milestone 4:** Per-session cost tracking + dashboard enhancements
+- Prove multi-instance runtime behavior before marketing horizontal scaling.
+- Expand live provider canaries for budget, session, count-token, and cross-provider failover paths.
+- Improve dashboard visibility for per-session cost, queue pressure, and no-progress incidents.
+- Keep installer and routing support current for Claude Code, OpenClaw, OpenAI-compatible agents, Gemini, and NVIDIA.
+
+## Deploy Configuration (configured by /setup-deploy)
+- Platform: GitHub Actions deploying Docker Compose to custom GCP VM `meme-snipe-v19-vm`
+- Production URL: `https://api.jockeyvc.com`
+- Deploy workflow: `.github/workflows/ci.yml` deploy job runs on push to `main`
+- Deploy status command: `gh run list --workflow "CI / CD" --branch main --limit 5`
+- Production health check: `https://api.jockeyvc.com/api/stats`
+- Staging URL: `https://staging.jockeyvc.com`
+- Staging health check: `https://staging.jockeyvc.com/api/stats` currently must return `200` before staging is called ready
+- Manual deploy command: `./deploy.sh`
+- Manual staging deploy command: `./deploy.sh staging`
+- Runtime target on VM: `/home/benjijmac/agentic-firewall`
+
+### Custom deploy hooks
+- Before deploy: run the relevant verification gates from `AGENTS.md` for changed areas.
+- After deploy: verify `https://api.jockeyvc.com/api/stats` returns `200`.
+- Canary: monitor production stats, dashboard load, and recent error/loop activity after deploy.
+
+## Local gstack skill routing
+
+When working inside Benji's Codex workspace, the following gstack skills may be available locally. These are operator workflow hints, not npm scripts or repo-provided commands. When the user's request matches an available local skill, invoke it; otherwise use the matching repo commands above.
+
+Key routing rules:
+- Product ideas/brainstorming -> invoke /office-hours
+- Strategy/scope -> invoke /plan-ceo-review
+- Architecture -> invoke /plan-eng-review
+- Design system/plan review -> invoke /design-consultation or /plan-design-review
+- Full review pipeline -> invoke /autoplan
+- Bugs/errors -> invoke /investigate
+- QA/testing site behavior -> invoke /qa or /qa-only
+- Code review/diff check -> invoke /review
+- Visual polish -> invoke /design-review
+- Ship/deploy/PR -> invoke /ship or /land-and-deploy
+- Save progress -> invoke /context-save
+- Resume context -> invoke /context-restore
