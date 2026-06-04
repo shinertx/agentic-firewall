@@ -8,10 +8,10 @@ A reverse-proxy that sits between AI agents and LLM providers to prevent **Vibe 
 
 | Feature | What It Does |
 |---|---|
-| **Context CDN** | Injects `cache_control: ephemeral` into Anthropic requests, triggering server-side prompt caching for up to 90% input cost reduction |
+| **Context CDN** | Adds Anthropic cache-control blocks and optimizes OpenAI/Gemini prefix stability for provider-native prompt caching |
 | **Multi-Provider Routing** | Auto-detects and routes to Anthropic, OpenAI, Gemini, or NVIDIA based on request structure |
 | **Circuit Breaker** | SHA-256 hashes recent payloads per IP; blocks after 3 identical requests to stop infinite loops |
-| **Shadow Router** | Automatic Sonnet → Haiku failover on 429 rate-limit responses |
+| **Shadow Router** | Automatic cheap-model failover on 429 rate-limit responses for Anthropic, OpenAI, and Gemini paths |
 | **ZSTD Decompression** | Handles Python SDK compressed payloads that crash standard proxies |
 | **30-Min Timeouts** | Prevents premature disconnection during long reasoning chains |
 
