@@ -2,6 +2,20 @@ import { describe, expect, it } from 'vitest';
 import { HISTORICAL_INSTALL_BASELINE } from '../src/publicStats';
 import { buildAdminDashboardData } from '../src/adminDashboardData';
 
+const emptyCommandCounts = {
+    setup: 0,
+    scan: 0,
+    status: 0,
+    verify: 0,
+    run: 0,
+    replay: 0,
+    badge: 0,
+    report: 0,
+    doctor: 0,
+    uninstall: 0,
+    other: 0,
+};
+
 describe('buildAdminDashboardData', () => {
     it('separates estimated vs tracked usage and surfaces issue signals', () => {
         const data = buildAdminDashboardData({
@@ -12,6 +26,7 @@ describe('buildAdminDashboardData', () => {
                 platformBreakdown: { darwin: 1, linux: 1 },
                 archBreakdown: { arm64: 2 },
                 versionBreakdown: { '0.6.0': 2 },
+                sourceBreakdown: { hn: 1, github: 1 },
                 installs: [
                     {
                         machineId: 'machine-a',
@@ -22,9 +37,11 @@ describe('buildAdminDashboardData', () => {
                         platform: 'darwin',
                         arch: 'arm64',
                         nodeVersion: '22.0.0',
-                        commandCounts: { setup: 1, scan: 0, status: 2, verify: 0, run: 0, replay: 0, uninstall: 0, other: 0 },
+                        commandCounts: { ...emptyCommandCounts, setup: 1, status: 2 },
                         totalPings: 3,
                         environment: 'user',
+                        firstSource: 'hn',
+                        lastSource: 'hn',
                     },
                     {
                         machineId: 'machine-b',
@@ -35,9 +52,11 @@ describe('buildAdminDashboardData', () => {
                         platform: 'linux',
                         arch: 'arm64',
                         nodeVersion: '22.0.0',
-                        commandCounts: { setup: 0, scan: 1, status: 0, verify: 1, run: 0, replay: 0, uninstall: 1, other: 1 },
+                        commandCounts: { ...emptyCommandCounts, scan: 1, verify: 1, uninstall: 1, other: 1 },
                         totalPings: 4,
                         environment: 'bot',
+                        firstSource: 'github',
+                        lastSource: 'x',
                     },
                 ],
             },
@@ -88,6 +107,13 @@ describe('buildAdminDashboardData', () => {
         expect(data.activeInstalls7d).toBe(2);
         expect(data.commandTotals.find((metric) => metric.key === 'status')?.count).toBe(2);
         expect(data.commandTotals.find((metric) => metric.key === 'scan')?.count).toBe(1);
+        expect(data.realUserInstalls).toBe(1);
+        expect(data.scanCount).toBe(1);
+        expect(data.setupCount).toBe(1);
+        expect(data.scanToSetupPct).toBe(100);
+        expect(data.sourceBreakdown).toEqual({ hn: 1, github: 1 });
+        expect(data.recentInstalls[0]?.firstSource).toBe('hn');
+        expect(data.recentInstalls[1]?.lastSource).toBe('x');
         expect(data.queueProviders.map((provider) => provider.provider)).toEqual(['anthropic', 'openai']);
         expect(data.recentIssueCount).toBe(2);
         expect(data.recentIssues[0]?.severity).toBe('warning');
@@ -118,6 +144,7 @@ describe('buildAdminDashboardData', () => {
                 platformBreakdown: { darwin: 1 },
                 archBreakdown: { arm64: 1 },
                 versionBreakdown: { '0.6.0': 1 },
+                sourceBreakdown: { direct: 1 },
                 installs: [
                     {
                         machineId: 'machine-a',
@@ -128,9 +155,11 @@ describe('buildAdminDashboardData', () => {
                         platform: 'darwin',
                         arch: 'arm64',
                         nodeVersion: '22.0.0',
-                        commandCounts: { setup: 1, scan: 0, status: 0, verify: 0, run: 0, replay: 0, uninstall: 0, other: 0 },
+                        commandCounts: { ...emptyCommandCounts, setup: 1 },
                         totalPings: 1,
                         environment: 'user',
+                        firstSource: 'direct',
+                        lastSource: 'direct',
                     },
                 ],
             },

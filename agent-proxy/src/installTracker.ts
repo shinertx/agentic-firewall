@@ -28,11 +28,16 @@ export interface InstallRecord {
         verify: number;
         run: number;
         replay: number;
+        badge: number;
+        report: number;
+        doctor: number;
         uninstall: number;
         other: number;
     };
     totalPings: number;
     environment: EnvironmentType;
+    firstSource: string;
+    lastSource: string;
 }
 
 export interface TelemetryEvent {
@@ -47,6 +52,7 @@ export interface TelemetryEvent {
     isFirstRun: boolean;
     timestamp: string;
     environment?: EnvironmentType;
+    launchSource?: string;
 }
 
 // Redis key patterns
@@ -64,11 +70,23 @@ interface NpmStats {
 let npmStatsCache: NpmStats | null = null;
 const NPM_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
-const VALID_COMMANDS = ['setup', 'scan', 'status', 'verify', 'run', 'replay', 'uninstall'] as const;
+const VALID_COMMANDS = ['setup', 'scan', 'status', 'verify', 'run', 'replay', 'badge', 'report', 'doctor', 'uninstall'] as const;
 type ValidCommand = typeof VALID_COMMANDS[number];
 
 function isValidCommand(cmd: string): cmd is ValidCommand {
     return (VALID_COMMANDS as readonly string[]).includes(cmd);
+}
+
+function normalizeSource(source: string | undefined): string {
+    if (!source || typeof source !== 'string') return 'direct';
+    const normalized = source
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9_.-]/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '')
+        .slice(0, 48);
+    return normalized || 'direct';
 }
 
 /**
@@ -77,12 +95,15 @@ function isValidCommand(cmd: string): cmd is ValidCommand {
  */
 export function recordTelemetryEvent(event: TelemetryEvent): void {
     const existing = installs.get(event.machineId);
+    const launchSource = normalizeSource(event.launchSource);
 
     if (existing) {
         existing.lastSeen = event.timestamp;
         existing.lastVersion = event.version;
         existing.totalPings++;
         if (event.environment) existing.environment = event.environment;
+        existing.lastSource = launchSource;
+        if (!existing.firstSource) existing.firstSource = launchSource;
         if (isValidCommand(event.command)) {
             existing.commandCounts[event.command]++;
         } else {
@@ -91,7 +112,8 @@ export function recordTelemetryEvent(event: TelemetryEvent): void {
     } else {
         const commandCounts = {
             setup: 0, scan: 0, status: 0, verify: 0,
-            run: 0, replay: 0, uninstall: 0, other: 0,
+            run: 0, replay: 0, badge: 0, report: 0, doctor: 0,
+            uninstall: 0, other: 0,
         };
         if (isValidCommand(event.command)) {
             commandCounts[event.command] = 1;
@@ -111,6 +133,8 @@ export function recordTelemetryEvent(event: TelemetryEvent): void {
             commandCounts,
             totalPings: 1,
             environment: event.environment || 'unknown',
+            firstSource: launchSource,
+            lastSource: launchSource,
         });
     }
 
@@ -132,12 +156,14 @@ export function getInstallStats(): {
     archBreakdown: Record<string, number>;
     versionBreakdown: Record<string, number>;
     environmentBreakdown: Record<string, number>;
+    sourceBreakdown: Record<string, number>;
 } {
     const records = Array.from(installs.values());
     const platformBreakdown: Record<string, number> = {};
     const archBreakdown: Record<string, number> = {};
     const versionBreakdown: Record<string, number> = {};
     const environmentBreakdown: Record<string, number> = {};
+    const sourceBreakdown: Record<string, number> = {};
 
     for (const r of records) {
         platformBreakdown[r.platform] = (platformBreakdown[r.platform] || 0) + 1;
@@ -145,6 +171,8 @@ export function getInstallStats(): {
         versionBreakdown[r.lastVersion] = (versionBreakdown[r.lastVersion] || 0) + 1;
         const env = r.environment || 'unknown';
         environmentBreakdown[env] = (environmentBreakdown[env] || 0) + 1;
+        const source = r.firstSource || 'direct';
+        sourceBreakdown[source] = (sourceBreakdown[source] || 0) + 1;
     }
 
     return {
@@ -155,6 +183,7 @@ export function getInstallStats(): {
         archBreakdown,
         versionBreakdown,
         environmentBreakdown,
+        sourceBreakdown,
     };
 }
 
@@ -166,9 +195,10 @@ export function getInstallBreakdown(): {
     platformBreakdown: Record<string, number>;
     archBreakdown: Record<string, number>;
     versionBreakdown: Record<string, number>;
+    sourceBreakdown: Record<string, number>;
 } {
-    const { uniqueInstalls, platformBreakdown, archBreakdown, versionBreakdown } = getInstallStats();
-    return { uniqueInstalls, platformBreakdown, archBreakdown, versionBreakdown };
+    const { uniqueInstalls, platformBreakdown, archBreakdown, versionBreakdown, sourceBreakdown } = getInstallStats();
+    return { uniqueInstalls, platformBreakdown, archBreakdown, versionBreakdown, sourceBreakdown };
 }
 
 /**
@@ -212,7 +242,7 @@ export async function getNpmStats(): Promise<NpmStats> {
 
     const fetchCount = (period: string): Promise<number> => {
         return new Promise((resolve) => {
-            const url = `https://api.npmjs.org/downloads/point/${period}/vibe-billing`;
+            const url = `https://api.npmjs.org/downloads/point/${period}/@shinertx/vibebilling`;
             https.get(url, (res) => {
                 let data = '';
                 res.on('data', (chunk: Buffer) => data += chunk);
@@ -254,6 +284,7 @@ function forwardToAnalytics(event: TelemetryEvent): void {
             properties: {
                 machineId: event.machineId,
                 installId: event.installId,
+                launchSource: normalizeSource(event.launchSource),
                 platform: event.platform,
                 arch: event.arch,
                 version: event.version,
@@ -297,6 +328,8 @@ function syncInstallToRedis(machineId: string, record: InstallRecord): void {
         commandCounts: JSON.stringify(record.commandCounts),
         totalPings: record.totalPings.toString(),
         environment: record.environment || 'unknown',
+        firstSource: record.firstSource || 'direct',
+        lastSource: record.lastSource || record.firstSource || 'direct',
     }).then(() => redis.sadd(REDIS_INSTALL_IDS_KEY, machineId)).catch(() => {});
 }
 
@@ -322,10 +355,13 @@ export async function loadInstallsFromRedis(): Promise<boolean> {
                     nodeVersion: data.nodeVersion,
                     commandCounts: data.commandCounts ? JSON.parse(data.commandCounts) : {
                         setup: 0, scan: 0, status: 0, verify: 0,
-                        run: 0, replay: 0, uninstall: 0, other: 0,
+                        run: 0, replay: 0, badge: 0, report: 0, doctor: 0,
+                        uninstall: 0, other: 0,
                     },
                     totalPings: parseInt(data.totalPings) || 0,
                     environment: (data.environment as any) || 'unknown',
+                    firstSource: data.firstSource || 'direct',
+                    lastSource: data.lastSource || data.firstSource || 'direct',
                 });
                 loaded++;
             }
@@ -359,6 +395,8 @@ export async function saveInstallsToRedis(): Promise<void> {
                 commandCounts: JSON.stringify(record.commandCounts),
                 totalPings: record.totalPings.toString(),
                 environment: record.environment || 'unknown',
+                firstSource: record.firstSource || 'direct',
+                lastSource: record.lastSource || record.firstSource || 'direct',
             });
             pipeline.sadd(REDIS_INSTALL_IDS_KEY, id);
         }
@@ -381,6 +419,21 @@ export function exportInstallData(): Record<string, InstallRecord> {
 export function importInstallData(data: Record<string, InstallRecord>): void {
     for (const [id, record] of Object.entries(data)) {
         if (!record.environment) record.environment = 'unknown';
+        if (!record.firstSource) record.firstSource = 'direct';
+        if (!record.lastSource) record.lastSource = record.firstSource;
+        record.commandCounts = {
+            setup: record.commandCounts.setup || 0,
+            scan: record.commandCounts.scan || 0,
+            status: record.commandCounts.status || 0,
+            verify: record.commandCounts.verify || 0,
+            run: record.commandCounts.run || 0,
+            replay: record.commandCounts.replay || 0,
+            badge: (record.commandCounts as any).badge || 0,
+            report: (record.commandCounts as any).report || 0,
+            doctor: (record.commandCounts as any).doctor || 0,
+            uninstall: record.commandCounts.uninstall || 0,
+            other: record.commandCounts.other || 0,
+        };
         installs.set(id, record);
     }
 }

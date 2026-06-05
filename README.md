@@ -32,6 +32,8 @@ npx @shinertx/vibebilling run <agent_cmd>
 
 The installed command is also aliased as `vibe-billing` for shell users who install the package globally.
 
+Launch proof is tracked in [LAUNCH_PROOF_SPRINT.md](./LAUNCH_PROOF_SPRINT.md): real-user installs, scan runs, setup conversion, source tags, and outreach copy.
+
 ## Running the Proxy Locally
 
 ```bash

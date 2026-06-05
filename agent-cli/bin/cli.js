@@ -37,18 +37,24 @@ const INSTALL_FILE = path.join(INSTALL_DIR, 'install.json');
 /**
  * Get or create a persistent install identity.
  * Stored in ~/.vibe-billing/install.json.
- * Returns { machineId, installId, firstInstalledAt, lastVersion, telemetryEnabled, isFirstRun }.
+ * Returns { machineId, installId, firstInstalledAt, lastVersion, telemetryEnabled, launchSource, isFirstRun }.
  */
 function getInstallIdentity() {
     let isFirstRun = false;
+    const launchSource = getLaunchSource();
     try {
         if (fs.existsSync(INSTALL_FILE)) {
             const data = JSON.parse(fs.readFileSync(INSTALL_FILE, 'utf-8'));
+            if (launchSource && launchSource !== 'direct') {
+                data.launchSource = launchSource;
+            } else if (!data.launchSource) {
+                data.launchSource = 'direct';
+            }
             if (data.lastVersion !== VERSION) {
                 data.lastVersion = VERSION;
                 data.updatedAt = new Date().toISOString();
-                try { fs.writeFileSync(INSTALL_FILE, JSON.stringify(data, null, 2)); } catch { }
             }
+            try { fs.writeFileSync(INSTALL_FILE, JSON.stringify(data, null, 2)); } catch { }
             return { ...data, isFirstRun: false };
         }
     } catch { /* corrupted file, recreate */ }
@@ -70,6 +76,7 @@ function getInstallIdentity() {
         firstInstalledAt: new Date().toISOString(),
         lastVersion: VERSION,
         telemetryEnabled: true,
+        launchSource: launchSource || 'direct',
     };
 
     try {
@@ -78,6 +85,34 @@ function getInstallIdentity() {
     } catch { /* non-fatal */ }
 
     return { ...identity, isFirstRun };
+}
+
+function normalizeLaunchSource(value) {
+    if (!value || typeof value !== 'string') return '';
+    return value
+        .trim()
+        .toLowerCase()
+        .replace(/^utm_source=/, '')
+        .replace(/[^a-z0-9_.-]/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '')
+        .slice(0, 48);
+}
+
+function getLaunchSource(argv = process.argv) {
+    const explicit = normalizeLaunchSource(process.env.VIBE_BILLING_SOURCE || process.env.VIBEBILLING_SOURCE || '');
+    if (explicit) return explicit;
+
+    for (const arg of argv.slice(2)) {
+        if (arg.startsWith('--source=')) {
+            return normalizeLaunchSource(arg.slice('--source='.length));
+        }
+        if (arg.startsWith('--utm-source=')) {
+            return normalizeLaunchSource(arg.slice('--utm-source='.length));
+        }
+    }
+
+    return 'direct';
 }
 
 /**
@@ -101,6 +136,7 @@ function sendTelemetryPing(eventType, command) {
             arch: process.arch,
             node: process.version,
             isFirstRun: identity.isFirstRun,
+            launchSource: identity.launchSource || getLaunchSource(),
             timestamp: new Date().toISOString(),
         });
 
@@ -1664,7 +1700,8 @@ function main(argv = process.argv) {
             log('');
             log(`  ${c.bold}Flags:${c.reset}`);
             log(`    ${c.dim}--version${c.reset}   Show version`);
-            log(`    ${c.dim}--help${c.reset}      Show this help\n`);
+            log(`    ${c.dim}--help${c.reset}      Show this help`);
+            log(`    ${c.dim}--source=name${c.reset} Track where a launch tester came from\n`);
             break;
         default:
             fail(`Unknown command: ${command}`);
@@ -1678,6 +1715,8 @@ module.exports = {
     summarizeOpenClawBaseUrlOverrides,
     listOpenClawAgentIdsFromDisk,
     getProviderBaseUrl,
+    normalizeLaunchSource,
+    getLaunchSource,
     main,
 };
 
