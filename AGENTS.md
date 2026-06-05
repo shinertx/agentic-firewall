@@ -60,6 +60,27 @@ Cross-area edits are allowed only when needed to finish the task cleanly. Call o
 - When touching installer or CLI behavior, test in a temp home/profile when possible. Do not mutate the user's real home config during tests.
 - When touching docs, remove stale claims instead of layering new contradictory notes on top.
 
+## Adversarial Execution Standard
+
+For non-trivial engineering changes, treat the first approach as a hypothesis until verified.
+
+Before editing:
+
+- Identify the main failure modes that matter for this change, especially state corruption, async races, network failures, bad inputs, security boundaries, and deploy/runtime drift.
+- Choose the smallest proof that would falsify or validate the approach.
+
+During implementation:
+
+- Add focused tests, assertions, error handling, or telemetry where they expose real failure states.
+- Do not add noisy instrumentation to simple or low-risk changes.
+
+Before completion:
+
+- Run the relevant local tests or sandbox proof.
+- Report the exact verification commands and results.
+- If verification fails, investigate root cause and fix forward unless the user explicitly asks for rollback.
+- Never run destructive git rollback commands without explicit user approval.
+
 ## Verification Gates
 
 Use the smallest verification set that matches the change:
