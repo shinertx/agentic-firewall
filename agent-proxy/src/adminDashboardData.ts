@@ -9,6 +9,7 @@ export interface InstallStatsLike {
     platformBreakdown: Record<string, number>;
     archBreakdown: Record<string, number>;
     versionBreakdown: Record<string, number>;
+    sourceBreakdown: Record<string, number>;
 }
 
 export interface QueueStatsLike {
@@ -114,10 +115,15 @@ export interface AdminDashboardData {
     compressionCacheHits: number;
     compressionAvgRatio: number;
     recentIssueCount: number;
+    realUserInstalls: number;
+    scanCount: number;
+    setupCount: number;
+    scanToSetupPct: number;
     environmentBreakdown: Record<string, number>;
     platformBreakdown: Record<string, number>;
     archBreakdown: Record<string, number>;
     versionBreakdown: Record<string, number>;
+    sourceBreakdown: Record<string, number>;
     dailyTimeline: Array<{ date: string; count: number }>;
     recentInstalls: Array<{
         machineId: string;
@@ -125,6 +131,8 @@ export interface AdminDashboardData {
         arch: string;
         lastVersion: string;
         environment: string;
+        firstSource: string;
+        lastSource: string;
         firstSeen: string;
         lastSeen: string;
         totalPings: number;
@@ -142,6 +150,9 @@ const COMMAND_DEFS = [
     ['verify', 'Verify'],
     ['run', 'Run'],
     ['replay', 'Replay'],
+    ['badge', 'Badge'],
+    ['report', 'Report'],
+    ['doctor', 'Doctor'],
     ['uninstall', 'Uninstall'],
     ['other', 'Other'],
 ] as const;
@@ -161,6 +172,8 @@ function toRecentInstall(record: InstallRecord) {
         arch: record.arch,
         lastVersion: record.lastVersion,
         environment: record.environment || 'unknown',
+        firstSource: record.firstSource || 'direct',
+        lastSource: record.lastSource || record.firstSource || 'direct',
         firstSeen: record.firstSeen,
         lastSeen: record.lastSeen,
         totalPings: record.totalPings,
@@ -207,6 +220,10 @@ export function buildAdminDashboardData(input: {
         label,
         count: installStats.installs.reduce((sum, record) => sum + (record.commandCounts[key] || 0), 0),
     }));
+    const scanCount = commandTotals.find((metric) => metric.key === 'scan')?.count || 0;
+    const setupCount = commandTotals.find((metric) => metric.key === 'setup')?.count || 0;
+    const scanToSetupPct = scanCount > 0 ? Math.round((setupCount / scanCount) * 1000) / 10 : 0;
+    const realUserInstalls = installStats.environmentBreakdown.user || 0;
 
     const recentActivity = globalStats.recentActivity
         .slice(0, 12)
@@ -278,10 +295,15 @@ export function buildAdminDashboardData(input: {
         compressionCacheHits: compressionStats.cacheHits,
         compressionAvgRatio: compressionStats.avgRatio,
         recentIssueCount: recentIssues.length,
+        realUserInstalls,
+        scanCount,
+        setupCount,
+        scanToSetupPct,
         environmentBreakdown: installStats.environmentBreakdown,
         platformBreakdown: installStats.platformBreakdown,
         archBreakdown: installStats.archBreakdown,
         versionBreakdown: installStats.versionBreakdown,
+        sourceBreakdown: installStats.sourceBreakdown,
         dailyTimeline,
         recentInstalls,
         commandTotals,

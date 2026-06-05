@@ -111,6 +111,26 @@ function renderBreakdownRows(breakdown: Record<string, number>, limit: number = 
     return rows || '<tr><td colspan="2" class="empty-cell">No data yet.</td></tr>';
 }
 
+function sourceLabel(source: string): string {
+    if (source === 'direct') return 'Direct';
+    if (source === 'hn') return 'Hacker News';
+    if (source === 'x') return 'X';
+    if (source === 'reddit') return 'Reddit';
+    if (source === 'github') return 'GitHub';
+    if (source === 'linkedin') return 'LinkedIn';
+    return source;
+}
+
+function renderSourceRows(breakdown: Record<string, number>): string {
+    const rows = Object.entries(breakdown)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 12)
+        .map(([source, count]) => `<tr><td>${escHtml(sourceLabel(source))}</td><td class="mono">${escHtml(source)}</td><td>${fmtNum(count)}</td></tr>`)
+        .join('');
+
+    return rows || '<tr><td colspan="3" class="empty-cell">No launch sources yet.</td></tr>';
+}
+
 function renderCommandRows(commandTotals: AdminCommandMetric[]): string {
     const total = commandTotals.reduce((sum, command) => sum + command.count, 0) || 1;
     const rows = commandTotals
@@ -156,7 +176,7 @@ function renderActivityRows(rows: AdminActivityItem[], emptyMessage: string): st
 
 function renderRecentInstalls(rows: AdminDashboardData['recentInstalls']): string {
     if (rows.length === 0) {
-        return '<tr><td colspan="8" class="empty-cell">No installs recorded yet.</td></tr>';
+        return '<tr><td colspan="10" class="empty-cell">No installs recorded yet.</td></tr>';
     }
 
     return rows.map((row) => {
@@ -167,6 +187,8 @@ function renderRecentInstalls(rows: AdminDashboardData['recentInstalls']): strin
             <td>${escHtml(row.arch)}</td>
             <td>${escHtml(row.lastVersion)}</td>
             <td><span class="env-dot" style="background:${envColor(row.environment)}"></span>${escHtml(envLabel(row.environment))}</td>
+            <td class="mono">${escHtml(row.firstSource)}</td>
+            <td class="mono">${escHtml(row.lastSource)}</td>
             <td>${escHtml(row.firstSeen.slice(0, 10))}</td>
             <td>${escHtml(row.lastSeen.slice(0, 10))}</td>
             <td>${fmtNum(row.totalPings)}</td>
@@ -183,6 +205,14 @@ export function renderAdminDashboard(data: AdminDashboardData): string {
         { label: 'Saved', value: fmtMoney(data.totalSaved), hint: 'Global runtime counter', tone: 'green' as const },
         { label: 'Requests', value: fmtNum(data.totalRequests), hint: 'Proxy requests observed' },
         { label: 'Loops Blocked', value: fmtNum(data.blockedLoops), hint: 'Guardrail events blocked', tone: data.blockedLoops > 0 ? 'amber' as const : undefined },
+    ];
+
+    const launchCards = [
+        { label: 'Real User Installs', value: fmtNum(data.realUserInstalls), hint: 'Human-classified CLI installs', tone: data.realUserInstalls > 0 ? 'green' as const : undefined },
+        { label: 'Launch Sources', value: fmtNum(Object.keys(data.sourceBreakdown).length), hint: 'First-touch source tags seen' },
+        { label: 'Scans', value: fmtNum(data.scanCount), hint: 'People checking waste before setup' },
+        { label: 'Setups', value: fmtNum(data.setupCount), hint: 'People routing traffic through the firewall', tone: data.setupCount > 0 ? 'green' as const : undefined },
+        { label: 'Scan to Setup', value: data.scanCount > 0 ? fmtPct(data.scanToSetupPct) : '-', hint: 'Setup commands divided by scan commands' },
     ];
 
     const speedCards = [
@@ -438,6 +468,14 @@ tr:hover td { background: #f8fafc; }
 
     <div class="section">
         <div class="section-head">
+            <h3>Launch Proof</h3>
+            <p>Whether launch traffic turns into real usage.</p>
+        </div>
+        <div class="cards">${renderMetricCards(launchCards)}</div>
+    </div>
+
+    <div class="section">
+        <div class="section-head">
             <h3>Issue Snapshot</h3>
             <p>What is breaking, backing up, or drifting right now.</p>
         </div>
@@ -470,6 +508,17 @@ tr:hover td { background: #f8fafc; }
                 <tbody>${renderCommandRows(data.commandTotals)}</tbody>
             </table>
         </div>
+    </div>
+
+    <div class="section">
+        <div class="section-head">
+            <h3>Launch Sources</h3>
+            <p>First-touch source tags from CLI runs.</p>
+        </div>
+        <table>
+            <thead><tr><th>Source</th><th>Code</th><th>Installs</th></tr></thead>
+            <tbody>${renderSourceRows(data.sourceBreakdown)}</tbody>
+        </table>
     </div>
 
     <div class="grid-2">
@@ -562,7 +611,7 @@ tr:hover td { background: #f8fafc; }
             <p>The latest machines that phoned home.</p>
         </div>
         <table>
-            <thead><tr><th>Machine ID</th><th>Platform</th><th>Arch</th><th>Version</th><th>Environment</th><th>First Seen</th><th>Last Seen</th><th>Pings</th></tr></thead>
+            <thead><tr><th>Machine ID</th><th>Platform</th><th>Arch</th><th>Version</th><th>Environment</th><th>First Source</th><th>Last Source</th><th>First Seen</th><th>Last Seen</th><th>Pings</th></tr></thead>
             <tbody>${renderRecentInstalls(data.recentInstalls)}</tbody>
         </table>
     </div>

@@ -40,6 +40,7 @@ describe('Install Tracker', () => {
         expect(stats.platformBreakdown.darwin).toBe(1);
         expect(stats.archBreakdown.arm64).toBe(1);
         expect(stats.versionBreakdown['0.5.9']).toBe(1);
+        expect(stats.sourceBreakdown.direct).toBe(1);
     });
 
     it('should dedup by machineId on subsequent pings', () => {
@@ -68,6 +69,18 @@ describe('Install Tracker', () => {
         expect(data[machineId].commandCounts.status).toBe(1);
         expect(data[machineId].commandCounts.run).toBe(1);
         expect(data[machineId].totalPings).toBe(5);
+    });
+
+    it('should track launch source as first touch and latest touch', () => {
+        const machineId = 'source-test';
+        recordTelemetryEvent(makeEvent({ machineId, command: 'scan', launchSource: 'HN' }));
+        recordTelemetryEvent(makeEvent({ machineId, command: 'setup', isFirstRun: false, launchSource: 'LinkedIn Campaign!' }));
+
+        const stats = getInstallStats();
+        const data = exportInstallData();
+        expect(stats.sourceBreakdown.hn).toBe(1);
+        expect(data[machineId].firstSource).toBe('hn');
+        expect(data[machineId].lastSource).toBe('linkedin-campaign');
     });
 
     it('should count unknown commands as other', () => {
@@ -123,6 +136,7 @@ describe('Install Tracker', () => {
         expect(breakdown.platformBreakdown.linux).toBe(1);
         expect(breakdown.versionBreakdown['0.5.8']).toBe(1);
         expect(breakdown.versionBreakdown['0.5.9']).toBe(1);
+        expect(breakdown.sourceBreakdown.direct).toBe(2);
         // Should NOT have installs array (public endpoint)
         expect((breakdown as any).installs).toBeUndefined();
     });

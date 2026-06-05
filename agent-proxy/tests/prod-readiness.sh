@@ -10,6 +10,9 @@
 set -euo pipefail
 
 PROXY="https://api.jockeyvc.com"
+PACKAGE_NAME="@shinertx/vibebilling"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 PASS=0
 FAIL=0
 WARN=0
@@ -280,10 +283,10 @@ fi
 
 # 7d. Check npm package doesn't have hardcoded secrets
 section "7b. npm Package Security"
-NPM_TARBALL=$(npm pack --dry-run vibe-billing 2>/dev/null || echo "")
+NPM_TARBALL=$(npm pack --dry-run "$PACKAGE_NAME" 2>/dev/null || echo "")
 if command -v npx &>/dev/null; then
     # Check the published CLI for hardcoded secrets
-    CLI_PATH=$(npm root -g 2>/dev/null)/vibe-billing/bin/cli.js
+    CLI_PATH=$(npm root -g 2>/dev/null)/@shinertx/vibebilling/bin/cli.js
     if [[ -f "$CLI_PATH" ]]; then
         SECRET_HITS=$(grep -cE "sk-[a-zA-Z0-9]{20,}" "$CLI_PATH" || true)
         if [[ "$SECRET_HITS" == "0" ]]; then
@@ -293,7 +296,7 @@ if command -v npx &>/dev/null; then
         fi
     else
         # Check local copy
-        LOCAL_CLI="/Users/benjijmac/Documents/vibebilling/agent-cli/bin/cli.js"
+        LOCAL_CLI="$REPO_ROOT/agent-cli/bin/cli.js"
         if [[ -f "$LOCAL_CLI" ]]; then
             SECRET_HITS=$(grep -cE 'sk-[a-zA-Z0-9]{20,}' "$LOCAL_CLI" || true)
             if [[ "$SECRET_HITS" == "0" || -z "$SECRET_HITS" ]]; then
@@ -332,7 +335,7 @@ else
 fi
 
 # Check if there's any persistence mechanism
-if [[ -f "/home/benjijmac/agentic-firewall/agent-proxy/ecosystem.config.js" || -f "/Users/benjijmac/Documents/vibebilling/agent-proxy/ecosystem.config.js" ]]; then
+if [[ -f "/home/benjijmac/agentic-firewall/agent-proxy/ecosystem.config.js" || -f "$REPO_ROOT/agent-proxy/ecosystem.config.js" ]]; then
     pass "Crash alerting" "PM2 ecosystem configured with restart logic"
 else
     warn "Crash alerting" "No ecosystem.config.js found"
@@ -450,21 +453,23 @@ fi
 # ═══════════════════════════════════════════════════════════════════
 section "11. CLI Package — npm"
 
-NPM_VERSION=$(npm view vibe-billing version 2>/dev/null || echo "NOT_FOUND")
-LOCAL_VERSION=$(node -e "console.log(require('/Users/benjijmac/Documents/vibebilling/agent-cli/package.json').version)" 2>/dev/null || echo "UNKNOWN")
+NPM_VERSION=$(npm view "$PACKAGE_NAME" version 2>/dev/null || echo "NOT_FOUND")
+LOCAL_VERSION=$(node -e "console.log(require('$REPO_ROOT/agent-cli/package.json').version)" 2>/dev/null || echo "UNKNOWN")
 
-if [[ "$NPM_VERSION" == "$LOCAL_VERSION" ]]; then
+if [[ "$NPM_VERSION" == "NOT_FOUND" ]]; then
+    fail "npm package not found" "$PACKAGE_NAME is not published"
+elif [[ "$NPM_VERSION" == "$LOCAL_VERSION" ]]; then
     pass "npm version matches local ($NPM_VERSION)"
 else
-    fail "Version mismatch" "npm=$NPM_VERSION local=$LOCAL_VERSION"
+    warn "npm version differs from repo" "npm=$NPM_VERSION local=$LOCAL_VERSION; publish workflow bumps from npm at release time"
 fi
 
 # Check CLI runs
-CLI_VER=$(npx vibe-billing@latest --version 2>/dev/null || echo "")
+CLI_VER=$(npx "$PACKAGE_NAME@latest" --version 2>/dev/null || echo "")
 if [[ -n "$CLI_VER" ]]; then
-    pass "npx vibe-billing@latest runs (v$CLI_VER)"
+    pass "npx $PACKAGE_NAME@latest runs ($CLI_VER)"
 else
-    warn "CLI execution" "Could not run npx vibe-billing@latest"
+    warn "CLI execution" "Could not run npx $PACKAGE_NAME@latest"
 fi
 
 # ═══════════════════════════════════════════════════════════════════
