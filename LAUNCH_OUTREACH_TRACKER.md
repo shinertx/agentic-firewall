@@ -40,7 +40,7 @@ Valid first-pass sources:
 | 4 | openai/codex issue: Plus users hitting usage limits quickly | `github` | Token-limit pain maps to scan/report wedge. | Useful comment with scan command and ask for miss cases. | ready |
 | 5 | anthropics/claude-code issue: cache read quota / CLAUDE.md re-reads | `github` | Cache-read and repeated context pain is a core VibeBilling claim. | Comment only if maintainers permit external repro tooling. | ready |
 | 6 | anthropics/claude-code issue: full cache miss on new sessions | `github` | Cache behavior failure maps to VibeBilling scan/proxy story. | Comment with read-only scan and feedback ask. | ready |
-| 7 | r/ClaudeAI Showcase post | `reddit` | Users are already asking how to cut token usage, and current showcase moderation allows free-to-try projects with minimal promotion. | Post the exact title/body in `REDDIT_LAUNCH_PACKET.md`. | ready-to-post |
+| 7 | r/ClaudeAI Showcase post | `reddit` | Users are already asking how to cut token usage, and current showcase moderation allows free-to-try projects with minimal promotion. | Post the exact title/body in `REDDIT_LAUNCH_PACKET.md`. | awaiting moderator approval |
 | 8 | r/ClaudeAI: coding agent cost cap project | `reddit` | Thread is adjacent to budget caps and runaway agents. | Ask for comparison feedback, not promotion. | ready |
 | 9 | r/ClaudeAI: Claude Code keeps looping on same fix | `reddit` | Loop detection is a core failure mode. | Offer scan as one way to expose repeated-loop waste. | ready |
 | 10 | r/ClaudeAI: UltraCode token eater / degenerate loop | `reddit` | Exact pain: multi-agent loop without circuit breaker. | Reply only if rules allow project suggestions. | ready |
