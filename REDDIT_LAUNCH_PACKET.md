@@ -71,6 +71,23 @@ The scan should not send prompts, code, log contents, provider keys, or request 
 The launch telemetry is intentionally narrow: install id, command name, version, platform/arch, node version, first-run flag, environment class, and source tag. The reason for the source tag is just to separate Reddit proof from HN/GitHub/direct outreach.
 ```
 
+## Megathread Fallback
+
+Use this only in the r/ClaudeAI Build with Claude Project Showcase Megathread after explicit approval.
+
+```text
+I built VibeBilling, a local CLI scan for Claude Code / coding-agent token waste.
+
+The read-only first step looks for repeated context reads, retry loops, missed caching, and setup gaps before asking you to route anything through a proxy:
+
+npx @shinertx/vibebilling scan --source=reddit
+
+It should not need provider keys or upload prompts, code, log contents, or request payloads. I am trying to learn whether it catches real waste on actual Claude Code / agent-heavy machines, and where the output feels wrong or unsafe.
+
+npm: https://www.npmjs.com/package/@shinertx/vibebilling
+GitHub: https://github.com/shinertx/agentic-firewall
+```
+
 ## Reply Template For Skepticism
 
 ```text
