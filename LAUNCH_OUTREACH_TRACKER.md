@@ -13,6 +13,25 @@ The current constraint is a validation gap: the product is live, but the next pr
 - 3 replies or screenshots.
 - 1 external `setup` attempt.
 
+## Live Proof Snapshot
+
+Last refreshed: 2026-06-15.
+
+- Reddit megathread comment is public: https://www.reddit.com/r/ClaudeAI/comments/1sly3jm/comment/oq7aj6j/
+- Public npm stats moved from zero to `weekly=21`, `monthly=175`.
+- This is distribution movement, but not yet attribution proof. npm stats do not prove which channel caused installs or whether anyone ran `scan`.
+- PR #35 tracks the Reddit fallback docs and is open, mergeable, and green: https://github.com/shinertx/agentic-firewall/pull/35
+- No direct public reply to the VibeBilling Reddit comment was observed during the 2026-06-15 public-page refresh.
+
+## Next Approval-Ready Proof Moves
+
+| Rank | Move | Source | Why Now | Exact Ask | Status |
+|---|---|---|---|---|---|
+| 1 | Submit Hacker News Show HN | `hn` | npm downloads are nonzero, but unattributed; HN gives a clean new source tag and CLI users can run it without signup. | Use the Show HN copy in `LAUNCH_PROOF_SPRINT.md`. | approval needed |
+| 2 | Reply to a Claude Code setup-audit/token-waste Reddit thread | `reddit` | The best-fit Reddit proof is a user who already audited local agent waste, not a generic showcase reader. | Ask for one read-only scan and one failure case. | approval needed |
+| 3 | Direct ask to 5 known agent-heavy builders | `direct` | Fastest path to screenshots or refusal reasons. | Ask for one `scan --source=direct` result or the first trust blocker. | approval needed |
+| 4 | GitHub Claude Code telemetry/cost-attribution issues | `github` | Issues around token/cost attribution validate the wedge, but some already have thoughtful comments; avoid duplicate posting. | Reply only if a direct question or fresh gap appears. | monitor |
+
 ## Proof Command
 
 Use the source that matches the channel:
