@@ -13,6 +13,25 @@ The current constraint is a validation gap: the product is live, but the next pr
 - 3 replies or screenshots.
 - 1 external `setup` attempt.
 
+## Live Proof Snapshot
+
+Last refreshed: 2026-06-15.
+
+- Reddit megathread comment is public: https://www.reddit.com/r/ClaudeAI/comments/1sly3jm/comment/oq7aj6j/
+- Public npm stats moved from zero to `weekly=21`, `monthly=175`.
+- This is distribution movement, but not yet attribution proof. npm stats do not prove which channel caused installs or whether anyone ran `scan`.
+- PR #35 tracks the Reddit fallback docs and is open, mergeable, and green: https://github.com/shinertx/agentic-firewall/pull/35
+- No direct public reply to the VibeBilling Reddit comment was observed during the 2026-06-15 public-page refresh.
+
+## Next Approval-Ready Proof Moves
+
+| Rank | Move | Source | Why Now | Exact Ask | Status |
+|---|---|---|---|---|---|
+| 1 | Submit Hacker News Show HN | `hn` | npm downloads are nonzero, but unattributed; HN gives a clean new source tag and CLI users can run it without signup. | Use the Show HN copy in `LAUNCH_PROOF_SPRINT.md`. | approval needed |
+| 2 | Reply to a Claude Code setup-audit/token-waste Reddit thread | `reddit` | The best-fit Reddit proof is a user who already audited local agent waste, not a generic showcase reader. | Ask for one read-only scan and one failure case. | approval needed |
+| 3 | Direct ask to 5 known agent-heavy builders | `direct` | Fastest path to screenshots or refusal reasons. | Ask for one `scan --source=direct` result or the first trust blocker. | approval needed |
+| 4 | GitHub Claude Code telemetry/cost-attribution issues | `github` | Issues around token/cost attribution validate the wedge, but some already have thoughtful comments; avoid duplicate posting. | Reply only if a direct question or fresh gap appears. | monitor |
+
 ## Proof Command
 
 Use the source that matches the channel:
@@ -40,7 +59,7 @@ Valid first-pass sources:
 | 4 | openai/codex issue: Plus users hitting usage limits quickly | `github` | Token-limit pain maps to scan/report wedge. | Useful comment with scan command and ask for miss cases. | ready |
 | 5 | anthropics/claude-code issue: cache read quota / CLAUDE.md re-reads | `github` | Cache-read and repeated context pain is a core VibeBilling claim. | Comment only if maintainers permit external repro tooling. | ready |
 | 6 | anthropics/claude-code issue: full cache miss on new sessions | `github` | Cache behavior failure maps to VibeBilling scan/proxy story. | Comment with read-only scan and feedback ask. | ready |
-| 7 | r/ClaudeAI Showcase post | `reddit` | Users are already asking how to cut token usage, and current showcase moderation allows free-to-try projects with minimal promotion. | Post the exact title/body in `REDDIT_LAUNCH_PACKET.md`. | awaiting moderator approval |
+| 7 | r/ClaudeAI Showcase post | `reddit` | Users are already asking how to cut token usage, but top-level Showcase posts require minimum OP karma. | Top-level post was removed; fallback comment was posted in the moderator-directed Build with Claude megathread. | megathread posted |
 | 8 | r/ClaudeAI: coding agent cost cap project | `reddit` | Thread is adjacent to budget caps and runaway agents. | Ask for comparison feedback, not promotion. | ready |
 | 9 | r/ClaudeAI: Claude Code keeps looping on same fix | `reddit` | Loop detection is a core failure mode. | Offer scan as one way to expose repeated-loop waste. | ready |
 | 10 | r/ClaudeAI: UltraCode token eater / degenerate loop | `reddit` | Exact pain: multi-agent loop without circuit breaker. | Reply only if rules allow project suggestions. | ready |
@@ -103,6 +122,8 @@ Could you run it on one agent-heavy repo and send me either the output or the fi
 | 2026-06-05 | Not sent yet | - | Tracker created | ready | Sending/posting requires user authority. |
 | 2026-06-05 | r/ClaudeAI Showcase | reddit | Reddit launch packet created | ready-to-post | Exact title/body in `REDDIT_LAUNCH_PACKET.md`; posting still requires final approval. |
 | 2026-06-05 | r/ClaudeAI Showcase | reddit | Posted | awaiting moderator approval | https://www.reddit.com/r/ClaudeAI/comments/1txmyw9/i_built_a_free_local_scan_for_claude_code/ |
+| 2026-06-06 | r/ClaudeAI Showcase | reddit | Checked live post | removed by moderator | Removal reason: minimum OP karma for Showcase feed posts; mod bot says project qualifies for the Build with Claude Project Showcase Megathread. |
+| 2026-06-06 | r/ClaudeAI Build with Claude megathread | reddit | Posted fallback comment | live | https://www.reddit.com/r/ClaudeAI/comments/1sly3jm/comment/oq7aj6j/ |
 
 ## Authority Gate
 
