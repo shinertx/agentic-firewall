@@ -48,9 +48,24 @@ export function resolveSessionId(req: Request): string {
         firstSystemContent = (typeof content === 'string' ? content : '').slice(0, 200);
     }
 
+    // Include first user message to differentiate concurrent instances on the
+    // same project (same API key, model, and system prompt but different conversations).
+    let firstUserContent = '';
+    if (Array.isArray(body.messages)) {
+        const firstUser = body.messages.find((m: any) => m.role === 'user');
+        if (firstUser) {
+            const content = typeof firstUser.content === 'string'
+                ? firstUser.content
+                : Array.isArray(firstUser.content)
+                    ? firstUser.content.map((b: any) => b.text || '').join('').slice(0, 100)
+                    : '';
+            firstUserContent = (typeof content === 'string' ? content : '').slice(0, 100);
+        }
+    }
+
     return crypto
         .createHash('sha256')
-        .update(userId + model + firstSystemContent)
+        .update(userId + model + firstSystemContent + firstUserContent)
         .digest('hex')
         .slice(0, 16);
 }

@@ -203,13 +203,31 @@ describe('Smart No-Progress Detection', () => {
 
             // First call has progress (new to the window) — turnsSinceProgress stays 0
             checkNoProgress('test-agent', makeBody());
-            // Subsequent calls: zero progress each time
-            for (let i = 0; i < 5; i++) {
+            // 4 more calls: zero progress each time → turnsSinceProgress reaches 4
+            for (let i = 0; i < 4; i++) {
                 checkNoProgress('test-agent', makeBody());
             }
+            // 6th call: turnsSinceProgress = 5 = NP_BLOCK_AT → blocks
             const result = checkNoProgress('test-agent', makeBody());
             expect(result.noProgress).toBe(true);
             expect(result.reason).toContain('zero progress signals');
+        });
+
+        it('should reset state after blocking (prevent cascading failures)', () => {
+            const makeBody = () => buildHistory(
+                [{ role: 'assistant', content: [{ type: 'tool_use', id: 'same', name: 'Read', input: { path: '/same.ts' } }] }],
+                [{ role: 'user', content: [{ type: 'tool_result', tool_use_id: 'same', content: 'Error: not found', is_error: true }] }],
+            );
+
+            // Drive to block
+            checkNoProgress('test-agent', makeBody());
+            for (let i = 0; i < 4; i++) checkNoProgress('test-agent', makeBody());
+            const blocked = checkNoProgress('test-agent', makeBody());
+            expect(blocked.noProgress).toBe(true);
+
+            // After blocking, state resets — next call should NOT be blocked
+            const afterReset = checkNoProgress('test-agent', makeBody());
+            expect(afterReset.noProgress).toBe(false);
         });
 
         it('should NOT block if the agent keeps trying different things', () => {
@@ -354,8 +372,9 @@ describe('Smart No-Progress Detection', () => {
                 [{ role: 'user', content: [{ type: 'tool_result', tool_use_id: 's', content: 'Error', is_error: true }] }],
             );
 
-            // Exhaust patience for agent-1
-            for (let i = 0; i < 8; i++) checkNoProgress('agent-1', makeBody());
+            // Exhaust patience for agent-1: 1 call with progress + 4 more + 1 check = 6
+            checkNoProgress('agent-1', makeBody());
+            for (let i = 0; i < 4; i++) checkNoProgress('agent-1', makeBody());
             const r1 = checkNoProgress('agent-1', makeBody());
             expect(r1.noProgress).toBe(true);
 
@@ -393,7 +412,9 @@ describe('Smart No-Progress Detection', () => {
                 }],
             });
 
-            for (let i = 0; i < 6; i++) checkNoProgress('test-agent', makeBody());
+            // No assistant message → all calls have zero progress
+            // turnsSinceProgress hits NP_BLOCK_AT (5) on the 5th call
+            for (let i = 0; i < 4; i++) checkNoProgress('test-agent', makeBody());
             const result = checkNoProgress('test-agent', makeBody());
             expect(result.noProgress).toBe(true);
         });

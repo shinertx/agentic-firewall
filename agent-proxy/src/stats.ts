@@ -184,6 +184,7 @@ export const globalStats = {
     realInputTokens: 0,
     realOutputTokens: 0,
     realCachedTokens: 0,
+    realCacheCreationTokens: 0,
     realOutputSpend: 0,
     estimationErrorSum: 0,
     estimationSamples: 0,
